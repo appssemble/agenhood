@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node (web console, Unit 6)
+node_modules/
+web/console/dist/
+
+# Web console — tsc build artifacts & test output (compiled from the .ts sources)
+*.tsbuildinfo
+web/console/test-results/
+web/console/vite.config.js
+web/console/vite.config.d.ts
+web/console/tailwind.config.js
+web/console/tailwind.config.d.ts
+web/console/playwright.config.js
+web/console/playwright.config.d.ts
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local env
+.env
+*.local
+deploy/.env
+
+# Brainstorming visual-companion artifacts
+.superpowers/
+
+# vite build cache
+.vite/
+/.worktrees/
+
+# Internal process docs (plans, specs, audits) — not published
+/docs/
+
+# Local Claude Code config
+.claude/
+
+# Design mockups / prototypes (reference only; tokens already ported into web/console)
+/design/
+
+# Internal engineering spec — not published
+/agent-runtime-spec.md
+
+# Dev-only design-reference preview (renders the untracked design/ mockups)
+web/console/design-ref/
