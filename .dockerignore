@@ -1,0 +1,14 @@
+# .dockerignore (repo root) — keep the control-plane build context lean.
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/.mypy_cache
+**/.pytest_cache
+**/.DS_Store
+**/tests
+**/uv.lock
+web/console/dist
+web/console/playwright-report
+web/console/test-results
+docs

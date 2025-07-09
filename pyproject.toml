@@ -1,0 +1,30 @@
+[project]
+name = "agenhood"
+version = "0.1.0"
+description = "Self-hosted infrastructure for running a fleet of sandboxed, long-lived AI agents."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "pytest>=8",
+]
+
+[tool.uv.workspace]
+members = ["packages/agentcore"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["packages/agentcore"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/agentcore/tests"]
