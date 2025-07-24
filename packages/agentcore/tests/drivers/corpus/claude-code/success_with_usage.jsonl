@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init"}
+{"type":"result","subtype":"success","result":"all done","is_error":false,"usage":{"input_tokens":10,"output_tokens":3}}

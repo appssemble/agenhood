@@ -1,0 +1,34 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "claude_event",
+    {
+      "raw": {
+        "is_error": true,
+        "result": "kaboom",
+        "subtype": "error_during_execution",
+        "type": "result"
+      }
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": {
+        "code": "claude_code_error",
+        "message": "kaboom"
+      },
+      "from": "running",
+      "result": null,
+      "to": "failed"
+    }
+  ]
+]
