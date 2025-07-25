@@ -1,0 +1,4 @@
+{"type":"item.completed","item":{"type":"agent_message","text":"step one done"}}
+{"type":"turn.completed","usage":{"input_tokens":50,"output_tokens":10}}
+{"type":"item.completed","item":{"type":"agent_message","text":"all done"}}
+{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":20}}

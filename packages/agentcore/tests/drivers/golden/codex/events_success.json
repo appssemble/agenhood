@@ -1,0 +1,54 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "codex_event",
+    {
+      "raw": {
+        "item": {
+          "text": "all done",
+          "type": "agent_message"
+        },
+        "type": "item.completed"
+      }
+    }
+  ],
+  [
+    "codex_event",
+    {
+      "raw": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 20
+        }
+      }
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 100,
+      "tokens_out": 20
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "running",
+      "result": {
+        "output": "all done",
+        "success": true
+      },
+      "to": "completed"
+    }
+  ]
+]

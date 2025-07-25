@@ -1,0 +1,34 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "codex_event",
+    {
+      "raw": {
+        "error": {
+          "message": "model exploded"
+        },
+        "type": "turn.failed"
+      }
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": {
+        "code": "codex_error",
+        "message": "model exploded"
+      },
+      "from": "running",
+      "result": null,
+      "to": "failed"
+    }
+  ]
+]

@@ -1,0 +1,17 @@
+{
+  "capabilities": {
+    "requires_image_feature": null,
+    "supports_cancel": true,
+    "supports_mcp": true,
+    "supports_structured_output": false,
+    "supports_tools": false
+  },
+  "default_template": {
+    "available_tools": [],
+    "default_system_prompt": "You are an autonomous coding agent (codex). Complete the task in the workspace and report concisely when finished.",
+    "driver": "codex",
+    "supports_context": false,
+    "tools_user_editable": false
+  },
+  "name": "codex"
+}
