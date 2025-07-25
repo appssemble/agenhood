@@ -1,0 +1,37 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "opencode_event",
+    {
+      "raw": {
+        "error": {
+          "data": {
+            "message": "Model not found: x"
+          },
+          "name": "UnknownError"
+        },
+        "type": "error"
+      }
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": {
+        "code": "opencode_error",
+        "message": "Model not found: x"
+      },
+      "from": "running",
+      "result": null,
+      "to": "failed"
+    }
+  ]
+]

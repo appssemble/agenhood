@@ -1,0 +1,54 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "claude_event",
+    {
+      "raw": {
+        "subtype": "init",
+        "type": "system"
+      }
+    }
+  ],
+  [
+    "claude_event",
+    {
+      "raw": {
+        "is_error": false,
+        "result": "all done",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 3
+        }
+      }
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 10,
+      "tokens_out": 3
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "running",
+      "result": {
+        "output": "all done",
+        "success": true
+      },
+      "to": "completed"
+    }
+  ]
+]

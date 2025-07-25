@@ -1,0 +1,2 @@
+{"type":"text","part":{"type":"text","text":"all done"}}
+{"type":"step_finish","timestamp":1730000000000,"sessionID":"ses_abc","part":{"id":"prt_x","sessionID":"ses_abc","messageID":"msg_y","type":"step-finish","reason":"stop","cost":0.0012,"tokens":{"total":150,"input":100,"output":50,"reasoning":0,"cache":{"read":0,"write":0}}}}

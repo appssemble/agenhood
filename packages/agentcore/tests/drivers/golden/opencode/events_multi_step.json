@@ -1,0 +1,113 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "opencode_event",
+    {
+      "raw": {
+        "part": {
+          "text": "step one done",
+          "type": "text"
+        },
+        "type": "text"
+      }
+    }
+  ],
+  [
+    "opencode_event",
+    {
+      "raw": {
+        "part": {
+          "cost": 0.0012,
+          "id": "prt_x",
+          "messageID": "msg_y",
+          "reason": "stop",
+          "sessionID": "ses_abc",
+          "tokens": {
+            "cache": {
+              "read": 0,
+              "write": 0
+            },
+            "input": 100,
+            "output": 50,
+            "reasoning": 0,
+            "total": 150
+          },
+          "type": "step-finish"
+        },
+        "sessionID": "ses_abc",
+        "timestamp": 1730000000000,
+        "type": "step_finish"
+      }
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 100,
+      "tokens_out": 50
+    }
+  ],
+  [
+    "opencode_event",
+    {
+      "raw": {
+        "part": {
+          "text": "all done",
+          "type": "text"
+        },
+        "type": "text"
+      }
+    }
+  ],
+  [
+    "opencode_event",
+    {
+      "raw": {
+        "part": {
+          "cost": 0.002,
+          "tokens": {
+            "cache": {
+              "read": 0,
+              "write": 0
+            },
+            "input": 200,
+            "output": 30,
+            "reasoning": 0,
+            "total": 230
+          },
+          "type": "step-finish"
+        },
+        "sessionID": "ses_abc",
+        "timestamp": 1730000000001,
+        "type": "step_finish"
+      }
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 300,
+      "tokens_out": 80
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "running",
+      "result": {
+        "output": "all done",
+        "success": true
+      },
+      "to": "completed"
+    }
+  ]
+]

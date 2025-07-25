@@ -1,0 +1,76 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "claude_event",
+    {
+      "raw": {
+        "subtype": "init",
+        "type": "system"
+      }
+    }
+  ],
+  [
+    "claude_event",
+    {
+      "raw": {
+        "is_error": false,
+        "result": "step one done",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "input_tokens": 5,
+          "output_tokens": 2
+        }
+      }
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 5,
+      "tokens_out": 2
+    }
+  ],
+  [
+    "claude_event",
+    {
+      "raw": {
+        "is_error": false,
+        "result": "all done",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 3
+        }
+      }
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 15,
+      "tokens_out": 5
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "running",
+      "result": {
+        "output": "all done",
+        "success": true
+      },
+      "to": "completed"
+    }
+  ]
+]
