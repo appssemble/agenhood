@@ -1,0 +1,77 @@
+[
+  [
+    "task_started",
+    {
+      "driver": "vanilla",
+      "model": "m-test"
+    }
+  ],
+  [
+    "iteration_started",
+    {
+      "iteration": 1
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 10,
+      "tokens_out": 10
+    }
+  ],
+  [
+    "assistant_message",
+    {
+      "content": [
+        {
+          "text": "thinking",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  [
+    "iteration_started",
+    {
+      "iteration": 2
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 20,
+      "tokens_out": 20
+    }
+  ],
+  [
+    "assistant_message",
+    {
+      "content": [
+        {
+          "text": "thinking",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  [
+    "log",
+    {
+      "data": {},
+      "level": "warn",
+      "message": "iteration_limit"
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": {
+        "code": "iteration_limit",
+        "message": "iteration_limit"
+      },
+      "from": "running",
+      "result": null,
+      "to": "failed"
+    }
+  ]
+]

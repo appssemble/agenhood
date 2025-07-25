@@ -1,0 +1,31 @@
+[
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "pending",
+      "result": null,
+      "to": "running"
+    }
+  ],
+  [
+    "log",
+    {
+      "data": {},
+      "level": "warn",
+      "message": "wall-clock timeout"
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": {
+        "code": "timeout",
+        "message": "wall-clock timeout"
+      },
+      "from": "running",
+      "result": null,
+      "to": "timed_out"
+    }
+  ]
+]

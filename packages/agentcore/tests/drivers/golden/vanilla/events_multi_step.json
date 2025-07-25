@@ -1,0 +1,94 @@
+[
+  [
+    "task_started",
+    {
+      "driver": "vanilla",
+      "model": "m-test"
+    }
+  ],
+  [
+    "iteration_started",
+    {
+      "iteration": 1
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 5,
+      "tokens_out": 2
+    }
+  ],
+  [
+    "assistant_message",
+    {
+      "content": [
+        {
+          "text": "thinking...",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  [
+    "iteration_started",
+    {
+      "iteration": 2
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 15,
+      "tokens_out": 5
+    }
+  ],
+  [
+    "assistant_message",
+    {
+      "content": [
+        {
+          "id": "tu2",
+          "input": {
+            "output": "all done",
+            "success": true
+          },
+          "name": "done",
+          "type": "tool_use"
+        }
+      ]
+    }
+  ],
+  [
+    "tool_call",
+    {
+      "input": {
+        "output": "all done",
+        "success": true
+      },
+      "name": "done",
+      "tool_use_id": "tu2"
+    }
+  ],
+  [
+    "tool_result",
+    {
+      "content": "accepted",
+      "duration_ms": 0,
+      "ok": true,
+      "tool_use_id": "tu2"
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "running",
+      "result": {
+        "output": "all done",
+        "success": true
+      },
+      "to": "completed"
+    }
+  ]
+]

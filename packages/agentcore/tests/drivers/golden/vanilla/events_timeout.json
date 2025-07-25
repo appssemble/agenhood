@@ -1,0 +1,29 @@
+[
+  [
+    "task_started",
+    {
+      "driver": "vanilla",
+      "model": "m-test"
+    }
+  ],
+  [
+    "log",
+    {
+      "data": {},
+      "level": "warn",
+      "message": "timeout"
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": {
+        "code": "timeout",
+        "message": "timeout"
+      },
+      "from": "running",
+      "result": null,
+      "to": "timed_out"
+    }
+  ]
+]
