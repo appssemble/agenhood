@@ -7,24 +7,34 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic>=2.6,<3",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "docker>=7.0",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.4",
     "pytest>=8",
+    "pytest-asyncio>=0.23",
 ]
 
 [tool.uv.workspace]
-members = ["packages/agentcore"]
+members = ["packages/agentcore", "services/control_plane"]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["packages/agentcore"]
+src = ["packages/agentcore", "services/control_plane"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/agentcore/tests"]
+testpaths = ["packages/agentcore/tests", "services/control_plane/tests"]
+markers = [
+    "unit: fast tests with no external dependencies (default; run anywhere)",
+    "integration: requires a running docker daemon",
+]
