@@ -9,12 +9,16 @@ dependencies = [
     "pydantic>=2.6,<3",
     "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "docker>=7.0",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.4",
     "pytest>=8",
+    "pytest-asyncio>=0.23",
 ]
 
 [tool.uv.workspace]
@@ -29,4 +33,8 @@ src = ["packages/agentcore", "services/control_plane"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/agentcore/tests"]
+testpaths = ["packages/agentcore/tests", "services/control_plane/tests"]
+markers = [
+    "unit: fast tests with no external dependencies (default; run anywhere)",
+    "integration: requires a running docker daemon",
+]
