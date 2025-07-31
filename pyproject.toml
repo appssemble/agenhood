@@ -7,6 +7,8 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic>=2.6,<3",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -16,12 +18,12 @@ dev = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/agentcore"]
+members = ["packages/agentcore", "services/control_plane"]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["packages/agentcore"]
+src = ["packages/agentcore", "services/control_plane"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
