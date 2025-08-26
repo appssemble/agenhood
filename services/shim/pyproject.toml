@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shim"
+version = "0.1.0"
+description = "PID-1 in-container agent shim (Unit 1)."
+requires-python = ">=3.12"
+dependencies = [
+    "agentcore",
+    "watchfiles>=0.21",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pytest-cov>=5",
+]
+
+[tool.uv.sources]
+agentcore = { path = "../../packages/agentcore", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["shim"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

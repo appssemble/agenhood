@@ -1,0 +1,10 @@
+# services/shim/requirements.in
+fastapi
+uvicorn[standard]
+httpx
+pydantic>=2
+anthropic
+trafilatura
+jsonschema
+watchfiles
+playwright
