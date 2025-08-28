@@ -1,0 +1,77 @@
+name: agent-image
+
+# Build + push the runtime-provisioned agent base image (NOT a compose service)
+# multi-arch. Driven by GitHub Releases so image publishes are explicit;
+# workflow_dispatch is kept for manual/ad-hoc rebuilds. The image tag is the
+# release tag (a leading "agent-" is stripped), e.g. a release tagged "v0.3.0"
+# -> ghcr.io/<owner>/agent-runtime:v0.3.0.
+#
+# Default target is GitHub Container Registry (GHCR), which works with no extra
+# setup: the built-in GITHUB_TOKEN authenticates and `packages: write` below
+# grants push. To push to a self-hosted/private registry instead, set the repo
+# variable REGISTRY_HOST (e.g. registry.example.com) and the secrets
+# REGISTRY_PUSH_USER / REGISTRY_PUSH_PASSWORD.
+on:
+  release:
+    types: [published]          # fires when a GitHub Release is published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: read
+  packages: write               # allow the GITHUB_TOKEN to push to GHCR
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            raw="${{ inputs.version }}"
+          else
+            raw="${{ github.event.release.tag_name }}"
+          fi
+          echo "version=${raw#agent-}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve registry + image name
+        id: img
+        run: |
+          # Default to GHCR under this repo's owner; override with the
+          # REGISTRY_HOST repo variable for a private registry.
+          registry="${{ vars.REGISTRY_HOST }}"
+          if [ -z "$registry" ]; then
+            registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"   # GHCR image paths must be lowercase
+          fi
+          echo "registry=${registry}" >> "$GITHUB_OUTPUT"
+          echo "image=${registry}/agent-runtime" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3        # emulation for the foreign arch
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          # GHCR: registry host is ghcr.io; a private registry uses REGISTRY_HOST.
+          registry: ${{ vars.REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ secrets.REGISTRY_PUSH_USER || github.actor }}
+          password: ${{ secrets.REGISTRY_PUSH_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build + push (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .                              # monorepo root (Dockerfile COPYs packages/ + services/)
+          file: images/agent/Dockerfile
+          build-args: VARIANT=full
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.img.outputs.image }}:${{ steps.ver.outputs.version }}
+            ${{ steps.img.outputs.image }}:${{ steps.ver.outputs.version }}-full
+          provenance: false                       # plain multi-arch manifest list, simplest to pull
