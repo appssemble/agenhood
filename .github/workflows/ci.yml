@@ -18,3 +18,19 @@ jobs:
         run: uv sync
       - name: Ruff
         run: uv run ruff check .
+
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install agentcore (editable, with dev tools)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "packages/agentcore[dev]"
+      - name: Install control-plane (editable, with dev tools)
+        run: pip install -e "services/control_plane[dev]"
+      - name: Unit tests
+        run: pytest -m unit -q
