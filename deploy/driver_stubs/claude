@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""claude-code CLI stub — renders @@SCRIPT@@ as `claude -p --output-format
+stream-json` output. Prompt is read on stdin, like the real CLI."""
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _stublib as s  # noqa: E402
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def main() -> int:
+    script = s.read_script("stdin")
+    s.maybe_sleep(script)
+    if s.is_never_done(script):
+        s.hang_forever()
+    if s.is_malformed(script):
+        sys.stdout.write("<<not json>>\n")
+        sys.stdout.flush()
+        return 1
+    s.materialize_files(script, os.getcwd())
+    tin, tout = s.usage(script)
+    if s.is_error(script):
+        emit({"type": "result", "subtype": "error", "is_error": True,
+              "result": s.error_message(script),
+              "usage": {"input_tokens": tin, "output_tokens": tout}})
+        return 0  # claude reports failure via is_error even on rc 0
+    emit({"type": "result", "subtype": "success",
+          "result": s.final_text(script),
+          "usage": {"input_tokens": tin, "output_tokens": tout}})
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
