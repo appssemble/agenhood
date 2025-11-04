@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.mono { font-family: theme("fontFamily.mono"); }
+
+/* Full-viewport app frame: styles.css `.app` is height:100% (built for an
+   artboard); make the document fill the viewport so it doesn't collapse and
+   expose the black body background below the content. */
+html, body, #root { height: 100%; }
+.app { min-height: 100vh; }
