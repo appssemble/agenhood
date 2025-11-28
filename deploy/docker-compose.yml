@@ -1,6 +1,7 @@
-# Local dev topology, first cut: just the control plane + its database.
-# Egress proxy / searxng / traefik / web console land in later units — this is
-# enough to run `alembic upgrade head` against a real Postgres and boot the API.
+# Local dev topology: control plane + its database + the web console.
+# Egress proxy / searxng / traefik land in later units — this is enough to run
+# `alembic upgrade head` against a real Postgres, boot the API, and click
+# around the console against it.
 name: agent-runtime
 
 services:
@@ -38,6 +39,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  console:
+    build: ../web/console
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - control-plane
 
 volumes:
   pgdata:
