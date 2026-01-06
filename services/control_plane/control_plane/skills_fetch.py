@@ -1,0 +1,198 @@
+# services/control_plane/control_plane/skills_fetch.py
+"""Fetch, pin, validate, and pack a third-party skill from a git repo.
+
+The control plane (which has direct internet via the ``default`` network) clones
+the skill subpath at an immutable commit SHA, reads its SKILL.md, enforces size
+caps, and returns a gzip-tar bundle for caching. Content is read/packed only —
+never executed."""
+
+from __future__ import annotations
+
+import gzip
+import hashlib
+import io
+import os
+import re
+import subprocess
+import tarfile
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from agentcore.drivers.skills_md import (
+    MAX_BUNDLE_BYTES,
+    MAX_BUNDLE_FILES,
+    MAX_DESCRIPTION,
+    valid_skill_name,
+)
+
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_GIT_TIMEOUT = 60  # seconds per git invocation
+
+
+def parse_skill_frontmatter(md: str) -> tuple[str, str, str]:
+    """Return (name, description, body) from a SKILL.md string.
+
+    Minimal frontmatter parser (no YAML dep): the document must open with a
+    ``---`` line, contain ``name:`` and ``description:`` keys before the closing
+    ``---``, and the remainder is the body. Quotes around the description are
+    stripped. Raises ValueError if frontmatter or required keys are missing."""
+    if not md.startswith("---"):
+        raise ValueError("SKILL.md missing frontmatter")
+    parts = md.split("---", 2)
+    if len(parts) < 3:
+        raise ValueError("SKILL.md frontmatter not closed")
+    front, body = parts[1], parts[2]
+    fields: dict[str, str] = {}
+    for line in front.splitlines():
+        key, sep, val = line.partition(":")
+        if sep:
+            fields[key.strip()] = val.strip().strip('"').strip()
+    name = fields.get("name", "")
+    description = fields.get("description", "")
+    if not name:
+        raise ValueError("SKILL.md frontmatter missing name")
+    if not description:
+        raise ValueError("SKILL.md frontmatter missing description")
+    return name, description, body.lstrip("\n")
+
+
+def pack_dir(
+    root: Path, *, max_files: int, max_bytes: int
+) -> tuple[bytes, int, str]:
+    """Pack ``root`` into a deterministic gzip-tar (members relative to root,
+    sorted). Only regular files and directories are included — symlinks and
+    special files are skipped. Enforces file-count and uncompressed-byte caps.
+    Returns (gzip_bytes, uncompressed_size, sha256_hex_of_gzip_bytes)."""
+    entries = sorted(
+        p for p in root.rglob("*") if p.is_file() and not p.is_symlink()
+    )
+    if len(entries) > max_files:
+        raise ValueError(f"skill exceeds {max_files} files")
+    total = 0
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w") as tar:
+        for p in entries:
+            size = p.stat().st_size
+            total += size
+            if total > max_bytes:
+                raise ValueError(f"skill exceeds {max_bytes} bytes")
+            info = tarfile.TarInfo(str(p.relative_to(root).as_posix()))
+            info.size = size
+            info.mode = 0o644
+            info.mtime = 0
+            with p.open("rb") as fh:
+                tar.addfile(info, fh)
+    gz = gzip.compress(raw.getvalue(), mtime=0)
+    return gz, total, hashlib.sha256(gz).hexdigest()
+
+
+@dataclass(frozen=True)
+class FetchedSkill:
+    name: str
+    description: str
+    body: str
+    pinned_sha: str
+    bundle: bytes
+    bundle_sha256: str
+    bundle_size: int
+
+
+def _run_git(args: list[str], cwd: str | None = None) -> str:
+    proc = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True,
+        timeout=_GIT_TIMEOUT,
+    )
+    if proc.returncode != 0:
+        raise ValueError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+    return proc.stdout.strip()
+
+
+def _validate_url(url: str) -> None:
+    if url.startswith("https://"):
+        return
+    if url.startswith("file://") and os.environ.get("AGENHOOD_ALLOW_FILE_SKILL_SOURCE") == "1":
+        return
+    if url.startswith("file://"):
+        raise ValueError(
+            "file:// skill sources are disabled in production; "
+            "set AGENHOOD_ALLOW_FILE_SKILL_SOURCE=1 to enable in tests"
+        )
+    raise ValueError("source_url must be an https:// git URL")
+
+
+def list_branches(url: str) -> tuple[list[str], str | None]:
+    """List a remote's branch names and its default branch.
+
+    A single ``ls-remote --symref`` advertises every ref plus the symbolic
+    target of HEAD, so we derive both from one round-trip. Tags are ignored.
+    The default branch (when known) is sorted first so the UI can preselect it.
+    Raises ValueError on a rejected URL (bad scheme) or an unreachable remote;
+    the caller maps those to 422/502 respectively."""
+    _validate_url(url)
+    out = _run_git(["ls-remote", "--symref", url])
+    default: str | None = None
+    branches: list[str] = []
+    for line in out.splitlines():
+        if line.startswith("ref: "):
+            target, _, name = line[len("ref: "):].partition("\t")
+            if name.strip() == "HEAD" and target.startswith("refs/heads/"):
+                default = target[len("refs/heads/"):]
+            continue
+        _sha, _, ref = line.partition("\t")
+        if ref.startswith("refs/heads/"):
+            branches.append(ref[len("refs/heads/"):])
+    branches = sorted(set(branches))
+    if default and default in branches:
+        branches = [default, *(b for b in branches if b != default)]
+    return branches, default
+
+
+def resolve_sha(url: str, ref: str) -> str:
+    """Resolve ``ref`` (tag/branch/SHA) to an immutable commit SHA."""
+    if _SHA_RE.match(ref):
+        return ref
+    out = _run_git(["ls-remote", url, "--", ref])
+    if not out:
+        raise ValueError(f"ref {ref!r} not found in {url}")
+    return out.split()[0]
+
+
+def fetch_git_skill(
+    *, url: str, subpath: str, ref: str,
+    max_files: int = MAX_BUNDLE_FILES, max_bytes: int = MAX_BUNDLE_BYTES,
+) -> FetchedSkill:
+    """Clone the skill subpath at the pinned SHA, validate its SKILL.md, and
+    pack it. ``subpath`` is the directory containing SKILL.md ('' = repo root).
+    Raises ValueError on any validation/fetch failure (the caller maps to 422)."""
+    _validate_url(url)
+    sub = subpath.strip().strip("/")
+    if ".." in Path(sub).parts:
+        raise ValueError("source_subpath must not contain '..'")
+    sha = resolve_sha(url, ref)
+    with tempfile.TemporaryDirectory() as tmp:
+        _run_git(["init", "-q", tmp])
+        _run_git(["-C", tmp, "remote", "add", "origin", url])
+        _run_git(["-C", tmp, "fetch", "-q", "--depth", "1", "origin", sha])
+        _run_git(["-C", tmp, "checkout", "-q", sha])
+        skill_root = Path(tmp) / sub if sub else Path(tmp)
+        skill_md = skill_root / "SKILL.md"
+        if not skill_md.is_file():
+            raise ValueError(f"no SKILL.md at subpath {subpath!r}")
+        name, description, body = parse_skill_frontmatter(skill_md.read_text())
+        if not valid_skill_name(name):
+            raise ValueError(
+                f"SKILL.md name {name!r} must match ^[a-z0-9]+(-[a-z0-9]+)*$ "
+                "and be 1-64 chars"
+            )
+        if len(description) > MAX_DESCRIPTION:
+            raise ValueError(
+                f"SKILL.md description exceeds {MAX_DESCRIPTION} chars"
+            )
+        bundle, size, sha256 = pack_dir(
+            skill_root, max_files=max_files, max_bytes=max_bytes
+        )
+    return FetchedSkill(
+        name=name, description=description, body=body, pinned_sha=sha,
+        bundle=bundle, bundle_sha256=sha256, bundle_size=size,
+    )
