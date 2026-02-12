@@ -4,16 +4,25 @@ Self-hosted infrastructure for running a fleet of sandboxed, long-lived AI agent
 
 Early work in progress. Not yet usable in production.
 
-## What's here so far
+## Features
 
-- Multi-tenant control-plane API (FastAPI + Postgres) with tenant/user auth and API keys
-- Agents run as sandboxed, resource-limited Docker containers with a persistent workspace
-- Task submission with live streaming (Server-Sent Events) of agent output
-- Lifecycle management: pause, resume, archive, and automatic idle-pause / wake-on-task
-- A web console (React + TypeScript + Vite) for browsing the fleet and running tasks
+- **Fleet** — agents run as sandboxed, resource-limited Docker containers with a persistent
+  workspace. Lifecycle management (pause, resume, archive) plus automatic idle-pause and
+  wake-on-task.
+- **Tasks** — submit a prompt and stream the agent's output live over Server-Sent Events.
+- **Pluggable drivers** — one identical API, swappable execution engines (vanilla tool-use
+  loop, Opencode, Codex, Claude Code) registered per agent.
+- **Multi-tenant auth** — tenant/user accounts, API keys, and OAuth connect flows for
+  Claude/ChatGPT subscription auth, plus SSH-backed Git remotes for workspace backup.
+- **Skills & templates** — reusable, Git-sourced skills and container templates agents can
+  be provisioned from.
+- **Scheduling** — schedule a prompt to fire once or on a recurring cadence; a calendar view
+  and a scheduled-tasks list show upcoming and past runs.
+- A web console (React + TypeScript + Vite) for browsing the fleet, running tasks, and
+  managing schedules.
 
-Not yet built: workflows, scheduling, skills/MCP tooling, Git-backed workspace backup,
-usage analytics, and the production Compose topology (Traefik, egress proxy, SearXNG).
+Not yet built: workflows, MCP tooling, Git-backed linked-repo file browsing, usage
+analytics, and the production Compose topology (Traefik, egress proxy, SearXNG).
 
 ## Architecture
 
@@ -33,11 +42,12 @@ usage analytics, and the production Compose topology (Traefik, egress proxy, Sea
 - **Shim** — PID-1 inside every agent container. Runs the selected driver and
   streams events back to the control plane.
 - **Control plane** — FastAPI service. Owns the public API, authenticates
-  principals (tenant API keys, user sessions), persists to Postgres, and drives
-  the Docker daemon to provision/supervise agent containers.
+  principals (tenant API keys, user sessions), persists to Postgres, drives
+  the Docker daemon to provision/supervise agent containers, and runs the
+  background scheduler sweep that fires due scheduled tasks.
 - **Console** — a React + TypeScript + Vite SPA; a plain client of the
   control-plane API (login, fleet grid, container detail, task submission,
-  live task viewer, task history).
+  live task viewer, task history, scheduled-tasks calendar).
 
 ## Planned components
 
