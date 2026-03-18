@@ -12,6 +12,9 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "docker>=7.0",
     "httpx>=0.27",
+    "cryptography>=42.0,<46",
+    "asyncpg>=0.29",
+    "pyjwt[crypto]>=2.8",
 ]
 
 [project.optional-dependencies]
@@ -22,18 +25,18 @@ dev = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/agentcore", "services/control_plane"]
+members = ["packages/agentcore", "services/control_plane", "services/connectors"]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["packages/agentcore", "services/control_plane"]
+src = ["packages/agentcore", "services/control_plane", "services/connectors"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/agentcore/tests", "services/control_plane/tests"]
+testpaths = ["packages/agentcore/tests", "services/control_plane/tests", "services/connectors/tests"]
 markers = [
     "unit: fast tests with no external dependencies (default; run anywhere)",
     "integration: requires a running docker daemon",
