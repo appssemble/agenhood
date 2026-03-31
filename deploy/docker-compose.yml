@@ -1,5 +1,6 @@
-# Local dev topology: control plane + its database + the web console.
-# Egress proxy / searxng / traefik land in later units — this is enough to run
+# Local dev topology: control plane + its database + the web console + SearXNG
+# (so the shim's web_search tool and MCP servers have something to query).
+# Egress proxy / traefik land in later units — this is enough to run
 # `alembic upgrade head` against a real Postgres, boot the API, and click
 # around the console against it.
 name: agent-runtime
@@ -22,6 +23,14 @@ services:
       timeout: 5s
       retries: 5
 
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-devsearxngsecret}
+    ports:
+      - "8080:8080"
+
   control-plane:
     build:
       context: ..
@@ -36,6 +45,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://agenhood:agenhood@postgres:5432/agenhood
       SEED_API_KEY: ${SEED_API_KEY:-}
+      SEARCH_PROVIDER_URL: http://searxng:8080
     depends_on:
       postgres:
         condition: service_healthy
