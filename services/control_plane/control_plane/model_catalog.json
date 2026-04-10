@@ -1,0 +1,1047 @@
+{
+  "models": [
+    {
+      "id": "claude-3-5-haiku-20241022",
+      "provider": "anthropic",
+      "label": "claude-3-5-haiku-20241022",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-3-5-haiku-latest",
+      "provider": "anthropic",
+      "label": "claude-3-5-haiku-latest",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-3-5-sonnet-20240620",
+      "provider": "anthropic",
+      "label": "claude-3-5-sonnet-20240620",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-3-5-sonnet-20241022",
+      "provider": "anthropic",
+      "label": "claude-3-5-sonnet-20241022",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-3-7-sonnet-20250219",
+      "provider": "anthropic",
+      "label": "claude-3-7-sonnet-20250219",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-3-haiku-20240307",
+      "provider": "anthropic",
+      "label": "claude-3-haiku-20240307",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-3-opus-20240229",
+      "provider": "anthropic",
+      "label": "claude-3-opus-20240229",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-3-sonnet-20240229",
+      "provider": "anthropic",
+      "label": "claude-3-sonnet-20240229",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "provider": "anthropic",
+      "label": "claude-haiku-4-5",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "provider": "anthropic",
+      "label": "claude-haiku-4-5-20251001",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-0",
+      "provider": "anthropic",
+      "label": "claude-opus-4-0",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-1",
+      "provider": "anthropic",
+      "label": "claude-opus-4-1",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-1-20250805",
+      "provider": "anthropic",
+      "label": "claude-opus-4-1-20250805",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-20250514",
+      "provider": "anthropic",
+      "label": "claude-opus-4-20250514",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-5",
+      "provider": "anthropic",
+      "label": "claude-opus-4-5",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-5-20251101",
+      "provider": "anthropic",
+      "label": "claude-opus-4-5-20251101",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-6",
+      "provider": "anthropic",
+      "label": "claude-opus-4-6",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-6-fast",
+      "provider": "anthropic",
+      "label": "claude-opus-4-6-fast",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-7",
+      "provider": "anthropic",
+      "label": "claude-opus-4-7",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-7-fast",
+      "provider": "anthropic",
+      "label": "claude-opus-4-7-fast",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-8",
+      "provider": "anthropic",
+      "label": "claude-opus-4-8",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-opus-4-8-fast",
+      "provider": "anthropic",
+      "label": "claude-opus-4-8-fast",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-0",
+      "provider": "anthropic",
+      "label": "claude-sonnet-4-0",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-20250514",
+      "provider": "anthropic",
+      "label": "claude-sonnet-4-20250514",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "provider": "anthropic",
+      "label": "claude-sonnet-4-5",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-5-20250929",
+      "provider": "anthropic",
+      "label": "claude-sonnet-4-5-20250929",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "provider": "anthropic",
+      "label": "claude-sonnet-4-6",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "gpt-3.5-turbo",
+      "provider": "openai",
+      "label": "gpt-3.5-turbo",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4",
+      "provider": "openai",
+      "label": "gpt-4",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4-turbo",
+      "provider": "openai",
+      "label": "gpt-4-turbo",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4.1",
+      "provider": "openai",
+      "label": "gpt-4.1",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4.1-mini",
+      "provider": "openai",
+      "label": "gpt-4.1-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4.1-nano",
+      "provider": "openai",
+      "label": "gpt-4.1-nano",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4o",
+      "provider": "openai",
+      "label": "gpt-4o",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4o-2024-05-13",
+      "provider": "openai",
+      "label": "gpt-4o-2024-05-13",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4o-2024-08-06",
+      "provider": "openai",
+      "label": "gpt-4o-2024-08-06",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4o-2024-11-20",
+      "provider": "openai",
+      "label": "gpt-4o-2024-11-20",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-4o-mini",
+      "provider": "openai",
+      "label": "gpt-4o-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5",
+      "provider": "openai",
+      "label": "gpt-5",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5-codex",
+      "provider": "openai",
+      "label": "gpt-5-codex",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5-mini",
+      "provider": "openai",
+      "label": "gpt-5-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5-nano",
+      "provider": "openai",
+      "label": "gpt-5-nano",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5-pro",
+      "provider": "openai",
+      "label": "gpt-5-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.1",
+      "provider": "openai",
+      "label": "gpt-5.1",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.1-chat-latest",
+      "provider": "openai",
+      "label": "gpt-5.1-chat-latest",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.1-codex",
+      "provider": "openai",
+      "label": "gpt-5.1-codex",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.1-codex-max",
+      "provider": "openai",
+      "label": "gpt-5.1-codex-max",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.1-codex-mini",
+      "provider": "openai",
+      "label": "gpt-5.1-codex-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.2",
+      "provider": "openai",
+      "label": "gpt-5.2",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.2-chat-latest",
+      "provider": "openai",
+      "label": "gpt-5.2-chat-latest",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.2-codex",
+      "provider": "openai",
+      "label": "gpt-5.2-codex",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.2-pro",
+      "provider": "openai",
+      "label": "gpt-5.2-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.3-chat-latest",
+      "provider": "openai",
+      "label": "gpt-5.3-chat-latest",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "provider": "openai",
+      "label": "gpt-5.3-codex",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.3-codex-spark",
+      "provider": "openai",
+      "label": "gpt-5.3-codex-spark",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-5.4",
+      "provider": "openai",
+      "label": "gpt-5.4",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-5.4-fast",
+      "provider": "openai",
+      "label": "gpt-5.4-fast",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "provider": "openai",
+      "label": "gpt-5.4-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-5.4-mini-fast",
+      "provider": "openai",
+      "label": "gpt-5.4-mini-fast",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "provider": "openai",
+      "label": "gpt-5.4-nano",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.4-pro",
+      "provider": "openai",
+      "label": "gpt-5.4-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.5",
+      "provider": "openai",
+      "label": "gpt-5.5",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-5.5-fast",
+      "provider": "openai",
+      "label": "gpt-5.5-fast",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.5-pro",
+      "provider": "openai",
+      "label": "gpt-5.5-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "haiku",
+      "provider": "anthropic",
+      "label": "haiku",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "claude-code"
+      ]
+    },
+    {
+      "id": "o1",
+      "provider": "openai",
+      "label": "o1",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o1-mini",
+      "provider": "openai",
+      "label": "o1-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o1-preview",
+      "provider": "openai",
+      "label": "o1-preview",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o1-pro",
+      "provider": "openai",
+      "label": "o1-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o3",
+      "provider": "openai",
+      "label": "o3",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o3-deep-research",
+      "provider": "openai",
+      "label": "o3-deep-research",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o3-mini",
+      "provider": "openai",
+      "label": "o3-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o3-pro",
+      "provider": "openai",
+      "label": "o3-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o4-mini",
+      "provider": "openai",
+      "label": "o4-mini",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "o4-mini-deep-research",
+      "provider": "openai",
+      "label": "o4-mini-deep-research",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/big-pickle",
+      "provider": "opencode",
+      "label": "big-pickle",
+      "category": "free",
+      "credentials": [
+        "keyless"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/deepseek-v4-flash-free",
+      "provider": "opencode",
+      "label": "deepseek-v4-flash-free",
+      "category": "free",
+      "credentials": [
+        "keyless"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/mimo-v2.5-free",
+      "provider": "opencode",
+      "label": "mimo-v2.5-free",
+      "category": "free",
+      "credentials": [
+        "keyless"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/nemotron-3-super-free",
+      "provider": "opencode",
+      "label": "nemotron-3-super-free",
+      "category": "free",
+      "credentials": [
+        "keyless"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opus",
+      "provider": "anthropic",
+      "label": "opus",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "claude-code"
+      ]
+    },
+    {
+      "id": "sonnet",
+      "provider": "anthropic",
+      "label": "sonnet",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "claude-code"
+      ]
+    }
+  ]
+}
