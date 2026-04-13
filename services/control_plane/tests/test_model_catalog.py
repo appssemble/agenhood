@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.unit
+
+from control_plane.model_catalog import build_catalog_entries
+
+
+def test_classifies_free_anthropic_openai_subscription() -> None:
+    base = ["opencode/deepseek-v4-flash-free", "anthropic/claude-opus-4-8", "openai/gpt-4o"]
+    sub = ["openai/gpt-5.3-codex-spark", "openai/gpt-4o"]  # gpt-4o in both
+    entries = {e["id"]: e for e in build_catalog_entries(base, sub)}
+
+    zen = entries["opencode/deepseek-v4-flash-free"]
+    assert zen["category"] == "free"
+    assert zen["credentials"] == ["keyless"]
+    assert zen["drivers"] == ["opencode"]
+
+    ant = entries["claude-opus-4-8"]
+    assert ant["category"] == "api_key"
+    assert ant["credentials"] == ["anthropic_api_key", "anthropic_subscription"]
+    # Full-name anthropic models never offer claude-code (alias-only; see below).
+    assert ant["drivers"] == ["opencode", "vanilla"]
+
+    # openai in BOTH base and sub → api_key category, both credential methods.
+    # gpt-4o is NOT a Codex-tuned model, so codex is filtered out of its drivers.
+    gpt4o = entries["gpt-4o"]
+    assert gpt4o["category"] == "api_key"
+    assert set(gpt4o["credentials"]) == {"openai_api_key", "openai_subscription"}
+    assert gpt4o["drivers"] == ["opencode"]
+
+    # openai only in sub → subscription. A *-codex* model keeps the codex driver.
+    codex = entries["gpt-5.3-codex-spark"]
+    assert codex["category"] == "subscription"
+    assert codex["credentials"] == ["openai_subscription"]
+    assert codex["drivers"] == ["opencode", "codex"]
+
+
+def test_label_is_derived_from_id() -> None:
+    entries = {e["id"]: e for e in build_catalog_entries(["openai/gpt-5.4"], [])}
+    assert entries["gpt-5.4"]["label"] == "gpt-5.4"
+
+
+def test_unknown_provider_ignored() -> None:
+    # Providers we don't support (no credential method) are dropped.
+    ids = [e["id"] for e in build_catalog_entries(["mystery/foo-1", "anthropic/claude-opus-4-8"], [])]
+    assert "claude-opus-4-8" in ids
+    assert "foo-1" not in ids and "mystery/foo-1" not in ids
+
+
+def test_non_chat_models_excluded() -> None:
+    base = [
+        "openai/gpt-4o",
+        "openai/text-embedding-3-large",
+        "openai/chatgpt-image-latest",
+        "openai/dall-e-3",
+        "openai/whisper-1",
+        "openai/tts-1",
+        "openai/omni-moderation-latest",
+        "openai/gpt-4o-realtime-preview",
+        "anthropic/claude-opus-4-8",
+    ]
+    # The classifier also appends the three claude-code alias entries.
+    ids = {e["id"] for e in build_catalog_entries(base, [])}
+    assert {"gpt-4o", "claude-opus-4-8"} <= ids
+    assert ids - {"opus", "sonnet", "haiku"} == {"gpt-4o", "claude-opus-4-8"}
+
+
+def test_full_name_anthropic_does_not_offer_claude_code():
+    from control_plane.model_catalog import build_catalog_entries
+
+    entries = build_catalog_entries(["anthropic/claude-opus-4-8"], [], None)
+    entry = next(e for e in entries if e["id"] == "claude-opus-4-8")
+    assert "claude-code" not in entry["drivers"]
+    assert "vanilla" in entry["drivers"]
+    assert entry["credentials"] == ["anthropic_api_key", "anthropic_subscription"]
+
+
+def test_claude_code_offered_only_via_family_aliases():
+    from control_plane.model_catalog import build_catalog_entries
+
+    entries = build_catalog_entries(["anthropic/claude-opus-4-8"], [], None)
+    aliases = {e["id"]: e for e in entries if e["drivers"] == ["claude-code"]}
+    assert set(aliases) == {"opus", "sonnet", "haiku"}
+    for e in aliases.values():
+        assert e["provider"] == "anthropic"
+        assert e["credentials"] == ["anthropic_api_key", "anthropic_subscription"]
+
+
+def test_methods_includes_anthropic_subscription():
+    from control_plane.model_catalog import methods_from_credential_rows
+
+    rows = [{"provider": "anthropic", "auth_method": "oauth_subscription", "status": "active"}]
+    assert "anthropic_subscription" in methods_from_credential_rows(rows)
+
+
+def test_methods_excludes_inactive_anthropic_subscription():
+    from control_plane.model_catalog import methods_from_credential_rows
+    rows = [{"provider": "anthropic", "auth_method": "oauth_subscription", "status": "inactive"}]
+    assert "anthropic_subscription" not in methods_from_credential_rows(rows)
