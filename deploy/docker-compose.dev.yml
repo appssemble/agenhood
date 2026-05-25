@@ -1,0 +1,70 @@
+# deploy/docker-compose.dev.yml — dev overlay (applied on top of docker-compose.yml).
+services:
+  control-plane:
+    command: ["uvicorn", "control_plane.asgi:app", "--host", "0.0.0.0", "--port", "8443", "--reload", "--reload-dir", "/app/services/control_plane", "--reload-dir", "/app/packages/agentcore"]
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "../services/control_plane:/app/services/control_plane"
+      - "../packages/agentcore:/app/packages/agentcore"
+    environment:
+      # DATABASE_URL is inherited from docker-compose.yml (the canonical DB URL).
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      AGENT_IMAGE_TAG: ${AGENT_IMAGE_TAG}
+      SEED_TENANT_ID: ${SEED_TENANT_ID}
+      SEED_API_KEY: ${SEED_API_KEY}
+      # Dev is plain HTTP (no Traefik/TLS) — a Secure cookie would be dropped by
+      # the browser, breaking login. Prod keeps the default (Secure on).
+      SESSION_COOKIE_SECURE: "false"
+    # Publish the control-plane so the browser can open the console WebSocket
+    # directly (the vite dev proxy does not forward WS upgrades). Not exposed in
+    # prod, where the console WS rides the same origin through Traefik.
+    ports:
+      - "8443:8443"
+
+  web-console-dev:
+    image: node:20-alpine
+    working_dir: /app
+    # Skip install when the node_modules volume is already populated (fast restarts,
+    # avoids rewriting the host package-lock.json on every up).
+    command: sh -c "[ -d node_modules/.bin ] || npm install; npm run dev -- --host 0.0.0.0 --port 5173"
+    restart: unless-stopped
+    environment:
+      VITE_PROXY_TARGET: ${VITE_PROXY_TARGET}
+      # The vite proxy forwards HTTP/SSE but not WS upgrades, so the console
+      # connects its WebSocket straight to the control-plane's published port.
+      VITE_CONSOLE_WS_BASE: ws://localhost:8443
+    volumes:
+      - "../web/console:/app"
+      - "console_node_modules:/app/node_modules"
+    ports:
+      - "${DEV_CONSOLE_PORT}:5173"
+    depends_on:
+      - control-plane
+    networks:
+      - default
+
+  connectors:
+    command: ["uvicorn", "connectors.asgi:app", "--host", "0.0.0.0", "--port", "8090", "--reload", "--reload-dir", "/app/services/connectors"]
+    volumes:
+      - "../services/connectors:/app/services/connectors"
+    environment:
+      # CONNECTORS_DATABASE_URL is derived from DATABASE_URL (inherited from the
+      # base compose) in the connectors entrypoint.
+      CONNECTORS_MASTER_KEY: ${CONNECTORS_MASTER_KEY}
+      CONTROL_PLANE_BASE_URL: http://control-plane:8443
+      CONNECTORS_PUBLIC_BASE_URL: ${CONNECTORS_PUBLIC_BASE_URL:-http://localhost:8090}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+    # Publish the connectors service so inbound webhooks from the host (e.g.
+    # ngrok tunnels forwarding to localhost:8090) and direct API calls work
+    # without Traefik in the dev stack.
+    ports:
+      - "8090:8090"
+
+volumes:
+  console_node_modules:
