@@ -1,0 +1,34 @@
+# deploy/docker-compose.shim-it.yml
+# Lean stack for the container integration suite: the real agent image with the
+# model/CLI seam stubbed. The production image is unchanged; stubs are injected
+# only here (bind-mount + PATH prepend).
+name: agent-runtime-shim-it
+
+services:
+  stub-llm:
+    build:
+      context: ./stub_llm
+    ports:
+      - "19001:9000"
+
+  agent:
+    image: agent-runtime:latest
+    user: "0:0"
+    depends_on:
+      - stub-llm
+    environment:
+      SHIM_TOKEN: "test-shim-token"
+      ANTHROPIC_BASE_URL: "http://stub-llm:9000"
+      SHIM_MAX_WORKERS: "4"
+      # Prepend the stub dir so opencode/codex/claude resolve to our fakes.
+      # The rest reproduces the image PATH (venv + system) so the shim still
+      # finds python3, git, curl, etc.
+      PATH: "/opt/driver-stubs:/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    volumes:
+      - ./driver_stubs:/opt/driver-stubs:ro
+      - agent-it-workspace:/workspace
+    ports:
+      - "8080:8080"
+
+volumes:
+  agent-it-workspace:
