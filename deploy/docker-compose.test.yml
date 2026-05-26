@@ -1,0 +1,93 @@
+# Ephemeral stack for integration tests (index §8).
+# Unit 0: Postgres only. Unit 1: SearXNG + stub-LLM + agent. Unit 5: egress proxy.
+# Unit 5 adds the two agent networks + the egress-proxy for the chokepoint test (spec §8.1).
+name: agent-runtime-test
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent_runtime
+      POSTGRES_PASSWORD: agent_runtime
+      POSTGRES_DB: agent_runtime_test
+    ports:
+      # Host-mapped on a non-default port so it never collides with a local Postgres.
+      - "55432:5432"
+    tmpfs:
+      # Test data lives in RAM; nothing persists between runs.
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_runtime -d agent_runtime_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    ports:
+      - "8888:8080"
+
+  stub-llm:
+    build:
+      context: ./stub_llm
+    ports:
+      - "19000:9000"
+
+  agent:
+    image: agent-runtime:latest
+    depends_on:
+      - searxng
+      - stub-llm
+    environment:
+      SHIM_TOKEN: ""
+      ANTHROPIC_BASE_URL: "http://stub-llm:9000"
+      SEARCH_PROVIDER_URL: "http://searxng:8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - agent-workspace:/workspace
+
+  connectors:
+    build:
+      context: ..
+      dockerfile: services/connectors/Dockerfile
+    environment:
+      CONNECTORS_DATABASE_URL: postgresql+asyncpg://agent_runtime:agent_runtime@postgres:5432/connectors
+      # Deterministic test key (non-secret; never used in production).
+      CONNECTORS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      CONTROL_PLANE_BASE_URL: http://control-plane:8443
+      CONNECTORS_PUBLIC_BASE_URL: http://localhost:8090
+      SLACK_SIGNING_SECRET: ""
+      SLACK_CLIENT_ID: ""
+      SLACK_CLIENT_SECRET: ""
+      GITHUB_APP_ID: ""
+      GITHUB_APP_PRIVATE_KEY: ""
+      GITHUB_WEBHOOK_SECRET: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+
+  # Unit 5 — egress chokepoint (spec §8.1).
+  # Dual-homed: agent-runtime-internal (no gateway) + agent-runtime-egress (internet).
+  # The chokepoint integration test uses the raw docker SDK to manage its own
+  # ephemeral networks; this entry documents the compose-up equivalent topology.
+  egress-proxy:
+    build: ../images/egress-proxy
+    image: agent-runtime/egress-proxy:test
+    environment:
+      EGRESS_DENYLIST: "blocked.test.invalid"
+    networks:
+      - agent-runtime-internal
+      - agent-runtime-egress
+
+volumes:
+  agent-workspace:
+
+networks:
+  agent-runtime-internal:
+    internal: true            # NO route to the public internet
+  agent-runtime-egress: {}   # normal outbound — the proxy alone bridges out
