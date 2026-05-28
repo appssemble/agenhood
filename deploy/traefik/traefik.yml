@@ -1,0 +1,30 @@
+# Traefik v3 static configuration (spec §10).
+# Routing is declared via container labels in deploy/docker-compose.yml, NOT here.
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    exposedByDefault: false   # only services with traefik.enable=true are routed
+
+certificatesResolvers:
+  default:
+    acme:
+      email: ops@example.com
+      storage: /letsencrypt/acme.json
+      tlsChallenge: {}
+
+log:
+  level: INFO
+  format: json                # structured logs to stdout (spec §12)
+
+accessLog:
+  format: json
