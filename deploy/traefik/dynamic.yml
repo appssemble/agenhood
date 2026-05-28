@@ -1,0 +1,43 @@
+# Single-origin path routing (replaces the per-service docker labels). Priority
+# ensures the most specific prefixes win: connectors > control-plane > console.
+http:
+  routers:
+    health:
+      # Exact-path health probe routed to the control plane. The control-plane's
+      # /healthz has NO /v1 prefix, so without this explicit route a public
+      # /healthz would fall through to the `/` console catch-all and return the
+      # SPA index.html instead of the control-plane status. Highest priority so the
+      # exact path wins over the prefix routers below.
+      rule: "Path(`/healthz`)"
+      priority: 40
+      entryPoints: ["web"]
+      service: api
+    connectors:
+      rule: "PathPrefix(`/v1/webhooks`) || PathPrefix(`/v1/oauth`)"
+      priority: 30
+      entryPoints: ["web"]
+      service: connectors
+    api:
+      rule: "PathPrefix(`/v1`) || PathPrefix(`/admin`)"
+      priority: 20
+      entryPoints: ["web"]
+      service: api
+    console:
+      rule: "PathPrefix(`/`)"
+      priority: 1
+      entryPoints: ["web"]
+      service: console
+
+  services:
+    connectors:
+      loadBalancer:
+        servers:
+          - url: "http://connectors:8090"
+    api:
+      loadBalancer:
+        servers:
+          - url: "http://control-plane:8443"
+    console:
+      loadBalancer:
+        servers:
+          - url: "http://web-console:80"
