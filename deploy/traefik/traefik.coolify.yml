@@ -1,0 +1,18 @@
+# Declawed Traefik for Coolify: Coolify's proxy terminates TLS and forwards the
+# whole FQDN here over HTTP. No ACME, no docker provider — routing is the file
+# provider (deploy/traefik/dynamic.yml), so services carry NO traefik labels and
+# this proxy needs NO docker socket.
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+log:
+  level: INFO
+  format: json
+accessLog:
+  format: json
