@@ -1,0 +1,37 @@
+# SearXNG settings for the agent runtime.
+# JSON output is REQUIRED — the shim's web_search tool calls
+# http://searxng:8080/search?format=json (spec §3.6, §8.1).
+use_default_settings: true
+
+general:
+  instance_name: "agent-runtime-search"
+  debug: false
+
+search:
+  # `json` MUST be present or /search?format=json returns 403.
+  formats:
+    - html
+    - json
+  safe_search: 0
+  autocomplete: ""
+
+server:
+  # secret_key is overridden at runtime from the SEARXNG_SECRET env var
+  # (see deploy/docker-compose.yml). This literal is a non-secret dev default
+  # and is replaced in any real deployment.
+  secret_key: "change-me-in-env"
+  limiter: false          # no rate limiter for the trusted internal caller
+  image_proxy: false
+  bind_address: "0.0.0.0:8080"
+
+ui:
+  static_use_hash: true
+
+# Keep a small, fast set of engines for v1; expand later.
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: wikipedia
+    disabled: false
