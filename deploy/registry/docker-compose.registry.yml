@@ -1,0 +1,23 @@
+# Self-hosted Docker registry, deployed as its own Coolify "Docker Compose" resource.
+# Coolify terminates TLS for ${REGISTRY_HOST} and routes it to this service:5000.
+# Auth is htpasswd (bcrypt); blobs persist on a Coolify-managed volume.
+name: agent-registry
+
+services:
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    environment:
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: "agent-registry"
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"   # allow GC of deleted tags
+      # Coolify injects routing; expose the container port it forwards to.
+      SERVICE_FQDN_REGISTRY_5000: "/"
+    volumes:
+      - "registry-data:/var/lib/registry"
+      - "registry-auth:/auth:ro"
+
+volumes:
+  registry-data: {}
+  registry-auth: {}
