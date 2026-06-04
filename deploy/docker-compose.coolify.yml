@@ -1,0 +1,160 @@
+# App stack for Coolify (single Docker Compose resource). Differences vs the
+# production compose:
+#   - No ACME Traefik; the bundled proxy is "declawed" (HTTP :80, file provider)
+#     and Coolify's proxy terminates TLS and forwards ${PUBLIC_HOST} here.
+#   - Services carry NO traefik labels (file-provider routing) so Coolify's proxy
+#     does not also try to claim them.
+#   - Healthchecks on the app services so Coolify reports real status.
+#   - Per-agent resources are env-tunable (control plane reads AGENT_* envs).
+# Networks keep their FIXED literal names + internal:true so the control plane can
+# attach agents to "agent-runtime-internal" and the egress chokepoint is preserved.
+name: agent-runtime
+
+services:
+  # Postgres is an EXTERNAL Coolify-managed database for this deployment (not a
+  # bundled service). The app reaches it via DATABASE_URL; control-plane and
+  # connectors each create their own database on it at startup. The managed DB
+  # must be attached to this app's network so its hostname resolves.
+
+  egress-proxy:
+    build: images/egress-proxy
+    image: agent-runtime/egress-proxy:v0.1.0
+    restart: unless-stopped
+    environment:
+      EGRESS_DENYLIST: ${EGRESS_DENYLIST}
+    networks: ["agent-runtime-internal", "agent-runtime-egress"]
+
+  searxng:
+    build:
+      context: .
+      dockerfile: deploy/searxng/Dockerfile
+    image: agent-runtime/searxng:v0.1.0
+    restart: unless-stopped
+    # settings.yml is BAKED INTO the image (deploy/searxng/Dockerfile) instead of a
+    # bind-mounted ./searxng — same Coolify repo-bind-mount pitfall as the proxy.
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+    networks: ["agent-runtime-internal", "agent-runtime-egress"]
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: services/control_plane/Dockerfile
+    image: agent-runtime/control-plane:v0.1.0
+    command: ["uvicorn", "control_plane.asgi:app", "--host", "0.0.0.0", "--port", "8443"]
+    restart: unless-stopped
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"   # provisions agent containers
+    environment:
+      # Single canonical connection URL (the one DB secret for the whole stack).
+      DATABASE_URL: ${DATABASE_URL}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
+      AGENT_IMAGE_TAG: ${AGENT_IMAGE_TAG}
+      # Pull the agent image from the self-hosted registry (Phase 1/2).
+      AGENT_REGISTRY: ${AGENT_REGISTRY}
+      AGENT_REGISTRY_USERNAME: ${AGENT_REGISTRY_USERNAME:-}
+      AGENT_REGISTRY_PASSWORD: ${AGENT_REGISTRY_PASSWORD:-}
+      # Per-agent resource caps for VM sizing (Phase 5).
+      AGENT_MEM_LIMIT: ${AGENT_MEM_LIMIT:-2g}
+      AGENT_MEMSWAP_LIMIT: ${AGENT_MEMSWAP_LIMIT:-2g}
+      AGENT_CPUS: ${AGENT_CPUS:-1}
+      AGENT_PIDS_LIMIT: ${AGENT_PIDS_LIMIT:-512}
+      CONNECTORS_BASE_URL: http://connectors:8090
+      CONNECTORS_S2S_TOKEN: ${CONNECTORS_S2S_TOKEN:-}
+    networks: ["default", "agent-runtime-internal"]
+    healthcheck:
+      # control-plane mounts the health router with NO /v1 prefix -> the route is
+      # /healthz (NOT /v1/healthz). This is an in-container probe (bypasses Traefik).
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8443/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  connectors:
+    build:
+      context: .
+      dockerfile: services/connectors/Dockerfile
+    image: agent-runtime/connectors:v0.1.0
+    command: ["uvicorn", "connectors.asgi:app", "--host", "0.0.0.0", "--port", "8090"]
+    restart: unless-stopped
+    environment:
+      # Connectors derives its DSN (same server/creds, "connectors" db) from
+      # DATABASE_URL in its entrypoint. Set CONNECTORS_DATABASE_URL to override.
+      DATABASE_URL: ${DATABASE_URL}
+      CONNECTORS_MASTER_KEY: ${CONNECTORS_MASTER_KEY}
+      CONTROL_PLANE_BASE_URL: http://control-plane:8443
+      CONNECTORS_PUBLIC_BASE_URL: ${CONNECTORS_PUBLIC_BASE_URL:-https://${PUBLIC_HOST}/v1}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      CONNECTORS_S2S_TOKEN: ${CONNECTORS_S2S_TOKEN:-}
+      CONNECTORS_STATE_SECRET: ${CONNECTORS_STATE_SECRET:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      SLACK_OAUTH_SCOPES: ${SLACK_OAUTH_SCOPES:-app_mentions:read,chat:write}
+      CONNECTORS_CONSOLE_REDIRECT_URL: ${CONNECTORS_CONSOLE_REDIRECT_URL:-https://${PUBLIC_HOST}/settings/connectors}
+    depends_on:
+      control-plane:
+        condition: service_started
+    networks: ["default", "agent-runtime-internal"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8090/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  web-console:
+    build: web/console
+    image: agent-runtime/web-console:v0.1.0
+    restart: unless-stopped
+    networks: ["default"]
+
+  reverse-proxy:
+    # Config is BAKED INTO the image (deploy/traefik/Dockerfile), NOT bind-mounted:
+    # Coolify can pre-create single-file repo bind mounts as empty dirs / resolve
+    # them against the wrong base dir, which would start this sole proxy with zero
+    # routers and take down console+api+webhooks together. See Task 7 + COOLIFY.md.
+    build:
+      context: .
+      dockerfile: deploy/traefik/Dockerfile
+    image: agent-runtime/reverse-proxy:v0.1.0
+    restart: unless-stopped
+    # No host ports — Coolify's proxy reaches this on the shared proxy network and
+    # forwards ${PUBLIC_HOST} to it. Coolify injects the routing for SERVICE_FQDN.
+    environment:
+      SERVICE_FQDN_REVERSEPROXY_80: "/"
+    depends_on: [control-plane, connectors, web-console]
+    networks: ["default"]
+    labels:
+      # Pin Coolify's OUTER Traefik (coolify-proxy) to a backend network it is
+      # actually joined to when it dials this container. Coolify multi-homes
+      # reverse-proxy onto the project network (`<project>-<env>`), the
+      # per-resource network, and the compose `default` — but coolify-proxy joins
+      # only the first two. Without this label Traefik's docker provider picks a
+      # backend IP at random and intermittently selects a network it cannot reach,
+      # so the whole site hangs (Cloudflare 524) until the next redeploy re-rolls
+      # the choice. It is NOT a router/rule label (does not make Traefik "claim"
+      # the other services — the file-provider note above still holds); it only
+      # disambiguates the network for the route Coolify already injects via
+      # SERVICE_FQDN.
+      #
+      # The value is deployment-specific and unavoidably so: it must name a
+      # COOLIFY-managed network (project or per-resource), because coolify-proxy
+      # never joins compose-declared networks — so no portable literal exists.
+      # Parameterized via env so other Coolify deployments override it without
+      # editing this file (set TRAEFIK_BACKEND_NETWORK in the resource's env);
+      # the default matches THIS deployment's project network. Inert under a plain
+      # `docker compose` run (no Traefik docker provider reads it); for
+      # non-Coolify/standalone use see deploy/docker-compose.yml.
+      - "traefik.docker.network=${TRAEFIK_BACKEND_NETWORK:-agenhood-production}"
+
+networks:
+  agent-runtime-internal:
+    name: agent-runtime-internal
+    internal: true            # NO route to the public internet (the chokepoint)
+  agent-runtime-egress:
+    name: agent-runtime-egress
