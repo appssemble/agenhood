@@ -1,62 +1,159 @@
-# Local dev topology: control plane + its database + the web console + SearXNG
-# (so the shim's web_search tool and MCP servers have something to query).
-# Egress proxy / traefik land in later units — this is enough to run
-# `alembic upgrade head` against a real Postgres, boot the API, and click
-# around the console against it.
+# Single-host production-shaped topology (spec §10).
+# Three networks:
+#   default                 -> Traefik <-> control-plane / web-console, public API
+#   agent-runtime-internal  -> control plane + egress proxy + searxng + agents
+#                              (internal: true => NO internet gateway; the chokepoint)
+#   agent-runtime-egress    -> ONLY egress proxy + searxng reach the public internet
 name: agent-runtime
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # Parses POSTGRES_USER/PASSWORD/DB out of the single canonical DATABASE_URL
+    # (deploy/postgres/Dockerfile) so the whole stack shares one DB secret.
+    build:
+      context: ..
+      dockerfile: deploy/postgres/Dockerfile
+    image: agent-runtime/postgres:v0.1.0
     restart: unless-stopped
     environment:
-      POSTGRES_USER: agenhood
-      POSTGRES_PASSWORD: agenhood
-      POSTGRES_DB: agenhood
+      DATABASE_URL: ${DATABASE_URL}
     volumes:
       - "pgdata:/var/lib/postgresql/data"
-    ports:
-      - "5432:5432"
+    networks: ["default"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agenhood -d agenhood"]
+      # POSTGRES_USER/DB live only inside the parse entrypoint, so probe the
+      # listening TCP server (true only after initdb completes) rather than -U/-d.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  egress-proxy:
+    build: ../images/egress-proxy
+    image: agent-runtime/egress-proxy:v0.1.0
+    restart: unless-stopped
+    environment:
+      EGRESS_DENYLIST: ${EGRESS_DENYLIST}
+    # On internal so agents can use it as HTTP(S)_PROXY (port 8888),
+    # and on egress so it alone can reach the public internet (spec §8.1).
+    networks: ["agent-runtime-internal", "agent-runtime-egress"]
 
   searxng:
     image: searxng/searxng:latest
     restart: unless-stopped
     environment:
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-devsearxngsecret}
-    ports:
-      - "8080:8080"
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+    volumes:
+      - "./searxng:/etc/searxng:ro"
+    # Internal so the shim's web_search tool reaches it at http://searxng:8080,
+    # egress so SearXNG can reach upstream search engines (spec §8.1).
+    networks: ["agent-runtime-internal", "agent-runtime-egress"]
 
   control-plane:
     build:
       context: ..
       dockerfile: services/control_plane/Dockerfile
-    command: ["uvicorn", "control_plane.asgi:app", "--host", "0.0.0.0", "--port", "8443", "--reload"]
+    image: agent-runtime/control-plane:v0.1.0
+    command: ["uvicorn", "control_plane.asgi:app", "--host", "0.0.0.0", "--port", "8443"]  # keep in sync with Dockerfile CMD; the dev overlay adds --reload
     restart: unless-stopped
-    ports:
-      - "8443:8443"
+    # No published ports — reached only via Traefik (spec §10).
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"   # provisions agent containers
-      - "../services/control_plane:/app/services/control_plane"
     environment:
-      DATABASE_URL: postgresql+asyncpg://agenhood:agenhood@postgres:5432/agenhood
-      SEED_API_KEY: ${SEED_API_KEY:-}
-      SEARCH_PROVIDER_URL: http://searxng:8080
+      # Single canonical connection URL (the one DB secret for the whole stack).
+      DATABASE_URL: ${DATABASE_URL}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      AGENT_IMAGE_TAG: ${AGENT_IMAGE_TAG}
     depends_on:
       postgres:
         condition: service_healthy
+    # default => Traefik can route to it; internal => it can reach shims and
+    # provision agent containers onto agent-runtime-internal (spec §4.7).
+    networks: ["default", "agent-runtime-internal"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`${PUBLIC_HOST}`) && (PathPrefix(`/v1`) || PathPrefix(`/admin`))"
+      - "traefik.http.routers.api.priority=10"          # higher than the SPA catch-all
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls=true"
+      - "traefik.http.routers.api.tls.certresolver=default"
+      - "traefik.http.services.api.loadbalancer.server.port=8443"
 
-  console:
-    build: ../web/console
+  connectors:
+    build:
+      context: ..
+      dockerfile: services/connectors/Dockerfile
+    image: agent-runtime/connectors:v0.1.0
+    command: ["uvicorn", "connectors.asgi:app", "--host", "0.0.0.0", "--port", "8090"]  # keep in sync with Dockerfile CMD; dev overlay adds --reload
     restart: unless-stopped
-    ports:
-      - "5173:80"
+    # No published ports — reached only via Traefik (spec §10).
+    environment:
+      # Connectors derives its DSN (same server/creds, "connectors" db) from
+      # DATABASE_URL in its entrypoint. Set CONNECTORS_DATABASE_URL to override.
+      DATABASE_URL: ${DATABASE_URL}
+      CONNECTORS_MASTER_KEY: ${CONNECTORS_MASTER_KEY}
+      CONTROL_PLANE_BASE_URL: http://control-plane:8443
+      CONNECTORS_PUBLIC_BASE_URL: ${CONNECTORS_PUBLIC_BASE_URL:-http://localhost:8090}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
     depends_on:
-      - control-plane
+      postgres:
+        condition: service_healthy
+      control-plane:
+        condition: service_started
+    # default => Traefik can route inbound webhooks to it, and it can reach
+    # postgres + control-plane (both on default); agent-runtime-internal =>
+    # mirrors control-plane's network set for consistency and allows future
+    # direct agent communication if needed (spec §10).
+    networks: ["default", "agent-runtime-internal"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.connectors.rule=Host(`${PUBLIC_HOST}`) && (PathPrefix(`/v1/webhooks`) || PathPrefix(`/v1/oauth`))"
+      - "traefik.http.routers.connectors.priority=20"         # beats control-plane's /v1 catch-all (priority=10)
+      - "traefik.http.routers.connectors.entrypoints=websecure"
+      - "traefik.http.routers.connectors.tls=true"
+      - "traefik.http.routers.connectors.tls.certresolver=default"
+      - "traefik.http.services.connectors.loadbalancer.server.port=8090"
+
+  web-console:
+    build: ../web/console
+    image: agent-runtime/web-console:dev
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.console.rule=Host(`localhost`)"
+      - "traefik.http.routers.console.priority=1"
+      - "traefik.http.services.console.loadbalancer.server.port=80"
+    networks:
+      - default
+
+  reverse-proxy:
+    image: traefik:v3
+    restart: unless-stopped
+    ports: ["443:443", "80:80"]
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"  # docker provider (read-only)
+      - "./traefik/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "letsencrypt:/letsencrypt"
+    depends_on: [control-plane]
+    networks: ["default"]
+
+# Networks are pinned to fixed names (not project-prefixed) so the control plane
+# can attach agent containers to the literal "agent-runtime-internal" in any
+# compose project. Consequence: do not run the dev and prod stacks on the same
+# host at once — they would share these network objects.
+networks:
+  agent-runtime-internal:
+    name: agent-runtime-internal
+    internal: true            # NO route to the public internet (the chokepoint)
+  # normal outbound; only proxy + searxng attach
+  agent-runtime-egress:
+    name: agent-runtime-egress
 
 volumes:
-  pgdata:
+  pgdata: {}
+  letsencrypt: {}
