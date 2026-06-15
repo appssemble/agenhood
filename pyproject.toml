@@ -1,43 +1,38 @@
-[project]
-name = "agenhood"
-version = "0.1.0"
-description = "Self-hosted infrastructure for running a fleet of sandboxed, long-lived AI agents."
-requires-python = ">=3.12"
-dependencies = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.29",
-    "pydantic>=2.6,<3",
-    "sqlalchemy[asyncio]>=2.0",
-    "alembic>=1.13",
-    "psycopg[binary]>=3.1",
-    "docker>=7.0",
-    "httpx>=0.27",
-    "cryptography>=42.0,<46",
-    "asyncpg>=0.29",
-    "pyjwt[crypto]>=2.8",
-]
-
-[project.optional-dependencies]
-dev = [
-    "ruff>=0.4",
-    "pytest>=8",
-    "pytest-asyncio>=0.23",
-]
-
-[tool.uv.workspace]
-members = ["packages/agentcore", "services/control_plane", "services/connectors"]
-
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["packages/agentcore", "services/control_plane", "services/connectors"]
+src = ["packages/agentcore", "services/shim", "services/control_plane", "services/connectors"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = [
+    "B008",     # FastAPI Depends() in defaults is idiomatic (used in later units)
+    "ASYNC230", # file tools use sync I/O in async fns intentionally (no trio/anyio)
+    "ASYNC240", # file tools use os.path in async fns intentionally (no trio/anyio)
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+plugins = ["pydantic.mypy"]
+mypy_path = "packages/agentcore:services/shim:services/control_plane:services/connectors"
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["testcontainers.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["docker.*", "asyncpg.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["packages/agentcore/tests", "services/control_plane/tests", "services/connectors/tests"]
+asyncio_mode = "auto"
+testpaths = ["packages/agentcore/tests", "services/shim/tests", "services/control_plane/tests", "services/connectors/tests"]
 markers = [
     "unit: fast tests with no external dependencies (default; run anywhere)",
     "integration: requires a running docker daemon",
 ]
+addopts = "-ra"
