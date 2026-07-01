@@ -42,8 +42,8 @@ Agenhood sits between **chat assistants** (ChatGPT, Claude) and **dev-agent CLIs
 - [Tech stack](#tech-stack)
 - [Quick start](#quick-start)
 - [Using the API](#using-the-api)
-- [Deployment](#deployment)
-- [Development](#development)
+- [Running Agenhood: development vs production](#running-agenhood-development-vs-production)
+- [Working on the code](#working-on-the-code)
 - [Project layout](#project-layout)
 - [Contributing](#contributing)
 - [Security](#security)
@@ -134,7 +134,7 @@ cd agenhood
 make dev
 ```
 
-`make dev` is turnkey: it builds the agent image, starts the stack, runs migrations, seeds a tenant, creates a login, and prints the URL.
+`make dev` is turnkey: it builds the agent image, starts the stack in **development mode** (hot reload, insecure local defaults — nothing to configure), runs migrations, seeds a tenant, creates a login, and prints the URL. For a real deployment, see [Running Agenhood: development vs production](#running-agenhood-development-vs-production).
 
 ```
 Console:  http://localhost:5173
@@ -165,21 +165,56 @@ curl -N http://localhost:5173/v1/containers/$AGENT_ID/tasks/$TASK_ID/events \
   -H "Authorization: Bearer tk_live_seedkey"
 ```
 
-## Deployment
+## Running Agenhood: development vs production
 
-Agenhood runs on **plain Docker on a single VM** — no Kubernetes, no orchestrator.
+Both modes are driven by a single `make` command that wraps Docker Compose. They differ in the env file they load, the service topology they bring up, and how you reach the console. **Both auto-build the agent image on first run and apply database migrations for you.**
+
+| | **Development** — `make dev` | **Production** — `make prod` |
+|---|---|---|
+| For | Trying it out & hacking locally | A real deployment on your VM |
+| Env file | `deploy/.env.dev` — committed, insecure defaults, **nothing to fill in** | `deploy/.env` — **you create it** from `.env.example` with real secrets |
+| Console | Vite dev server, hot reload — <http://localhost:5173> | Built SPA behind Traefik at `https://$PUBLIC_HOST` |
+| TLS & routing | None; plain HTTP on localhost | Traefik + Let's Encrypt; API on the same origin under `/v1` |
+| First login | Auto-seeded tenant + admin login | You provision it (admin/staff — no public signup) |
+| Reverse proxy / connectors | Not started | Traefik + `connectors` included |
+| Compose files | `docker-compose.yml` + `docker-compose.dev.yml` | `docker-compose.yml` |
+
+### Development (`make dev`)
+
+The fastest path — this is what [Quick start](#quick-start) runs.
 
 ```bash
-cp deploy/.env.example deploy/.env   # fill in real secrets
-make prod
+make dev     # first run: build agent image, start stack, seed a login, print the URL
+make logs    # tail dev logs
+make stop    # stop dev, keep data, clean up dangling agent containers
 ```
 
-The agent image ships in **two variants** — `full` (headless Chromium for JS-rendered web fetch) and `slim`. A [Coolify](https://coolify.io) deployment path is documented in [`deploy/COOLIFY.md`](deploy/COOLIFY.md), and the compose topology in [`deploy/`](deploy/).
+The control plane runs with `--reload` and the console is a hot-reloading Vite dev server on <http://localhost:5173> (it proxies `/v1` and `/admin` to the control plane). All secrets come from the committed `deploy/.env.dev` — **safe for local use only, never for production.** Add an **Anthropic API key** in **Settings → Credentials** before running tasks.
+
+### Production (`make prod`)
+
+Runs on **plain Docker on a single VM** — no Kubernetes, no orchestrator. The full stack comes up behind Traefik (TLS via Let's Encrypt) at your public host.
+
+```bash
+cp deploy/.env.example deploy/.env      # 1. create your env file
+#   2. fill in real secrets — every "change-me" must be replaced. Generator
+#      commands are inline in the file: CREDENTIAL_ENCRYPTION_KEY,
+#      CONNECTORS_MASTER_KEY, ADMIN_API_KEY, the DATABASE_URL password,
+#      SEARXNG_SECRET, and PUBLIC_HOST (your DNS name).
+make prod                               # 3. build + start the full stack
+make smoke                              # 4. optional: health & egress smoke checks
+```
+
+`make prod` refuses to start if `deploy/.env` is missing or still contains any `change-me` placeholder. Point your domain's DNS at the VM and open ports **80/443** so Traefik can obtain certificates; the console is then served at `https://$PUBLIC_HOST` with the API on the same origin under `/v1`. Stop with `make prod-stop` — data is preserved in the `pgdata` volume.
 
 > [!IMPORTANT]
 > Agenhood was built for a trusted, self-hosted deployment. Review the sandbox, egress, and credential settings against your own threat model before exposing it publicly. Accounts are provisioned by admins/staff — there is no public self-signup.
 
-## Development
+**More deploy detail:** compose topology and verification steps in [`deploy/README.md`](deploy/README.md), a managed [Coolify](https://coolify.io) path in [`deploy/COOLIFY.md`](deploy/COOLIFY.md), and VM sizing in [`deploy/SIZING.md`](deploy/SIZING.md). The agent image ships in **two variants** — `full` (headless Chromium for JS-rendered web fetch) and `slim`.
+
+## Working on the code
+
+Setup for contributing to Agenhood itself — linters, type checks, and tests. This is separate from *running* the app (above); you only need it when editing the source.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
@@ -198,6 +233,9 @@ cd web/console
 npm install
 npm run dev        # or: npm test / npm run typecheck / npm run lint / npm run build
 ```
+
+> [!TIP]
+> `npm run dev` here runs the console's Vite server standalone. To see it wired to a live backend, use `make dev` (which runs the same server against the full dev stack).
 
 ## Project layout
 
