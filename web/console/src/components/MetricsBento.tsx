@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { Icons } from "../ui/Icon";
 import { Sparkline } from "./Sparkline";
-import { Ring } from "./Ring";
 import { formatCompact } from "../lib/format";
 import type { KpiTotals } from "./KpiRow";
 import type { Container, ContainerStatus, UsageSeriesPoint } from "../api/types";
@@ -94,23 +93,26 @@ export function MetricsBento({
           <span><b className="num">{formatCompact(tokensOut)}</b> out</span>
         </div>
         <div className="hero-spark">
-          <Sparkline values={tokenSeries} height={56} stroke="var(--p-300)" fill="rgba(241,233,75,.14)" strokeWidth={2.25} />
+          <Sparkline values={tokenSeries} height={104} stroke="var(--p-300)" fill="rgba(241,233,75,.14)" strokeWidth={2.25} />
         </div>
       </div>
 
-      {/* Success rate ring */}
+      {/* Success rate */}
       <div className="tile">
         <span className="tile-label"><Icons.Check w={13} /> Success rate</span>
-        <div style={{ margin: "auto 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 11, paddingTop: 8 }}>
-          <Ring percent={successPct} size={94} stroke={10}
-            color={successPct !== null && successPct >= 0.5 ? "var(--success-500)" : "var(--p-500)"}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1 }}>
-              <span className="num" style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em" }}>{successLabel}</span>
-            </div>
-          </Ring>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>
-            <b className="num" style={{ color: "var(--ink)" }}>{completed}</b> of <span className="num">{totals.tasks.toLocaleString()}</span> completed
-          </div>
+        <div className="stat-num">{successLabel}</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+          <b className="num" style={{ color: "var(--ink)" }}>{completed}</b> of <span className="num">{totals.tasks.toLocaleString()}</span> completed
+        </div>
+        <div className="meter" aria-hidden>
+          {successPct !== null && (
+            <i
+              style={{
+                width: `${Math.max(0, Math.min(1, successPct)) * 100}%`,
+                background: successPct >= 0.5 ? "var(--success-500)" : "var(--p-500)",
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -138,9 +140,9 @@ export function MetricsBento({
       <div className="tile">
         <div className="tile-top">
           <span className="tile-label"><Icons.Container w={13} /> Fleet</span>
-          <span className="row-meta" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
-            <i style={{ width: 6, height: 6, borderRadius: "50%", background: running > 0 ? "var(--p-400)" : "var(--muted-2)", display: "inline-block" }} />
-            <b className="num" style={{ color: "var(--ink)" }}>{running}</b> live
+          <span className="tile-meta">
+            <i className="dot" style={{ background: running > 0 ? "var(--p-400)" : "var(--muted-2)" }} />
+            <b className="num">{running}</b> live
           </span>
         </div>
         <div className="stat-num" style={{ marginBottom: 8 }}>{containers.length}</div>

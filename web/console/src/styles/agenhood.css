@@ -253,6 +253,14 @@ kbd{
 .bento .tile:nth-child(5){ animation-delay: 180ms; }
 
 .tile-top{ display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Small right-aligned meta in a tile header (e.g. Fleet "N live"): dot + value,
+   vertically centred, spaced, and sized down from the tile's body text. */
+.tile-top .tile-meta{
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  font-size: 11.5px; color: var(--muted); white-space: nowrap;
+}
+.tile-top .tile-meta .dot{ width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+.tile-top .tile-meta b{ color: var(--ink); font-weight: 700; }
 .tile-label{
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
@@ -260,6 +268,15 @@ kbd{
 }
 .tile .stat-num{ font-size: 30px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 8px; }
 .tile-spark{ margin-top: auto; padding-top: 12px; }
+/* Linear progress meter (success rate) — bottom-anchored like the tiles' spark. */
+.tile .meter{
+  margin-top: auto; height: 8px; border-radius: 999px; overflow: hidden;
+  background: var(--surface-3);
+}
+.tile .meter > i{
+  display: block; height: 100%; border-radius: 999px;
+  transition: width .6s cubic-bezier(.22,1,.36,1);
+}
 
 /* hero tile (total tokens) */
 .bento .tile-hero{
@@ -274,7 +291,10 @@ kbd{
 }
 .tile-hero .hero-sub{ display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 12.5px; color: rgba(255,255,255,.7); }
 .tile-hero .hero-sub b{ color: #fff; font-weight: 700; }
-.tile-hero .hero-spark{ margin: auto -20px -20px; padding-top: 16px; }
+/* Footer chart: anchored to the bottom of the tall hero and inset to the card's
+   padding on all sides (matching the smaller tiles' `.tile-spark`), so it has
+   even left/right margins and clears the bottom border instead of being cramped. */
+.tile-hero .hero-spark{ margin-top: auto; padding-top: 16px; }
 
 /* fleet segmented bar */
 .fleet-bar{ display: flex; gap: 2px; height: 8px; border-radius: 999px; overflow: hidden; }
