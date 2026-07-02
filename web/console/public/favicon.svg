@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <rect width="240" height="240" rx="54" fill="#F1E94B"/>
+  <g transform="translate(45.7 67.3) scale(0.958)">
+    <defs>
+      <mask id="gap" maskUnits="userSpaceOnUse" x="0" y="0" width="155" height="110">
+        <rect x="0" y="0" width="155" height="110" fill="#fff"/>
+        <circle cx="100" cy="55" r="44" fill="none" stroke="#000" stroke-width="36"/>
+      </mask>
+    </defs>
+    <circle cx="44" cy="55" r="44" fill="#0A0A0A" mask="url(#gap)"/>
+    <circle cx="100" cy="55" r="44" fill="none" stroke="#0A0A0A" stroke-width="22"/>
+  </g>
+</svg>
