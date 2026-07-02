@@ -1857,6 +1857,15 @@ table.tbl{ width: 100%; border-collapse: separate; border-spacing: 0; font-size:
 .fc-ctxbar-center{
   position: absolute; left: 50%; transform: translateX(-50%);
   display: inline-flex; align-items: center; gap: 10px;
+  /* This cluster's centering `transform` makes it a stacking context, which
+     traps the tenant switcher menu inside it. Without a z-index here the cluster
+     is a `z-index:auto` context that paints in DOM order below later page
+     content that also forms a stacking context (e.g. transform-animated
+     dashboard tiles) — so the dropdown would render *under* that content. Give
+     it an explicit z-index so the menu always sits above page content. Kept
+     below the app's overlays/modals (z-index ≥ 50) so those still cover it, and
+     it doesn't overlap the panel-collapse toggle, which stays clickable. */
+  z-index: 40;
 }
 /* The search bar centers itself when standalone; inside the cluster the cluster
    handles centering, so neutralize its own absolute positioning. */
