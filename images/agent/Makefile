@@ -1,5 +1,5 @@
 # images/agent/Makefile
-VERSION  ?= v0.2.0
+VERSION  ?= 1.0.0
 REGISTRY ?=
 IMAGE    := $(REGISTRY)agent-runtime
 # Build context is the monorepo root (two levels up from this Makefile).

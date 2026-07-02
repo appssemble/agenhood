@@ -17,7 +17,7 @@ committed, insecure `deploy/.env.dev`.
 ## Prerequisites
 
 - Docker + docker compose v2.
-- The agent image built (Unit 1): `make image` → `agent-runtime:v0.1.0`.
+- The agent image built (Unit 1): `make image` → `agent-runtime:1.0.0`.
 - **After bumping the agent image / opencode version**, regenerate and commit the
   model catalog: `make models-catalog` (Docker required; set
   `MODELS_CATALOG_CODEX_AUTH=/path/to/codex-auth.json` to include OpenAI

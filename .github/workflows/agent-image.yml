@@ -3,8 +3,8 @@ name: agent-image
 # Build + push the runtime-provisioned agent base image (NOT a compose service)
 # multi-arch. Driven by GitHub Releases so image publishes are explicit;
 # workflow_dispatch is kept for manual/ad-hoc rebuilds. The image tag is the
-# release tag (a leading "agent-" is stripped), e.g. a release tagged "v0.3.0"
-# -> ghcr.io/<owner>/agent-runtime:v0.3.0.
+# release tag (a leading "agent-" is stripped), e.g. a release tagged "1.0.0"
+# -> ghcr.io/<owner>/agent-runtime:1.0.0.
 #
 # Default target is GitHub Container Registry (GHCR), which works with no extra
 # setup: the built-in GITHUB_TOKEN authenticates and `packages: write` below
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Image version, e.g. v0.3.0"
+        description: "Image version, e.g. 1.0.0"
         required: true
 
 permissions:
