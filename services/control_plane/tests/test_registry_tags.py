@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import pytest
 
 import control_plane.registry as registry
@@ -78,3 +79,88 @@ async def test_local_only_no_registry_call(monkeypatch) -> None:
     assert out["registry_unavailable"] is False
     assert {t["tag"] for t in out["tags"]} == {"dev", "custom"}
     assert all(t["source"] == "local" for t in out["tags"])
+
+
+def test_tags_list_url_bare_host() -> None:
+    # Self-hosted registry: the whole value is the host, repo directly under /v2/.
+    assert (
+        registry._tags_list_url("registry.example.com")
+        == "https://registry.example.com/v2/agent-runtime/tags/list"
+    )
+
+
+def test_tags_list_url_host_with_namespace() -> None:
+    # GHCR: only "ghcr.io" is the host; "appssemble" is the repo namespace and
+    # must land AFTER /v2/, not before it.
+    assert (
+        registry._tags_list_url("ghcr.io/appssemble")
+        == "https://ghcr.io/v2/appssemble/agent-runtime/tags/list"
+    )
+
+
+def test_parse_bearer_challenge() -> None:
+    header = 'Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:appssemble/agent-runtime:pull"'
+    assert registry._parse_bearer_challenge(header) == {
+        "realm": "https://ghcr.io/token",
+        "service": "ghcr.io",
+        "scope": "repository:appssemble/agent-runtime:pull",
+    }
+    # Non-Bearer challenges (e.g. Basic) yield no params.
+    assert registry._parse_bearer_challenge('Basic realm="x"') == {}
+
+
+@pytest.mark.asyncio
+async def test_registry_tags_honors_ghcr_bearer_challenge(monkeypatch) -> None:
+    """A GHCR-style 401 Bearer challenge is exchanged for an anonymous token and
+    the tags/list call is retried with it."""
+    calls: list[tuple[str, dict, tuple | None]] = []
+
+    class _Resp:
+        def __init__(self, status: int, *, headers=None, json_body=None) -> None:
+            self.status_code = status
+            self.headers = headers or {}
+            self._json = json_body or {}
+
+        def json(self):
+            return self._json
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise httpx.HTTPStatusError("err", request=None, response=None)
+
+    class _FakeClient:
+        def __init__(self, *a, **k) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, *, params=None, auth=None, headers=None):
+            calls.append((url, params or {}, auth))
+            if url.endswith("/tags/list") and not (headers or {}).get("Authorization"):
+                return _Resp(
+                    401,
+                    headers={
+                        "www-authenticate": 'Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:appssemble/agent-runtime:pull"'
+                    },
+                )
+            if url == "https://ghcr.io/token":
+                return _Resp(200, json_body={"token": "anon-tok"})
+            # Retried tags/list with the bearer token.
+            return _Resp(200, json_body={"tags": ["1.0.0", "1.0.0-full"]})
+
+    monkeypatch.setattr(registry.httpx, "AsyncClient", _FakeClient)
+    tags = await registry._registry_tags(_settings(agent_registry="ghcr.io/appssemble"))
+    assert tags == ["1.0.0", "1.0.0-full"]
+
+    # Anonymous public flow: no basic auth was sent to the token endpoint, and
+    # the challenge's service/scope were forwarded.
+    token_call = next(c for c in calls if c[0] == "https://ghcr.io/token")
+    assert token_call[2] is None
+    assert token_call[1] == {
+        "service": "ghcr.io",
+        "scope": "repository:appssemble/agent-runtime:pull",
+    }
