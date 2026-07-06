@@ -123,3 +123,36 @@ def test_result_error_message():
     assert result_error({"type": "result", "is_error": True, "result": "boom"}) == "boom"
     assert result_error({"type": "result", "subtype": "success", "is_error": False}) is None
     assert result_error({"type": "assistant"}) is None
+
+
+def test_build_command_with_resume_session_id():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(workspace="/ws", model="claude-opus-4-8", resume_session_id="sess-abc")
+    assert cmd == [
+        "claude", "-p", "--output-format", "stream-json", "--verbose",
+        "--model", "claude-opus-4-8", "--dangerously-skip-permissions",
+        "-r", "sess-abc",
+    ]
+
+
+def test_build_command_without_resume_session_id_unchanged():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(workspace="/ws", model="claude-opus-4-8")
+    assert "-r" not in cmd
+
+
+def test_event_session_id_extracts_field():
+    from agentcore.drivers.claude_code import event_session_id
+
+    assert event_session_id({"type": "system", "subtype": "init", "session_id": "abc-123"}) == "abc-123"
+    assert event_session_id({"type": "assistant", "session_id": "abc-123"}) == "abc-123"
+
+
+def test_event_session_id_missing_returns_none():
+    from agentcore.drivers.claude_code import event_session_id
+
+    assert event_session_id({"type": "assistant"}) is None
+    assert event_session_id({"session_id": ""}) is None
+    assert event_session_id({"session_id": 123}) is None

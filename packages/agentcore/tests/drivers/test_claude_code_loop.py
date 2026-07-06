@@ -67,7 +67,9 @@ def patch_proc(monkeypatch, proc):
         return proc
 
     monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
-    monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)
+    # ensure_agent_dir is left real (not stubbed): it's a plain os.makedirs in
+    # non-root test environments, and session_state.write_session_state relies
+    # on it to actually create the on-disk sessions/ dir on a session's first turn.
 
 
 @pytest.mark.asyncio
@@ -354,3 +356,110 @@ async def test_run_mcp_error_is_best_effort(monkeypatch, tmp_path):
     assert result.success is True
     assert "--mcp-config" not in captured["argv"]
     assert any(p.get("message") == "mcp_error" for _, p in events)
+
+
+@pytest.mark.asyncio
+async def test_claude_session_first_turn_writes_state_file(monkeypatch, tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    lines = [
+        '{"type":"system","subtype":"init","session_id":"claude-sess-1"}',
+        '{"type":"result","subtype":"success","result":"hi","usage":{"input_tokens":5,"output_tokens":2}}',
+    ]
+    proc = FakeProc(lines, returncode=0)
+    patch_proc(monkeypatch, proc)
+
+    driver = ClaudeCodeDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="hello"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), session_id="sess-1", session_is_continuation=False,
+    )
+
+    assert result.success is True
+    from agentcore.drivers.session_state import read_session_state
+    assert read_session_state(str(tmp_path), "claude-code", "sess-1") == {
+        "claude_session_id": "claude-sess-1"
+    }
+
+
+@pytest.mark.asyncio
+async def test_claude_session_continuation_passes_resume_flag(monkeypatch, tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+    from agentcore.drivers.session_state import write_session_state
+
+    write_session_state(str(tmp_path), "claude-code", "sess-2", {"claude_session_id": "claude-sess-1"})
+
+    captured_cmd = {}
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        captured_cmd["argv"] = argv
+        proc = FakeProc(
+            ['{"type":"result","subtype":"success","result":"ok","session_id":"claude-sess-1",'
+             '"usage":{"input_tokens":1,"output_tokens":1}}'],
+            returncode=0,
+        )
+        return proc
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)
+
+    driver = ClaudeCodeDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="continue"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), session_id="sess-2", session_is_continuation=True,
+    )
+
+    assert result.success is True
+    assert "-r" in captured_cmd["argv"]
+    assert captured_cmd["argv"][captured_cmd["argv"].index("-r") + 1] == "claude-sess-1"
+
+
+@pytest.mark.asyncio
+async def test_claude_session_missing_state_fails_fast(tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    driver = ClaudeCodeDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="hi"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), session_id="sess-missing", session_is_continuation=True,
+    )
+
+    assert result.success is False
+    assert result.reason == "session_state_lost"
+
+
+@pytest.mark.asyncio
+async def test_claude_no_session_id_unchanged(monkeypatch, tmp_path):
+    """Omitting session_id must behave exactly like today: no state file, no -r flag."""
+    import os
+
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    captured_cmd = {}
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        captured_cmd["argv"] = argv
+        return FakeProc(
+            ['{"type":"result","subtype":"success","result":"ok","usage":{"input_tokens":1,"output_tokens":1}}'],
+            returncode=0,
+        )
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)
+
+    driver = ClaudeCodeDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="hi"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert "-r" not in captured_cmd["argv"]
+    assert not os.path.isdir(os.path.join(str(tmp_path), ".agent-state", "claude-code", "sessions"))

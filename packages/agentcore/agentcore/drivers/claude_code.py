@@ -31,6 +31,7 @@ from agentcore.drivers.base import (
 )
 from agentcore.drivers.cli_stream import classify_json_line
 from agentcore.drivers.mcp_config import render_claude_mcp_json
+from agentcore.drivers.session_state import read_session_state, write_session_state
 from agentcore.drivers.skills_md import write_skills
 from agentcore.models import (
     AgentConfig,
@@ -65,7 +66,11 @@ def mcp_config_path(workspace: str) -> str:
 
 
 def build_command(
-    *, workspace: str, model: str, mcp_config: str | None = None
+    *,
+    workspace: str,
+    model: str,
+    mcp_config: str | None = None,
+    resume_session_id: str | None = None,
 ) -> list[str]:
     """Build the ``claude -p`` invocation (prompt is fed on stdin)."""
     cmd = [
@@ -78,6 +83,8 @@ def build_command(
         model,
         "--dangerously-skip-permissions",
     ]
+    if resume_session_id:
+        cmd += ["-r", resume_session_id]
     if mcp_config:
         cmd += ["--strict-mcp-config", "--mcp-config", mcp_config]
     return cmd
@@ -153,6 +160,17 @@ def result_error(event: dict[str, Any]) -> str | None:
     return None
 
 
+def event_session_id(event: dict[str, Any]) -> str | None:
+    """The claude session id carried on every stream-json event line, else None.
+
+    Verified against the locally installed claude CLI: every event type
+    (system/init, assistant, result, rate_limit_event, ...) carries a
+    top-level ``session_id`` string.
+    """
+    sid = event.get("session_id")
+    return sid if isinstance(sid, str) and sid else None
+
+
 _CLAUDE_PROMPT = (
     "You are Claude Code, an autonomous coding agent. Complete the task in the "
     "workspace and report concisely when finished."
@@ -192,6 +210,52 @@ class ClaudeCodeDriver:
         workspace: str = "/workspace",
         skills: list[ShimSkill] | None = None,
         mcp_servers: list[ShimMcpServer] | None = None,
+        session_id: str | None = None,
+        session_is_continuation: bool = False,
+    ) -> TaskResult:
+        resume_session_id: str | None = None
+        if session_id is not None and session_is_continuation:
+            state = read_session_state(workspace, self.name, session_id)
+            if state is None:
+                await emit(
+                    "status_change",
+                    {"from": "running", "to": "failed", "result": None,
+                     "error": {"code": "session_state_lost",
+                               "message": "session state file missing"}},
+                )
+                return TaskResult(success=False, reason="session_state_lost")
+            resume_session_id = state.get("claude_session_id")
+
+        latest_session_id: dict[str, str | None] = {"id": resume_session_id}
+        result = await self._run_claude(
+            task=task, config=config, limits=limits, credential=credential, emit=emit,
+            cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
+            workspace=workspace, skills=skills, mcp_servers=mcp_servers,
+            resume_session_id=resume_session_id, latest_session_id=latest_session_id,
+        )
+        if session_id is not None and latest_session_id["id"]:
+            write_session_state(
+                workspace, self.name, session_id,
+                {"claude_session_id": latest_session_id["id"]},
+            )
+        return result
+
+    async def _run_claude(
+        self,
+        *,
+        task: TaskBody,
+        config: AgentConfig,
+        limits: ResolvedLimits,
+        credential: str,
+        emit: EmitFn,
+        cancel: asyncio.Event,
+        credential_kind: str,
+        credential_meta: dict[str, Any] | None,
+        workspace: str,
+        skills: list[ShimSkill] | None,
+        mcp_servers: list[ShimMcpServer] | None,
+        resume_session_id: str | None,
+        latest_session_id: dict[str, str | None],
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
@@ -235,7 +299,8 @@ class ClaudeCodeDriver:
                                    "data": {"error": str(exc)}})
 
         cmd = build_command(
-            workspace=workspace, model=model_arg(config.model), mcp_config=mcp_path
+            workspace=workspace, model=model_arg(config.model), mcp_config=mcp_path,
+            resume_session_id=resume_session_id,
         )
         env = build_env(
             sandbox.build_child_env(),
@@ -320,6 +385,9 @@ class ClaudeCodeDriver:
                 if kind == "event":
                     assert isinstance(value, dict)
                     await emit("claude_event", {"raw": value})
+                    sid = event_session_id(value)
+                    if sid:
+                        latest_session_id["id"] = sid
                     text = result_text(value)
                     if text is not None:
                         last_text = text
