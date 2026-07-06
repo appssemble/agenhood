@@ -43,6 +43,7 @@ from agentcore.drivers.base import (
 )
 from agentcore.drivers.cli_stream import classify_json_line, log_payload
 from agentcore.drivers.mcp_config import render_opencode_mcp
+from agentcore.drivers.session_state import read_session_state, write_session_state
 from agentcore.drivers.skills_md import write_skills
 from agentcore.models import (
     AgentConfig,
@@ -161,9 +162,22 @@ def event_tokens(event: dict[str, object]) -> tuple[int, int] | None:
     return _coerce_token_pair(tokens.get("input"), tokens.get("output"))
 
 
-def build_command(*, workspace: str, model_ref: str, prompt: str) -> list[str]:
+def event_session_id(event: dict[str, object]) -> str | None:
+    """opencode's own session id, else None.
+
+    Verified against opencode's documented ``run --format json`` schema: every
+    event type (text, tool_use, step_start, step_finish, error) carries a
+    top-level ``sessionID`` field in the form ``ses_XXXXXXXXXXXXXXXXXXXX``.
+    """
+    sid = event.get("sessionID")
+    return sid if isinstance(sid, str) and sid else None
+
+
+def build_command(
+    *, workspace: str, model_ref: str, prompt: str, resume_session_id: str | None = None
+) -> list[str]:
     """Build the opencode 1.x CLI invocation (verified against opencode-ai@1.15.13)."""
-    return [
+    cmd = [
         "opencode",
         "run",
         "--dir",
@@ -173,9 +187,11 @@ def build_command(*, workspace: str, model_ref: str, prompt: str) -> list[str]:
         "-m",
         model_ref,
         "--dangerously-skip-permissions",
-        "--",
-        prompt,
     ]
+    if resume_session_id:
+        cmd += ["-s", resume_session_id]
+    cmd += ["--", prompt]
+    return cmd
 
 
 def build_env(
@@ -336,6 +352,52 @@ class OpencodeDriver:
         workspace: str = "/workspace",
         skills: list[ShimSkill] | None = None,
         mcp_servers: list[ShimMcpServer] | None = None,
+        session_id: str | None = None,
+        session_is_continuation: bool = False,
+    ) -> TaskResult:
+        resume_session_id: str | None = None
+        if session_id is not None and session_is_continuation:
+            state = read_session_state(workspace, self.name, session_id)
+            if state is None:
+                await emit(
+                    "status_change",
+                    {"from": "running", "to": "failed", "result": None,
+                     "error": {"code": "session_state_lost",
+                               "message": "session state file missing"}},
+                )
+                return TaskResult(success=False, reason="session_state_lost")
+            resume_session_id = state.get("opencode_session_id")
+
+        latest_session_id: dict[str, str | None] = {"id": resume_session_id}
+        result = await self._run_opencode(
+            task=task, config=config, limits=limits, credential=credential, emit=emit,
+            cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
+            workspace=workspace, skills=skills, mcp_servers=mcp_servers,
+            resume_session_id=resume_session_id, latest_session_id=latest_session_id,
+        )
+        if session_id is not None and latest_session_id["id"]:
+            write_session_state(
+                workspace, self.name, session_id,
+                {"opencode_session_id": latest_session_id["id"]},
+            )
+        return result
+
+    async def _run_opencode(
+        self,
+        *,
+        task: TaskBody,
+        config: AgentConfig,
+        limits: ResolvedLimits,
+        credential: str,
+        emit: EmitFn,
+        cancel: asyncio.Event,
+        credential_kind: str,
+        credential_meta: dict[str, Any] | None,
+        workspace: str,
+        skills: list[ShimSkill] | None,
+        mcp_servers: list[ShimMcpServer] | None,
+        resume_session_id: str | None,
+        latest_session_id: dict[str, str | None],
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
@@ -346,7 +408,8 @@ class OpencodeDriver:
 
         provider = provider_for_model(config.model)
         cmd = build_command(
-            workspace=workspace, model_ref=model_ref(config.model), prompt=task.prompt
+            workspace=workspace, model_ref=model_ref(config.model), prompt=task.prompt,
+            resume_session_id=resume_session_id,
         )
         env = build_env(
             sandbox.build_child_env(),
@@ -503,6 +566,9 @@ class OpencodeDriver:
                 if kind == "event":
                     assert isinstance(value, dict)
                     await emit("opencode_event", {"raw": value})
+                    sid = event_session_id(value)
+                    if sid:
+                        latest_session_id["id"] = sid
                     text = event_text(value)
                     if text is not None:
                         last_text = text
