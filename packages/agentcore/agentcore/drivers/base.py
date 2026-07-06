@@ -81,6 +81,8 @@ class Driver(Protocol):
         workspace: str = "/workspace",  # index §11.1
         skills: list[ShimSkill] | None = None,
         mcp_servers: list[Any] | None = None,
+        session_id: str | None = None,
+        session_is_continuation: bool = False,
     ) -> TaskResult: ...
 
 

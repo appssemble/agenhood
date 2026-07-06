@@ -19,6 +19,7 @@ from agentcore.drivers.base import (
     EmitFn,
     register,
 )
+from agentcore.drivers.session_state import read_session_state, write_session_state
 from agentcore.llm.base import LLMClient
 from agentcore.models import AgentConfig, ResolvedLimits, TaskBody, TaskResult
 from agentcore.tools.base import TOOLS, ToolContext, ToolSpec
@@ -177,6 +178,8 @@ class VanillaDriver:
         workspace: str = "/workspace",
         skills: list[Any] | None = None,  # opencode-only; ignored here
         mcp_servers: list[Any] | None = None,  # opencode/codex-only; ignored here
+        session_id: str | None = None,
+        session_is_continuation: bool = False,
     ) -> TaskResult:
         from agentcore.prompt import assemble_system_prompt
 
@@ -193,7 +196,20 @@ class VanillaDriver:
         anthropic_tools = [_tool_spec_to_anthropic(s) for s in specs]
         tool_ctx = ToolContext(workspace=workspace, cancel=cancel)
 
-        messages: list[dict[str, Any]] = [{"role": "user", "content": task.prompt}]
+        if session_id is not None and session_is_continuation:
+            state = read_session_state(workspace, self.name, session_id)
+            if state is None:
+                await emit(
+                    "status_change",
+                    {"from": "running", "to": "failed", "result": None,
+                     "error": {"code": "session_state_lost",
+                               "message": "session state file missing"}},
+                )
+                return TaskResult(success=False, reason="session_state_lost")
+            messages: list[dict[str, Any]] = list(state.get("messages", []))
+            messages.append({"role": "user", "content": task.prompt})
+        else:
+            messages = [{"role": "user", "content": task.prompt}]
         iterations = 0
         tokens_in = 0
         tokens_out = 0
@@ -207,6 +223,8 @@ class VanillaDriver:
             err: dict[str, Any] | None = (
                 {"code": code, "message": code} if code else None
             )
+            if session_id is not None:
+                write_session_state(workspace, self.name, session_id, {"messages": messages})
             await emit(
                 "status_change",
                 {"from": "running", "to": to, "result": output, "error": err},

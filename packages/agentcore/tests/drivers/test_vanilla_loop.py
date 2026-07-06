@@ -299,3 +299,127 @@ def test_vanilla_capabilities_and_template():
     assert d.capabilities.requires_image_feature is None
     assert d.default_template.driver == "vanilla"
     assert d.default_template.tools_user_editable is True
+
+
+@pytest.mark.asyncio
+async def test_vanilla_session_first_turn_writes_state_file(tmp_path):
+    from agentcore.drivers.session_state import read_session_state
+    from agentcore.drivers.vanilla import VanillaDriver
+    from agentcore.llm.base import LLMResponse
+
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "tu1", "name": "done",
+                      "input": {"success": True, "output": "done"}}],
+            tokens_in=5, tokens_out=2, stop_reason="tool_use",
+        ),
+    ])
+    driver = VanillaDriver(llm=llm)
+    events, emit = collector()
+    cancel = asyncio.Event()
+
+    result = await driver.run(
+        task=TaskBody(prompt="hello"),
+        config=AgentConfig(driver="vanilla", model="m-test"),
+        limits=ResolvedLimits(max_iterations=5, max_tokens=100_000, timeout_seconds=30),
+        credential="cred", emit=emit, cancel=cancel,
+        workspace=str(tmp_path), session_id="sess-1", session_is_continuation=False,
+    )
+
+    assert result.success is True
+    state = read_session_state(str(tmp_path), "vanilla", "sess-1")
+    assert state is not None
+    assert state["messages"][0] == {"role": "user", "content": "hello"}
+
+
+@pytest.mark.asyncio
+async def test_vanilla_session_continuation_seeds_prior_messages(tmp_path):
+    from agentcore.drivers.session_state import write_session_state
+    from agentcore.drivers.vanilla import VanillaDriver
+    from agentcore.llm.base import LLMResponse
+
+    prior = [
+        {"role": "user", "content": "what is 2+2"},
+        {"role": "assistant", "content": [{"type": "text", "text": "4"}]},
+    ]
+    write_session_state(str(tmp_path), "vanilla", "sess-2", {"messages": prior})
+
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "tu1", "name": "done",
+                      "input": {"success": True, "output": "done"}}],
+            tokens_in=5, tokens_out=2, stop_reason="tool_use",
+        ),
+    ])
+    driver = VanillaDriver(llm=llm)
+    events, emit = collector()
+    cancel = asyncio.Event()
+
+    await driver.run(
+        task=TaskBody(prompt="and 3+3?"),
+        config=AgentConfig(driver="vanilla", model="m-test"),
+        limits=ResolvedLimits(max_iterations=5, max_tokens=100_000, timeout_seconds=30),
+        credential="cred", emit=emit, cancel=cancel,
+        workspace=str(tmp_path), session_id="sess-2", session_is_continuation=True,
+    )
+
+    # The LLM's first call must have seen the full prior transcript + new prompt.
+    sent = llm.calls[0]["messages"]
+    assert sent[0] == prior[0]
+    assert sent[1] == prior[1]
+    assert sent[2] == {"role": "user", "content": "and 3+3?"}
+
+
+@pytest.mark.asyncio
+async def test_vanilla_session_missing_state_fails_fast(tmp_path):
+    from agentcore.drivers.vanilla import VanillaDriver
+    from agentcore.llm.base import LLMResponse
+
+    llm = ScriptedLLM([LLMResponse(content=[], tokens_in=0, tokens_out=0, stop_reason="end_turn")])
+    driver = VanillaDriver(llm=llm)
+    events, emit = collector()
+    cancel = asyncio.Event()
+
+    result = await driver.run(
+        task=TaskBody(prompt="hi"),
+        config=AgentConfig(driver="vanilla", model="m-test"),
+        limits=ResolvedLimits(max_iterations=5, max_tokens=100_000, timeout_seconds=30),
+        credential="cred", emit=emit, cancel=cancel,
+        workspace=str(tmp_path), session_id="sess-missing", session_is_continuation=True,
+    )
+
+    assert result.success is False
+    assert result.reason == "session_state_lost"
+    assert llm.calls == []  # the LLM must never be called
+    assert ("status_change", {"from": "running", "to": "failed", "result": None,
+             "error": {"code": "session_state_lost", "message": "session state file missing"}}) in events
+
+
+@pytest.mark.asyncio
+async def test_vanilla_no_session_id_unchanged(tmp_path):
+    """Omitting session_id must behave exactly like today: no state file written."""
+    import os
+
+    from agentcore.drivers.vanilla import VanillaDriver
+    from agentcore.llm.base import LLMResponse
+
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "tu1", "name": "done",
+                      "input": {"success": True, "output": "done"}}],
+            tokens_in=5, tokens_out=2, stop_reason="tool_use",
+        ),
+    ])
+    driver = VanillaDriver(llm=llm)
+    events, emit = collector()
+    cancel = asyncio.Event()
+
+    result = await driver.run(
+        task=TaskBody(prompt="hello"),
+        config=AgentConfig(driver="vanilla", model="m-test"),
+        limits=ResolvedLimits(max_iterations=5, max_tokens=100_000, timeout_seconds=30),
+        credential="cred", emit=emit, cancel=cancel, workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert not os.path.isdir(os.path.join(str(tmp_path), ".agent-state", "vanilla", "sessions"))
