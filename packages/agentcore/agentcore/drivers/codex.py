@@ -45,6 +45,7 @@ from agentcore.drivers.base import (
 )
 from agentcore.drivers.cli_stream import classify_json_line, log_payload
 from agentcore.drivers.mcp_config import codex_mcp_env, render_codex_mcp_toml
+from agentcore.drivers.session_state import read_session_state, write_session_state
 from agentcore.drivers.skills_md import write_skills
 from agentcore.models import (
     AgentConfig,
@@ -100,20 +101,34 @@ def skills_dir(workspace: str) -> str:
     return str(Path(codex_home(workspace)) / ".agents" / "skills")
 
 
-def build_command(*, workspace: str, model: str) -> list[str]:
-    """Build the ``codex exec`` invocation (prompt is fed on stdin via ``-``)."""
+def build_command(*, workspace: str, model: str, ephemeral: bool = True) -> list[str]:
+    """Build the ``codex exec`` invocation (prompt is fed on stdin via ``-``).
+
+    ``ephemeral=False`` drops ``--ephemeral`` so the rollout file persists,
+    used for the first turn of a session (driver-sessions spec §4).
+    """
+    cmd = ["codex", "exec", "--json", "--skip-git-repo-check"]
+    if ephemeral:
+        cmd.append("--ephemeral")
+    cmd += [
+        "-C", workspace, "-m", model,
+        "--dangerously-bypass-approvals-and-sandbox", "-",
+    ]
+    return cmd
+
+
+def build_resume_command(*, model: str, thread_id: str) -> list[str]:
+    """Build ``codex exec resume`` (continuing a prior session).
+
+    Verified live against the installed codex CLI: the ``resume`` subcommand
+    has no ``-C``/``--ephemeral`` flags — the resumed session's original
+    working directory and on-disk persistence are implicit. The subprocess's
+    own ``cwd=`` (set by the caller) still controls the actual process cwd.
+    """
     return [
-        "codex",
-        "exec",
-        "--json",
-        "--skip-git-repo-check",
-        "--ephemeral",
-        "-C",
-        workspace,
-        "-m",
-        model,
-        "--dangerously-bypass-approvals-and-sandbox",
-        "-",
+        "codex", "exec", "resume", "--json", "--skip-git-repo-check",
+        "-m", model, "--dangerously-bypass-approvals-and-sandbox",
+        thread_id, "-",
     ]
 
 
@@ -227,6 +242,14 @@ def event_error(event: dict[str, object]) -> str | None:
     return None
 
 
+def event_thread_id(event: dict[str, object]) -> str | None:
+    """The codex thread/session id from a ``thread.started`` event, else None."""
+    if event.get("type") != "thread.started":
+        return None
+    tid = event.get("thread_id")
+    return tid if isinstance(tid, str) and tid else None
+
+
 _CODEX_PROMPT = (
     "You are an autonomous coding agent (codex). Complete the task in the "
     "workspace and report concisely when finished."
@@ -266,6 +289,53 @@ class CodexDriver:
         workspace: str = "/workspace",
         skills: list[ShimSkill] | None = None,
         mcp_servers: list[ShimMcpServer] | None = None,
+        session_id: str | None = None,
+        session_is_continuation: bool = False,
+    ) -> TaskResult:
+        resume_thread_id: str | None = None
+        if session_id is not None and session_is_continuation:
+            state = read_session_state(workspace, self.name, session_id)
+            if state is None:
+                await emit(
+                    "status_change",
+                    {"from": "running", "to": "failed", "result": None,
+                     "error": {"code": "session_state_lost",
+                               "message": "session state file missing"}},
+                )
+                return TaskResult(success=False, reason="session_state_lost")
+            resume_thread_id = state.get("thread_id")
+
+        latest_thread_id: dict[str, str | None] = {"id": resume_thread_id}
+        result = await self._run_codex(
+            task=task, config=config, limits=limits, credential=credential, emit=emit,
+            cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
+            workspace=workspace, skills=skills, mcp_servers=mcp_servers,
+            session_id=session_id, resume_thread_id=resume_thread_id,
+            latest_thread_id=latest_thread_id,
+        )
+        if session_id is not None and latest_thread_id["id"]:
+            write_session_state(
+                workspace, self.name, session_id, {"thread_id": latest_thread_id["id"]}
+            )
+        return result
+
+    async def _run_codex(
+        self,
+        *,
+        task: TaskBody,
+        config: AgentConfig,
+        limits: ResolvedLimits,
+        credential: str,
+        emit: EmitFn,
+        cancel: asyncio.Event,
+        credential_kind: str,
+        credential_meta: dict[str, Any] | None,
+        workspace: str,
+        skills: list[ShimSkill] | None,
+        mcp_servers: list[ShimMcpServer] | None,
+        session_id: str | None,
+        resume_thread_id: str | None,
+        latest_thread_id: dict[str, str | None],
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
@@ -276,7 +346,13 @@ class CodexDriver:
 
         home = codex_home(workspace)
         sandbox.ensure_agent_dir(home)
-        cmd = build_command(workspace=workspace, model=model_arg(config.model))
+        if resume_thread_id:
+            cmd = build_resume_command(model=model_arg(config.model), thread_id=resume_thread_id)
+        else:
+            cmd = build_command(
+                workspace=workspace, model=model_arg(config.model),
+                ephemeral=session_id is None,
+            )
         env = build_env(
             sandbox.build_child_env(),
             credential=credential,
@@ -414,6 +490,9 @@ class CodexDriver:
                 if kind == "event":
                     assert isinstance(value, dict)
                     await emit("codex_event", {"raw": value})
+                    tid = event_thread_id(value)
+                    if tid:
+                        latest_thread_id["id"] = tid
                     text = event_text(value)
                     if text is not None:
                         last_text = text

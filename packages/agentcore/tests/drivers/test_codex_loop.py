@@ -311,3 +311,118 @@ def test_codex_capabilities_and_template():
     assert d.default_template.available_tools == []
     assert d.default_template.tools_user_editable is False
     assert d.default_template.supports_context is False
+
+
+@pytest.mark.asyncio
+async def test_codex_session_first_turn_drops_ephemeral_and_writes_state(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    captured_cmd = {}
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        captured_cmd["argv"] = argv
+        return FakeProc(
+            ['{"type":"thread.started","thread_id":"codex-thread-1"}',
+             '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hi"}}'],
+            returncode=0,
+        )
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    # ensure_agent_dir is left real (not stubbed): it's a plain os.makedirs in
+    # non-root test environments, and session_state.write_session_state relies
+    # on it to actually create the on-disk sessions/ dir on a session's first
+    # turn (same fix as test_claude_code_loop.py's patch_proc, task 3).
+
+    driver = CodexDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="hello"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), session_id="sess-1", session_is_continuation=False,
+    )
+
+    assert result.success is True
+    assert "--ephemeral" not in captured_cmd["argv"]
+    from agentcore.drivers.session_state import read_session_state
+    assert read_session_state(str(tmp_path), "codex", "sess-1") == {"thread_id": "codex-thread-1"}
+
+
+@pytest.mark.asyncio
+async def test_codex_session_continuation_uses_resume_command(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+    from agentcore.drivers.session_state import write_session_state
+
+    write_session_state(str(tmp_path), "codex", "sess-2", {"thread_id": "codex-thread-1"})
+    captured_cmd = {}
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        captured_cmd["argv"] = argv
+        return FakeProc(
+            ['{"type":"thread.started","thread_id":"codex-thread-1"}',
+             '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}'],
+            returncode=0,
+        )
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)
+
+    driver = CodexDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="continue"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), session_id="sess-2", session_is_continuation=True,
+    )
+
+    assert result.success is True
+    assert captured_cmd["argv"][:3] == ["codex", "exec", "resume"]
+    assert "codex-thread-1" in captured_cmd["argv"]
+    assert "-C" not in captured_cmd["argv"]
+
+
+@pytest.mark.asyncio
+async def test_codex_session_missing_state_fails_fast(tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    driver = CodexDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="hi"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), session_id="sess-missing", session_is_continuation=True,
+    )
+
+    assert result.success is False
+    assert result.reason == "session_state_lost"
+
+
+@pytest.mark.asyncio
+async def test_codex_no_session_id_unchanged(monkeypatch, tmp_path):
+    """Omitting session_id must behave exactly like today: --ephemeral stays, no state file."""
+    import os
+
+    from agentcore.drivers.codex import CodexDriver
+
+    captured_cmd = {}
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        captured_cmd["argv"] = argv
+        return FakeProc(
+            ['{"type":"thread.started","thread_id":"codex-thread-x"}',
+             '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hi"}}'],
+            returncode=0,
+        )
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)
+
+    driver = CodexDriver()
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="hi"), config=cfg(), limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert "--ephemeral" in captured_cmd["argv"]
+    assert not os.path.isdir(os.path.join(str(tmp_path), ".agent-state", "codex", "sessions"))

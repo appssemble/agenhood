@@ -190,3 +190,57 @@ def test_codex_build_env_starts_from_allowlist(monkeypatch):
     assert "SHIM_TOKEN" not in env
     assert env["CODEX_API_KEY"] == "k"
     assert env["CODEX_HOME"] == "/workspace/.agent-state/codex"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: driver sessions — ephemeral/resume command shape + thread id parsing
+# ---------------------------------------------------------------------------
+
+def test_build_command_ephemeral_true_by_default_unchanged():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(workspace="/ws", model="gpt-5-codex")
+    assert cmd == [
+        "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
+        "-C", "/ws", "-m", "gpt-5-codex",
+        "--dangerously-bypass-approvals-and-sandbox", "-",
+    ]
+
+
+def test_build_command_ephemeral_false_drops_the_flag():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(workspace="/ws", model="gpt-5-codex", ephemeral=False)
+    assert "--ephemeral" not in cmd
+    assert cmd == [
+        "codex", "exec", "--json", "--skip-git-repo-check",
+        "-C", "/ws", "-m", "gpt-5-codex",
+        "--dangerously-bypass-approvals-and-sandbox", "-",
+    ]
+
+
+def test_build_resume_command():
+    from agentcore.drivers.codex import build_resume_command
+
+    cmd = build_resume_command(model="gpt-5-codex", thread_id="019f3753-thread")
+    # Verified live against the installed codex CLI: `codex exec resume` has no
+    # -C/--ephemeral flags (the resumed session's cwd/persistence are implicit).
+    assert cmd == [
+        "codex", "exec", "resume", "--json", "--skip-git-repo-check",
+        "-m", "gpt-5-codex", "--dangerously-bypass-approvals-and-sandbox",
+        "019f3753-thread", "-",
+    ]
+
+
+def test_event_thread_id_extracts_from_thread_started():
+    from agentcore.drivers.codex import event_thread_id
+
+    assert event_thread_id({"type": "thread.started", "thread_id": "t-1"}) == "t-1"
+
+
+def test_event_thread_id_ignores_other_event_types():
+    from agentcore.drivers.codex import event_thread_id
+
+    assert event_thread_id({"type": "turn.completed", "thread_id": "t-1"}) is None
+    assert event_thread_id({"type": "thread.started"}) is None
+    assert event_thread_id({"type": "thread.started", "thread_id": 5}) is None
