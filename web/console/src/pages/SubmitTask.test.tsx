@@ -26,6 +26,7 @@ function setup(driver: "vanilla" | "opencode") {
   server.use(http.get("/v1/containers/con_1", () => HttpResponse.json({ id: "con_1", name: "c", external_id: null, status: "running", image_variant: "full", image_tag: "v",
     config: { driver, model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } }, metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
   server.use(http.get("/v1/containers/con_1/tasks", () => HttpResponse.json({ tasks: [] })));
+  server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({ sessions: [] })));
 }
 
 describe("SubmitTask", () => {
@@ -62,6 +63,7 @@ test("pre-fills the prompt from the most recent task with a dismissable tag", as
   server.use(http.get("/v1/containers/con_1", () => HttpResponse.json({ id: "con_1", name: "c", external_id: null, status: "running", image_variant: "full", image_tag: "v",
     config: { driver: "vanilla", model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } }, metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
   server.use(http.get("/v1/containers/con_1/tasks", () => HttpResponse.json({ tasks: [{ task_id: "tsk_9", prompt: "Prior prompt", status: "completed", started_at: "2026-06-02T00:00:00Z", ended_at: null, tokens_in: 0, tokens_out: 0, iterations_used: 0 }] })));
+  server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({ sessions: [] })));
 
   renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
 

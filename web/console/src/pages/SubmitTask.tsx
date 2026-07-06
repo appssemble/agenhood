@@ -9,6 +9,7 @@ import { Icons } from "../ui/Icon";
 import { parseSchema } from "../components/OutputContractField";
 import { SubmitTaskForm } from "./SubmitTaskForm";
 import { SubmitTaskChat } from "./SubmitTaskChat";
+import { SessionPicker } from "../components/SessionPicker";
 
 type Layout = "form" | "chat";
 const LAYOUT_KEY = "agenhood.submitLayout";
@@ -20,7 +21,6 @@ export default function SubmitTask() {
   const containerQ = useContainer(cid!);
   const templatesQ = useTemplates();
   const submit = useSubmitTask(cid!);
-  const tasksQ = useTasks(cid!);
   const { user } = useAuth();
 
   const [layout, setLayout] = useState<Layout>(() => {
@@ -40,7 +40,9 @@ export default function SubmitTask() {
   const [maxIter, setMaxIter] = useState<number | null>(null);
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
   const [timeoutS, setTimeoutS] = useState<number | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
+  const tasksQ = useTasks(cid!, sessionId ?? undefined);
   const recentTask = tasksQ.data?.tasks?.[0] ?? null;
 
   // Pre-fill from the most recent task — form layout only, to keep the chat
@@ -81,6 +83,7 @@ export default function SubmitTask() {
       output,
       limits: { max_iterations: maxIter, max_tokens: maxTokens, timeout_seconds: timeoutS },
       metadata: {},
+      ...(sessionId ? { session_id: sessionId } : {}),
     };
   }
 
@@ -140,6 +143,7 @@ export default function SubmitTask() {
               <Icons.Bot /> Chat
             </button>
           </div>
+          <SessionPicker cid={cid!} sessionId={sessionId} onChange={setSessionId} />
         </div>
       </div>
 

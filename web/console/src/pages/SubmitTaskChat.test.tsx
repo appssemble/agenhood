@@ -40,6 +40,7 @@ function setup() {
   server.use(http.get("/v1/containers/con_1", () => HttpResponse.json({ id: "con_1", name: "c", external_id: null, status: "running", image_variant: "full", image_tag: "v",
     config: { driver: "vanilla", model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } }, metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
   server.use(http.get("/v1/containers/con_1/tasks", () => HttpResponse.json({ tasks: [] })));
+  server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({ sessions: [] })));
   server.use(http.get("/v1/containers/con_1/tasks/tsk_9", () => HttpResponse.json({
     task_id: "tsk_9", status: "completed", prompt: "Summarize the report", started_at: "t", ended_at: "t",
     tokens_in: 10, tokens_out: 20, iterations_used: 1, result: { output: "Summary text", files: [] }, error: null,
@@ -141,5 +142,47 @@ describe("SubmitTask chat layout", () => {
     expect(screen.getAllByText("foo").length).toBeGreaterThan(0);
     expect(screen.queryByText(/\{"tool"|"part"|"input"/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /show result/i })).not.toBeInTheDocument();
+  });
+
+  it("sends the selected session_id with the task and filters the thread to it", async () => {
+    setup();
+    server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({
+      sessions: [{ session_id: "sess-1", driver: "vanilla", task_count: 1,
+        first_created_at: "t1", last_created_at: "t2", busy: false }],
+    })));
+    let body: any = null;
+    server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => {
+      body = await request.json();
+      return HttpResponse.json({ task_id: "tsk_9", status: "running", started_at: "t", session_id: body.session_id });
+    }));
+
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: /chat/i }));
+
+    await userEvent.click(await screen.findByRole("button", { name: /no session/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /sess-1/ }));
+
+    await userEvent.type(await screen.findByLabelText("Prompt"), "Continue our chat");
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => expect(body?.session_id).toBe("sess-1"));
+  });
+
+  it("omits session_id when 'No session' is selected (default)", async () => {
+    setup();
+    server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({ sessions: [] })));
+    let body: any = null;
+    server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => {
+      body = await request.json();
+      return HttpResponse.json({ task_id: "tsk_9", status: "running", started_at: "t", session_id: null });
+    }));
+
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: /chat/i }));
+    await userEvent.type(await screen.findByLabelText("Prompt"), "One-off message");
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body.session_id).toBeUndefined();
   });
 });
