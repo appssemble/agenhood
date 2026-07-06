@@ -114,3 +114,54 @@ async def test_runner_credential_never_in_events(tmp_path):
     await runner.run()
     raw = (tmp_path / ".agent-runtime" / "events" / "tsk_1.jsonl").read_text()
     assert "sk-secret" not in raw
+
+
+class _SessionFakeDriver:
+    """Fake driver that captures kwargs passed to run()."""
+
+    name = "vanilla"
+
+    def __init__(self):
+        self.received_kwargs = None
+
+    async def run(self, **kwargs):
+        self.received_kwargs = kwargs
+        return TaskResult(success=True, output="ok")
+
+
+@pytest.mark.asyncio
+async def test_runner_forwards_session_fields_to_driver(tmp_path):
+    driver = _SessionFakeDriver()
+    request = ShimTaskRequest(
+        task_id="tsk_1",
+        task=TaskBody(prompt="hi", session_id="sess-1"),
+        config=AgentConfig(driver="vanilla", model="m"),
+        limits=ResolvedLimits(max_iterations=1, max_tokens=100, timeout_seconds=10),
+        llm_credential="cred",
+        session_id="sess-1",
+        session_is_continuation=True,
+    )
+    runner = TaskRunner(request=request, workspace=str(tmp_path), drivers={"vanilla": driver})
+
+    await runner.run()
+
+    assert driver.received_kwargs["session_id"] == "sess-1"
+    assert driver.received_kwargs["session_is_continuation"] is True
+
+
+@pytest.mark.asyncio
+async def test_runner_forwards_default_session_fields_when_absent(tmp_path):
+    driver = _SessionFakeDriver()
+    request = ShimTaskRequest(
+        task_id="tsk_2",
+        task=TaskBody(prompt="hi"),
+        config=AgentConfig(driver="vanilla", model="m"),
+        limits=ResolvedLimits(max_iterations=1, max_tokens=100, timeout_seconds=10),
+        llm_credential="cred",
+    )
+    runner = TaskRunner(request=request, workspace=str(tmp_path), drivers={"vanilla": driver})
+
+    await runner.run()
+
+    assert driver.received_kwargs["session_id"] is None
+    assert driver.received_kwargs["session_is_continuation"] is False

@@ -70,6 +70,8 @@ class TaskRunner:
                 workspace=self.workspace,
                 skills=self.request.skills,
                 mcp_servers=self.request.mcp_servers,
+                session_id=self.request.session_id,
+                session_is_continuation=self.request.session_is_continuation,
             )
         except Exception as e:  # noqa: BLE001 — surface driver crash as failed status
             await self._finish_status(

@@ -32,6 +32,7 @@ class TaskBody(BaseModel):
     output: OutputContract = OutputContract()
     limits: TaskLimits = TaskLimits()
     metadata: dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
 
 
 class ResolvedLimits(BaseModel):
@@ -134,6 +135,11 @@ class ShimTaskRequest(BaseModel):
     skills: list[ShimSkill] = Field(default_factory=list)
     # Resolved MCP servers (opencode/codex only); decrypted, in-memory, never persisted.
     mcp_servers: list[ShimMcpServer] = Field(default_factory=list)
+    # Driver-sessions: groups this task with prior tasks sharing the same id.
+    # `session_is_continuation` is precomputed by the control plane (a cheap
+    # `tasks` query) — the driver never queries the DB itself.
+    session_id: str | None = None
+    session_is_continuation: bool = False
 
 
 # ---- Status & results ------------------------------------------------------

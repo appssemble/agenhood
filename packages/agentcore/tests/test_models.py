@@ -59,3 +59,41 @@ def test_event_accepts_known_type():
     )
     assert ev.type == "task_started"
     assert ev.seq == 1
+
+
+def test_task_body_session_id_defaults_to_none():
+    assert TaskBody(prompt="hi").session_id is None
+
+
+def test_task_body_accepts_session_id():
+    assert TaskBody(prompt="hi", session_id="sess-1").session_id == "sess-1"
+
+
+def test_shim_task_request_session_fields_default():
+    from agentcore.models import AgentConfig, ResolvedLimits, ShimTaskRequest
+
+    req = ShimTaskRequest(
+        task_id="tsk_1",
+        task=TaskBody(prompt="hi"),
+        config=AgentConfig(driver="vanilla", model="m"),
+        limits=ResolvedLimits(max_iterations=1, max_tokens=1, timeout_seconds=1),
+        llm_credential="cred",
+    )
+    assert req.session_id is None
+    assert req.session_is_continuation is False
+
+
+def test_shim_task_request_accepts_session_fields():
+    from agentcore.models import AgentConfig, ResolvedLimits, ShimTaskRequest
+
+    req = ShimTaskRequest(
+        task_id="tsk_1",
+        task=TaskBody(prompt="hi"),
+        config=AgentConfig(driver="vanilla", model="m"),
+        limits=ResolvedLimits(max_iterations=1, max_tokens=1, timeout_seconds=1),
+        llm_credential="cred",
+        session_id="sess-1",
+        session_is_continuation=True,
+    )
+    assert req.session_id == "sess-1"
+    assert req.session_is_continuation is True
