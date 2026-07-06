@@ -113,6 +113,7 @@ tasks = Table(
         "scheduled_task_id", Text,
         ForeignKey("scheduled_tasks.id", ondelete="SET NULL"), nullable=True,
     ),
+    Column("session_id", Text, nullable=True),
     Column("driver", Text, nullable=False),
     Column("model", Text, nullable=True),
     Column("body", JSONB, nullable=False),
@@ -135,6 +136,7 @@ Index(
     postgresql_where=text("status IN ('pending','running')"),
 )
 Index("idx_tasks_scheduled", tasks.c.scheduled_task_id)
+Index("idx_tasks_session", tasks.c.session_id)
 
 scheduled_tasks = Table(
     "scheduled_tasks", metadata,
