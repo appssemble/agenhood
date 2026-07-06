@@ -38,6 +38,8 @@ from control_plane.errors import (
     APIError,
     api_error,
     not_found,
+    session_busy,
+    session_driver_mismatch,
     too_many_tasks,
 )
 from control_plane.ids import new_task_id
@@ -94,6 +96,7 @@ class PromptTaskBody(BaseModel):
     output: OutputContract = Field(default_factory=OutputContract)
     limits: TaskLimits = Field(default_factory=TaskLimits)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
 
 
 async def _load_prompt(session: AsyncSession, tenant_id: str, pid: str) -> dict[str, Any]:
@@ -126,6 +129,7 @@ def build_task_row(
     task: TaskBody,
     config: AgentConfig,
     scheduled_task_id: str | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """The persisted tasks row.  ``body`` is the task object ONLY (no
     credential); ``config_snapshot`` is the container config at submit time
@@ -135,6 +139,7 @@ def build_task_row(
         "tenant_id": tenant_id,
         "container_id": container_id,
         "scheduled_task_id": scheduled_task_id,
+        "session_id": session_id,
         "driver": config.driver,
         "model": config.model,
         "body": task.model_dump(mode="json"),
@@ -176,6 +181,8 @@ def build_shim_request(
     git_snapshots: bool = True,
     skills: list[ShimSkill] | None = None,
     mcp_servers: list[ShimMcpServer] | None = None,
+    session_id: str | None = None,
+    session_is_continuation: bool = False,
 ) -> ShimTaskRequest:
     """In-memory request to the shim.  The credential (and git token) live here
     only — never part of build_task_row's output."""
@@ -191,6 +198,8 @@ def build_shim_request(
         git_snapshots=git_snapshots,
         skills=skills or [],
         mcp_servers=mcp_servers or [],
+        session_id=session_id,
+        session_is_continuation=session_is_continuation,
     )
 
 
@@ -327,6 +336,7 @@ def _row_to_task_out(row: Any, container_name: str | None = None) -> TaskOut:
         task_id=row.id,
         container_id=row.container_id,
         container_name=container_name,
+        session_id=row.session_id,
         prompt=body.get("prompt", ""),
         status=row.status,
         driver=row.driver,
@@ -341,6 +351,50 @@ def _row_to_task_out(row: Any, container_name: str | None = None) -> TaskOut:
         ended_at=row.ended_at.isoformat() if row.ended_at else None,
         created_at=row.created_at.isoformat(),
     )
+
+
+async def _session_precheck(
+    session: AsyncSession, *, tenant_id: str, cid: str, session_id: str, driver: str,
+) -> bool:
+    """Validate `session_id` against prior tasks in this container/tenant.
+
+    Returns True if this is a continuation (a prior task already used this
+    session_id), False if this is the first task in a new session. Raises
+    409 session_driver_mismatch / session_busy (driver-sessions spec §5).
+    """
+    locked_driver = (
+        await session.execute(
+            sa.select(tasks.c.driver)
+            .where(
+                tasks.c.session_id == session_id,
+                tasks.c.container_id == cid,
+                tasks.c.tenant_id == tenant_id,
+            )
+            .order_by(tasks.c.created_at.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if locked_driver is None:
+        return False
+    if locked_driver != driver:
+        raise session_driver_mismatch(
+            f"session {session_id!r} was created with driver {locked_driver!r}; "
+            f"this container's current driver is {driver!r}"
+        )
+    busy: int = (
+        await session.execute(
+            sa.select(sa.func.count())
+            .select_from(tasks)
+            .where(
+                tasks.c.session_id == session_id,
+                tasks.c.container_id == cid,
+                tasks.c.status.in_(("pending", "running")),
+            )
+        )
+    ).scalar_one()
+    if busy > 0:
+        raise session_busy(f"session {session_id!r} already has a task in flight")
+    return True
 
 
 async def submit_task_core(
@@ -371,6 +425,13 @@ async def submit_task_core(
 
     row = await _load_owned_container(session, tenant_id, cid)
     config = AgentConfig(**row.config)
+
+    session_is_continuation = False
+    if body.session_id is not None:
+        session_is_continuation = await _session_precheck(
+            session, tenant_id=tenant_id, cid=cid,
+            session_id=body.session_id, driver=config.driver,
+        )
 
     if not body.prompt.strip():
         raise APIError(400, "validation_error", "prompt is required", "prompt")
@@ -465,7 +526,7 @@ async def submit_task_core(
     task_id = new_task_id()
     task_row = build_task_row(
         task_id=task_id, tenant_id=tenant_id, container_id=cid, task=body,
-        config=config, scheduled_task_id=scheduled_task_id,
+        config=config, scheduled_task_id=scheduled_task_id, session_id=body.session_id,
     )
     await session.execute(tasks.insert().values(**task_row))
     await session.commit()
@@ -503,6 +564,8 @@ async def submit_task_core(
         git_snapshots=not linked,
         skills=task_skills,
         mcp_servers=task_mcp,
+        session_id=body.session_id,
+        session_is_continuation=session_is_continuation,
     )
     ack = await forward_to_shim(settings, row, shim_req, session, task_id)
 
@@ -526,6 +589,7 @@ async def submit_task_core(
         status=ack.get("status", "running"),
         started_at=ack.get("started_at", started_at.isoformat()),
         credential_used=credential_used,
+        session_id=body.session_id,
     ).model_dump()
 
 
@@ -575,6 +639,7 @@ async def submit_task_from_prompt(
             output=body.output,
             limits=body.limits,
             metadata={**body.metadata, "prompt_id": body.prompt_id},
+            session_id=body.session_id,
         ),
     )
 
