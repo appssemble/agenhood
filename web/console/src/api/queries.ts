@@ -12,6 +12,7 @@ import type {
   McpServer, McpAuthType,
   Prompt, PromptVariable,
   Workflow, WorkflowRun, WorkflowRunDetail, WorkflowCreate,
+  SessionSummary,
 } from "./types";
 import { rangeToParams, type Range } from "../lib/range";
 import { fetchRecommendedSkills } from "../lib/recommendedSkills";
@@ -21,7 +22,9 @@ export const keys = {
   containers: ["containers"] as const,
   container: (cid: string) => ["containers", cid] as const,
   config: (cid: string) => ["containers", cid, "config"] as const,
-  tasks: (cid: string) => ["containers", cid, "tasks"] as const,
+  tasks: (cid: string, sessionId?: string) =>
+    sessionId ? (["containers", cid, "tasks", { sessionId }] as const) : (["containers", cid, "tasks"] as const),
+  sessions: (cid: string) => ["containers", cid, "sessions"] as const,
   task: (cid: string, tid: string) => ["containers", cid, "tasks", tid] as const,
   scheduledTasks: () => ["scheduled-tasks"] as const,
   scheduledTask: (sid: string) => ["scheduled-tasks", sid] as const,
@@ -95,7 +98,17 @@ export const useContainer = (cid: string) => useQuery({ queryKey: keys.container
 export const useTemplates = () => useQuery({ queryKey: keys.templates, queryFn: () => api.get<{ templates: Template[] }>("/v1/templates") });
 export const useTemplate = (id: string) =>
   useQuery({ queryKey: keys.template(id), queryFn: () => api.get<Template>(`/v1/templates/${id}`), enabled: !!id });
-export const useTasks = (cid: string) => useQuery({ queryKey: keys.tasks(cid), queryFn: () => api.get<{ tasks: TaskSummary[] }>(`/v1/containers/${cid}/tasks`) });
+export const useTasks = (cid: string, sessionId?: string) => useQuery({
+  queryKey: keys.tasks(cid, sessionId),
+  queryFn: () => api.get<{ tasks: TaskSummary[] }>(
+    `/v1/containers/${cid}/tasks${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ""}`
+  ),
+});
+
+export const useSessions = (cid: string) => useQuery({
+  queryKey: keys.sessions(cid),
+  queryFn: () => api.get<{ sessions: SessionSummary[] }>(`/v1/containers/${cid}/sessions`),
+});
 export const useTask = (cid: string, tid: string) => useQuery({ queryKey: keys.task(cid, tid), queryFn: () => api.get<TaskDetail>(`/v1/containers/${cid}/tasks/${tid}`) });
 // Replays a finished task's stored events (non-SSE GET). Used by the chat
 // layout to show a past turn's intermediate steps without opening a stream.
@@ -174,8 +187,14 @@ export function useSaveTemplate() {
 export function useSubmitTask(cid: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: unknown) => api.post<{ task_id: string; status: string }>(`/v1/containers/${cid}/tasks`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.tasks(cid) }),
+    mutationFn: (body: unknown) =>
+      api.post<{ task_id: string; status: string; session_id: string | null }>(
+        `/v1/containers/${cid}/tasks`, body
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.tasks(cid) });
+      qc.invalidateQueries({ queryKey: keys.sessions(cid) });
+    },
   });
 }
 export function useCancelTask(cid: string, tid: string) {

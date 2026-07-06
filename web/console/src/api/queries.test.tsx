@@ -1,3 +1,4 @@
+import React from "react";
 import { describe, it, expect } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -5,7 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/server";
-import { useSelectTenant, useAllTenants, useCreateTenant } from "./queries";
+import { useSelectTenant, useAllTenants, useCreateTenant, useTasks, useSessions } from "./queries";
 
 function wrap() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -14,6 +15,11 @@ function wrap() {
       <MemoryRouter>{children}</MemoryRouter>
     </QueryClientProvider>
   );
+}
+
+function wrapper({ children }: { children: ReactNode }) {
+  const qc = new QueryClient();
+  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
 }
 
 describe("useSelectTenant", () => {
@@ -65,5 +71,41 @@ describe("useCreateTenant", () => {
     const res = await result.current.mutateAsync("Acme");
     expect(received).toEqual({ name: "Acme" });
     expect(res.id).toBe("ten_new");
+  });
+});
+
+describe("useTasks session_id filter", () => {
+  it("omits the query param when no sessionId is given", async () => {
+    let seenUrl = "";
+    server.use(http.get("/v1/containers/con_1/tasks", ({ request }) => {
+      seenUrl = request.url;
+      return HttpResponse.json({ tasks: [] });
+    }));
+    const { result } = renderHook(() => useTasks("con_1"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(seenUrl).not.toContain("session_id");
+  });
+
+  it("includes session_id when given", async () => {
+    let seenUrl = "";
+    server.use(http.get("/v1/containers/con_1/tasks", ({ request }) => {
+      seenUrl = request.url;
+      return HttpResponse.json({ tasks: [] });
+    }));
+    const { result } = renderHook(() => useTasks("con_1", "sess-1"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(seenUrl).toContain("session_id=sess-1");
+  });
+});
+
+describe("useSessions", () => {
+  it("fetches the sessions list for a container", async () => {
+    server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({
+      sessions: [{ session_id: "sess-1", driver: "vanilla", task_count: 2,
+        first_created_at: "t1", last_created_at: "t2", busy: false }],
+    })));
+    const { result } = renderHook(() => useSessions("con_1"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.sessions[0].session_id).toBe("sess-1");
   });
 });

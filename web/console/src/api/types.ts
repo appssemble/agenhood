@@ -96,10 +96,15 @@ export interface Me {
 export interface TaskSummary {
   task_id: string; status: TaskStatus; prompt: string; started_at: string;
   ended_at: string | null; tokens_in: number; tokens_out: number;
-  iterations_used: number; config_snapshot?: AgentConfig;
+  iterations_used: number; config_snapshot?: AgentConfig; session_id?: string | null;
 }
 export interface TaskDetail extends TaskSummary {
   result: TaskResult | null; error: { code: string; message: string } | null;
+}
+
+export interface SessionSummary {
+  session_id: string; driver: string; task_count: number;
+  first_created_at: string; last_created_at: string; busy: boolean;
 }
 
 export interface FileEntry { path: string; size: number; is_dir?: boolean; modified_at: string; content_type: string; }
