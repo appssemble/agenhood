@@ -67,6 +67,14 @@ def too_many_tasks(message: str = "container is at its concurrent-task limit") -
     return APIError(429, "too_many_tasks", message)
 
 
+def session_driver_mismatch(message: str) -> APIError:
+    return APIError(409, "session_driver_mismatch", message)
+
+
+def session_busy(message: str = "session already has a task in flight") -> APIError:
+    return APIError(409, "session_busy", message)
+
+
 def api_error(status_code: int, code: str, message: str, field: str | None = None) -> APIError:
     """Generic constructor used by auth/ modules (plan §Task0 §Step5)."""
     return APIError(status_code, code, message, field)

@@ -42,6 +42,7 @@ def test_task_submit_response_shape() -> None:
         "status": "running",
         "started_at": "2026-05-20T00:00:00Z",
         "credential_used": None,
+        "session_id": None,
     }
 
 

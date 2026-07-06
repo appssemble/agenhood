@@ -76,12 +76,14 @@ class TaskSubmitResponse(BaseModel):
     status: str
     started_at: str
     credential_used: str | None = None
+    session_id: str | None = None
 
 
 class TaskOut(BaseModel):
     task_id: str
     container_id: str
     container_name: str | None = None
+    session_id: str | None = None
     prompt: str
     status: str
     driver: str
@@ -95,6 +97,15 @@ class TaskOut(BaseModel):
     started_at: str | None
     ended_at: str | None
     created_at: str
+
+
+class SessionOut(BaseModel):
+    session_id: str
+    driver: str
+    task_count: int
+    first_created_at: str
+    last_created_at: str
+    busy: bool
 
 
 class UsageBucketOut(BaseModel):
