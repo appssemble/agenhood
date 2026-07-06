@@ -58,7 +58,7 @@ from control_plane.routers.containers import (
     load_tenant_limits,
 )
 from control_plane.mcp_service import resolve_mcp_for_request
-from control_plane.schemas import TaskOut, TaskSubmitResponse
+from control_plane.schemas import SessionOut, TaskOut, TaskSubmitResponse
 from control_plane.shim_client import ShimClient, ShimError, ShimTooManyTasks
 from control_plane.skills_service import resolve_skills_for_request
 from control_plane.sse import format_sse, parse_event_line, should_forward
@@ -649,6 +649,7 @@ async def list_tasks(
     cid: str,
     request: Request,
     scheduled_task_id: str | None = None,
+    session_id: str | None = None,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
@@ -662,8 +663,49 @@ async def list_tasks(
     )
     if scheduled_task_id is not None:
         stmt = stmt.where(tasks.c.scheduled_task_id == scheduled_task_id)
+    if session_id is not None:
+        stmt = stmt.where(tasks.c.session_id == session_id)
     rows = (await session.execute(stmt)).all()
     return {"tasks": [_row_to_task_out(r).model_dump() for r in rows]}
+
+
+@router.get("/containers/{cid}/sessions")
+async def list_sessions(
+    cid: str,
+    request: Request,
+    principal: Principal = Depends(_principal),
+    session: AsyncSession = Depends(_session),
+) -> dict:  # type: ignore[type-arg]
+    tid = _tid(principal)
+    await _load_owned_container(session, tid, cid)
+    rows = (
+        await session.execute(
+            sa.select(
+                tasks.c.session_id,
+                sa.func.min(tasks.c.driver).label("driver"),
+                sa.func.count().label("task_count"),
+                sa.func.min(tasks.c.created_at).label("first_created_at"),
+                sa.func.max(tasks.c.created_at).label("last_created_at"),
+                sa.func.bool_or(tasks.c.status.in_(("pending", "running"))).label("busy"),
+            )
+            .where(tasks.c.container_id == cid, tasks.c.tenant_id == tid, tasks.c.session_id.isnot(None))
+            .group_by(tasks.c.session_id)
+            .order_by(sa.func.max(tasks.c.created_at).desc())
+        )
+    ).all()
+    return {
+        "sessions": [
+            SessionOut(
+                session_id=r.session_id,
+                driver=r.driver,
+                task_count=r.task_count,
+                first_created_at=r.first_created_at.isoformat(),
+                last_created_at=r.last_created_at.isoformat(),
+                busy=bool(r.busy),
+            ).model_dump()
+            for r in rows
+        ]
+    }
 
 
 async def recent_tenant_tasks(

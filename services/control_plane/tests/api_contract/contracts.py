@@ -297,6 +297,8 @@ CONTRACTS: list[tuple[str, str, str, str]] = [
      "/v1/containers/c_x/scheduled-tasks", "auth"),
     ("PATCH",  "/v1/containers/{cid}/scheduled-tasks/{sid}",
      "/v1/containers/c_x/scheduled-tasks/s_x", "auth"),
+    ("GET",    "/v1/containers/{cid}/sessions",
+     "/v1/containers/c_x/sessions", "auth"),
     ("GET",    "/v1/containers/{cid}/tasks", "/v1/containers/c_x/tasks", "auth"),
     ("POST",   "/v1/containers/{cid}/tasks", "/v1/containers/c_x/tasks", "auth"),
     ("POST",   "/v1/containers/{cid}/tasks/from-prompt",

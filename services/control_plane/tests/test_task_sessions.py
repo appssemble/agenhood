@@ -234,3 +234,82 @@ async def test_submit_session_busy_returns_409(app_client_factory):
         )
     assert r.status_code == 409, r.text
     assert r.json()["error"]["code"] == "session_busy"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_filters_by_session_id(monkeypatch):
+    class _ListSession(_FakeSession):
+        async def execute(self, stmt: Any, params: Any = None) -> Any:
+            s = str(stmt).lower()
+            if "containers" in s and "tenant_id" in s and "count" not in s:
+                return _FakeResult(value=_FakeContainerRow())
+            if "from tasks" in s and "session_id" in s and "group by" not in s:
+                # list_tasks path — record whether the filter was applied
+                self.filtered = "session_id =" in s or "session_id ==" in s
+                return _FakeResult()
+            return await super().execute(stmt, params)
+
+    fake_session = _ListSession()
+
+    async def _fake_session_dep():
+        yield fake_session
+
+    _APP.dependency_overrides[resolve_principal] = lambda: _MEMBER_PRINCIPAL
+    _APP.dependency_overrides[tasks_mod._session] = _fake_session_dep  # type: ignore[attr-defined]
+    try:
+        transport = ASGITransport(app=_APP)  # type: ignore[arg-type]
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get(f"/v1/containers/{CONTAINER_ID}/tasks", params={"session_id": "sess-1"})
+    finally:
+        _APP.dependency_overrides.clear()
+
+    assert r.status_code == 200, r.text
+    assert fake_session.filtered is True
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_groups_by_session_id():
+    from datetime import UTC, datetime
+
+    class _Row:
+        session_id = "sess-1"
+        driver = "vanilla"
+        task_count = 3
+        first_created_at = datetime(2026, 7, 1, tzinfo=UTC)
+        last_created_at = datetime(2026, 7, 2, tzinfo=UTC)
+        busy = False
+
+    class _SessionsListSession(_FakeSession):
+        async def execute(self, stmt: Any, params: Any = None) -> Any:
+            s = str(stmt).lower()
+            if "containers" in s and "tenant_id" in s and "count" not in s:
+                return _FakeResult(value=_FakeContainerRow())
+            if "group by" in s and "session_id" in s:
+                class _R:
+                    def all(self_inner):
+                        return [_Row()]
+                return _R()
+            return await super().execute(stmt, params)
+
+    fake_session = _SessionsListSession()
+
+    async def _fake_session_dep():
+        yield fake_session
+
+    _APP.dependency_overrides[resolve_principal] = lambda: _MEMBER_PRINCIPAL
+    _APP.dependency_overrides[tasks_mod._session] = _fake_session_dep  # type: ignore[attr-defined]
+    try:
+        transport = ASGITransport(app=_APP)  # type: ignore[arg-type]
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get(f"/v1/containers/{CONTAINER_ID}/sessions")
+    finally:
+        _APP.dependency_overrides.clear()
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["sessions"] == [{
+        "session_id": "sess-1", "driver": "vanilla", "task_count": 3,
+        "first_created_at": "2026-07-01T00:00:00+00:00",
+        "last_created_at": "2026-07-02T00:00:00+00:00",
+        "busy": False,
+    }]
