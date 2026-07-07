@@ -149,4 +149,35 @@ describe("SkillEditor (repository access / deploy keys)", () => {
     expect(await screen.findByText(/isn't installed on this repo yet/i)).toBeInTheDocument();
     expect(await screen.findByText("ssh-ed25519 AAAA test")).toBeInTheDocument();
   });
+
+  it("clears generated-key instructions when repository access changes", async () => {
+    const NEW_KEY = {
+      id: "dk_2", name: "new-key", ssh_public_key: "ssh-ed25519 BBBB new", key_type: "ed25519",
+      key_fingerprint: "SHA256:def456", created_at: null, updated_at: null,
+    };
+    server.use(
+      http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })),
+      http.post("/v1/deploy-keys", async ({ request }) => {
+        const body = await request.json();
+        return HttpResponse.json({ ...NEW_KEY, name: (body as any).name });
+      }),
+    );
+    renderWithProviders(<SkillEditor />);
+    await userEvent.click(await screen.findByRole("button", { name: "From git" }));
+
+    // Generate a new key - instruction box appears
+    await userEvent.click(screen.getByRole("button", { name: "Generate new deploy key…" }));
+    await userEvent.type(screen.getByLabelText("New deploy key name"), "new-key");
+    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(await screen.findByText(/Add "new-key" to GitHub/i)).toBeInTheDocument();
+    expect(screen.getByText("ssh-ed25519 BBBB new")).toBeInTheDocument();
+
+    // Change repository access to "Public repository" - instruction box should disappear
+    fireEvent.click(screen.getByLabelText("Repository access"));
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "Public repository" }));
+
+    expect(screen.queryByText(/Add "new-key" to GitHub/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("ssh-ed25519 BBBB new")).not.toBeInTheDocument();
+  });
 });

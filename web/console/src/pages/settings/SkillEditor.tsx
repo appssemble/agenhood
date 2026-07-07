@@ -366,7 +366,7 @@ export default function SkillEditor() {
                   value={draft.deploy_key_id}
                   onChange={(v) => {
                     setDraft({ ...draft, deploy_key_id: v });
-                    setRefsState("idle"); setBranches([]); setRefsError(null);
+                    setRefsState("idle"); setBranches([]); setRefsError(null); setJustCreatedKey(null);
                   }}
                   options={[
                     { value: "", label: "Public repository" },
