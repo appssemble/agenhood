@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useTask, useTaskEvents, useCancelTask } from "../api/queries";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTask, useTaskEvents, useCancelTask, keys } from "../api/queries";
 import { useTaskStream } from "../api/useTaskStream";
 import { TaskBadge } from "./StatusBadge";
 import { ChatTimeline } from "./ChatTimeline";
@@ -24,6 +25,7 @@ function ActiveTurnBody({
   cid: string; taskId: string; initialStatus?: TaskStatus; onContentChange?: () => void;
 }) {
   const taskQ = useTask(cid, taskId);
+  const qc = useQueryClient();
   const [done, setDone] = useState(false);
   const { events, conn } = useTaskStream(cid, taskId, { enabled: !done });
   const cancel = useCancelTask(cid, taskId);
@@ -40,7 +42,17 @@ function ActiveTurnBody({
   const terminal = isTerminal(status);
 
   useEffect(() => {
-    if (terminal) { setDone(true); taskQ.refetch(); }
+    if (terminal) {
+      setDone(true);
+      taskQ.refetch();
+      // A task reaching a terminal status can flip its session's "busy" flag
+      // and its place in the recent-tasks list — neither is invalidated by
+      // anything else (the SSE stream that reports completion bypasses React
+      // Query entirely), so without this the picker's busy badge freezes at
+      // whatever it was when the task started.
+      qc.invalidateQueries({ queryKey: keys.tasks(cid) });
+      qc.invalidateQueries({ queryKey: keys.sessions(cid) });
+    }
   }, [terminal]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     onContentChange?.();

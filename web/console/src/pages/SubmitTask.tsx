@@ -177,6 +177,7 @@ export default function SubmitTask() {
           cid={cid!}
           config={config}
           recentTasks={tasksQ.data?.tasks ?? []}
+          sessionId={sessionId}
           submit={submit}
           buildPayload={buildPayload}
           prompt={prompt}

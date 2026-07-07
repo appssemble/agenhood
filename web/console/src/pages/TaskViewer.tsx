@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { useTask, useCancelTask } from "../api/queries";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTask, useCancelTask, keys } from "../api/queries";
 import { api } from "../api/client";
 import { subscribeEvents } from "../api/events";
 import { TaskBadge } from "../components/StatusBadge";
@@ -53,6 +53,7 @@ function ConfigSnapshot({ config }: { config: AgentConfig }) {
 export default function TaskViewer() {
   const { cid, tid } = useParams<{ cid: string; tid: string }>();
   const taskQ = useTask(cid!, tid!);
+  const qc = useQueryClient();
   const cancel = useCancelTask(cid!, tid!);
   const toast = useToast();
   const { user } = useAuth();
@@ -89,7 +90,17 @@ export default function TaskViewer() {
         lastSeq.current = e.seq;
         setEvents((prev) => (prev.some((x) => x.seq === e.seq) ? prev : [...prev, e]));
         if (e.type === "token_update") setTokens((e.payload.tokens_in as number) + (e.payload.tokens_out as number));
-        if (e.type === "status_change") taskQ.refetch();
+        if (e.type === "status_change") {
+          taskQ.refetch();
+          // Same staleness gap as ChatTurn: a terminal status here can flip
+          // this task's session "busy" flag elsewhere, and nothing else
+          // invalidates those caches (the SSE stream bypasses React Query).
+          const to = e.payload.to as string | undefined;
+          if (to && to !== "running" && to !== "pending") {
+            qc.invalidateQueries({ queryKey: keys.tasks(cid!) });
+            qc.invalidateQueries({ queryKey: keys.sessions(cid!) });
+          }
+        }
       },
       onError: () => setConn("reconnecting"),
     });

@@ -168,6 +168,48 @@ describe("SubmitTask chat layout", () => {
     await waitFor(() => expect(body?.session_id).toBe("sess-1"));
   });
 
+  it("scopes the visible thread to the selected session, excluding other tasks", async () => {
+    setup();
+    server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({
+      sessions: [{ session_id: "sess-1", driver: "vanilla", task_count: 1,
+        first_created_at: "t1", last_created_at: "t2", busy: false }],
+    })));
+    // A mix: one task in "sess-1", one in a different session, one with none.
+    server.use(http.get("/v1/containers/con_1/tasks", ({ request }) => {
+      const url = new URL(request.url);
+      const filter = url.searchParams.get("session_id");
+      const all = [
+        { task_id: "tsk_in", status: "completed", prompt: "In session one", started_at: "t", ended_at: "t", tokens_in: 1, tokens_out: 2, iterations_used: 1, session_id: "sess-1" },
+        { task_id: "tsk_other", status: "completed", prompt: "In a different session", started_at: "t", ended_at: "t", tokens_in: 1, tokens_out: 2, iterations_used: 1, session_id: "sess-2" },
+        { task_id: "tsk_none", status: "completed", prompt: "One-off, no session", started_at: "t", ended_at: "t", tokens_in: 1, tokens_out: 2, iterations_used: 1 },
+      ];
+      const tasks = filter ? all.filter((t) => t.session_id === filter) : all;
+      return HttpResponse.json({ tasks });
+    }));
+    server.use(http.get("/v1/containers/con_1/tasks/:tid", ({ params }) => HttpResponse.json({
+      task_id: params.tid, status: "completed", prompt: "x", started_at: "t", ended_at: "t", tokens_in: 1, tokens_out: 2, iterations_used: 1, result: null, error: null,
+    })));
+    server.use(http.get("/v1/containers/con_1/tasks/:tid/events", () => HttpResponse.json({ events: [] })));
+
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: /chat/i }));
+
+    // Default ("No session"): only the session-less task is visible — the API
+    // isn't filtered client-side-only, so this also proves the "no session"
+    // view excludes tasks that DO belong to a session, not just the reverse.
+    expect(await screen.findByText("One-off, no session", { selector: ".chat-bubble" })).toBeInTheDocument();
+    expect(screen.queryByText("In session one", { selector: ".chat-bubble" })).not.toBeInTheDocument();
+    expect(screen.queryByText("In a different session", { selector: ".chat-bubble" })).not.toBeInTheDocument();
+
+    // Switch to "sess-1": only that session's task is visible.
+    await userEvent.click(await screen.findByRole("button", { name: /no session/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /sess-1/ }));
+
+    expect(await screen.findByText("In session one", { selector: ".chat-bubble" })).toBeInTheDocument();
+    expect(screen.queryByText("In a different session", { selector: ".chat-bubble" })).not.toBeInTheDocument();
+    expect(screen.queryByText("One-off, no session", { selector: ".chat-bubble" })).not.toBeInTheDocument();
+  });
+
   it("omits session_id when 'No session' is selected (default)", async () => {
     setup();
     server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({ sessions: [] })));

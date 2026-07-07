@@ -8,7 +8,7 @@ import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
 import type { AgentConfig, OutputType, TaskStatus, TaskSummary, TenantLimits } from "../api/types";
 
-type Turn = { taskId: string; prompt: string; status: TaskStatus };
+type Turn = { taskId: string; prompt: string; status: TaskStatus; sessionId: string | null };
 
 // Inline chat layout for submitting tasks: a scrolling thread of this session's
 // turns plus a sticky composer. Shares prompt/output/limit state with the form
@@ -17,6 +17,7 @@ export function SubmitTaskChat({
   cid,
   config,
   recentTasks,
+  sessionId,
   submit,
   buildPayload,
   prompt,
@@ -44,6 +45,10 @@ export function SubmitTaskChat({
   cid: string;
   config: AgentConfig;
   recentTasks: TaskSummary[];
+  // The currently selected session (from SessionPicker); null means "no
+  // session" — the thread then shows only tasks that also have no session,
+  // not every task in the container.
+  sessionId: string | null;
   submit: { mutateAsync: (body: unknown) => Promise<{ task_id: string; status: string }>; isPending: boolean };
   buildPayload: (prompt: string) => unknown;
   prompt: string;
@@ -80,13 +85,20 @@ export function SubmitTaskChat({
   // the latest turn.
   const pinned = useRef(true);
 
-  // Full container history (newest-first from the API) shown oldest→newest, then
-  // session sends not yet reflected in the history, deduped by task id.
+  // Scoped to the selected session (null ⇒ only tasks that also have no
+  // session — not every task in the container), shown oldest→newest, then
+  // pending sends for the same session not yet reflected in the history,
+  // deduped by task id.
   const turns = useMemo<Turn[]>(() => {
-    const history = [...recentTasks].reverse().map((t) => ({ taskId: t.task_id, prompt: t.prompt, status: t.status }));
+    const scoped = recentTasks.filter((t) => (sessionId ? t.session_id === sessionId : !t.session_id));
+    const history = scoped
+      .slice()
+      .reverse()
+      .map((t) => ({ taskId: t.task_id, prompt: t.prompt, status: t.status, sessionId: t.session_id ?? null }));
     const seen = new Set(history.map((t) => t.taskId));
-    return [...history, ...pending.filter((p) => !seen.has(p.taskId))];
-  }, [recentTasks, pending]);
+    const pendingScoped = pending.filter((p) => !seen.has(p.taskId) && p.sessionId === sessionId);
+    return [...history, ...pendingScoped];
+  }, [recentTasks, pending, sessionId]);
 
   // While pinned, glue the thread to the latest turn. Set immediately (pre-paint
   // when called from the layout effect → no top→bottom flash) and again next
@@ -114,7 +126,7 @@ export function SubmitTaskChat({
     if (!text || schemaBlocksSubmit || submit.isPending) return;
     try {
       const res = await submit.mutateAsync(buildPayload(text));
-      setPending((prev) => [...prev, { taskId: res.task_id, prompt: text, status: "running" }]);
+      setPending((prev) => [...prev, { taskId: res.task_id, prompt: text, status: "running", sessionId }]);
       setPrompt("");
       pinned.current = true; // sending always jumps to the new turn
       stickToBottom();
