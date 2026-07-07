@@ -34,16 +34,17 @@ from control_plane.docker_ctl.provision import (
 )
 from control_plane.errors import APIError, api_error, not_found, validation_error
 from control_plane.ids import new_container_id
+from control_plane.mcp_service import filter_known_mcp_server_ids
 from control_plane.models_db import containers, templates, tenants
 from control_plane.models_db import mcp_servers as mcp_servers_table
 from control_plane.models_db import skills as skills_table
+from control_plane.resource_limits import resolve_resource_limits
 from control_plane.schemas import (
     ConfigOut,
     ConfigPatch,
     ContainerOut,
     CreateContainerRequest,
 )
-from control_plane.mcp_service import filter_known_mcp_server_ids
 from control_plane.skills_service import filter_known_skill_ids
 from control_plane.tenant_defaults import merge_limits
 from control_plane.variants import assert_config_runnable_on_variant
@@ -162,6 +163,8 @@ def _row_to_container_out(row: Any) -> ContainerOut:
         created_at=row.created_at.isoformat(),
         error_message=row.error_message,
         git_mode=row.git_mode,
+        mem_limit=row.mem_limit,
+        cpus=row.cpus,
     )
 
 
@@ -256,6 +259,13 @@ async def create_container(
         tools=TOOLS,
     )
 
+    mem_limit, cpus = resolve_resource_limits(
+        variant=variant,
+        requested_mem_limit=body.resource_limits.mem_limit if body.resource_limits else None,
+        requested_cpus=body.resource_limits.cpus if body.resource_limits else None,
+        settings=settings,
+    )
+
     # Total-provisioned cap (spec §4.4): every row not in 'destroyed'.
     count = (
         await session.execute(
@@ -306,6 +316,8 @@ async def create_container(
             tenant_id=tid,
             image_tag=image_tag,
             max_workers=max_workers,
+            mem_limit=mem_limit,
+            cpus=cpus,
             reuse_volume_name=reuse_volume,
             extra_env=settings.agent_extra_env,
         )
@@ -336,6 +348,8 @@ async def create_container(
                 config=config.model_dump(),
                 status="running",
                 resources=resources,
+                mem_limit=mem_limit,
+                cpus=cpus,
             )
         )
         await session.commit()
