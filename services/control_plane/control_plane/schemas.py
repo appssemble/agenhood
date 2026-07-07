@@ -7,6 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentcore.models import AgentConfig, ContextSpec, SystemPromptMode
 
 
+class ResourceLimitsIn(BaseModel):
+    mem_limit: str | None = None
+    cpus: float | None = None
+
+
 class CreateContainerRequest(BaseModel):
     name: str
     template_id: str | None = None
@@ -17,6 +22,7 @@ class CreateContainerRequest(BaseModel):
     image_variant: Literal["full", "slim"] = "full"
     volume_id: str | None = None
     resources: dict[str, Any] = Field(default_factory=dict)
+    resource_limits: ResourceLimitsIn | None = None
 
 
 class ContainerOut(BaseModel):
@@ -33,6 +39,8 @@ class ContainerOut(BaseModel):
     created_at: str
     error_message: str | None
     git_mode: str = "snapshot"
+    mem_limit: str
+    cpus: float
 
 
 class ConfigPatch(BaseModel):
