@@ -44,6 +44,33 @@ async def start(client: object, docker_name: str) -> None:
     await asyncio.to_thread(_start)
 
 
+_CPU_PERIOD_US = 100_000  # matches Docker's own --cpus/nano_cpus conversion
+
+
+async def update_resources(
+    client: object, docker_name: str, mem_limit: str, cpus: float
+) -> None:
+    """Live-update a container's memory/CPU caps in place, no restart.
+
+    Works whether the container is running or stopped — Docker's update API
+    applies the new HostConfig regardless of run state. docker-py's
+    ``Container.update()`` has no ``nano_cpus`` parameter (unlike
+    ``containers.run()``), so CPU is expressed as Docker itself expresses
+    ``--cpus`` internally: a fixed 100ms CFS period with a proportional quota.
+    """
+
+    def _update() -> None:
+        c = client.containers.get(docker_name)  # type: ignore[attr-defined]
+        c.update(
+            mem_limit=mem_limit,
+            memswap_limit=mem_limit,
+            cpu_period=_CPU_PERIOD_US,
+            cpu_quota=int(cpus * _CPU_PERIOD_US),
+        )
+
+    await asyncio.to_thread(_update)
+
+
 def host_shim_url_from_ports(ports: Any, shim_port: int) -> str | None:
     """Return ``http://localhost:<host_port>`` for *shim_port*'s first host binding.
 
