@@ -57,5 +57,6 @@ def test_resources_come_from_explicit_params_not_settings():
     )
     assert kw["mem_limit"] == "2g"
     assert kw["memswap_limit"] == "2g"
-    assert kw["nano_cpus"] == 1_000_000_000
+    assert kw["cpu_period"] == 100_000
+    assert kw["cpu_quota"] == 100_000
     assert kw["pids_limit"] == 256

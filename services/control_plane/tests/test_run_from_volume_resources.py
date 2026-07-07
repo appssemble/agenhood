@@ -53,4 +53,5 @@ def test_run_from_volume_uses_row_resources_not_settings_defaults():
     asyncio.run(run_from_volume(client, row, settings=_settings()))
     assert captured["mem_limit"] == "3g"
     assert captured["memswap_limit"] == "3g"
-    assert captured["nano_cpus"] == 1_500_000_000
+    assert captured["cpu_period"] == 100_000
+    assert captured["cpu_quota"] == 150_000

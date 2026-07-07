@@ -12,6 +12,8 @@ from control_plane.docker_ctl import host_shim_url_from_ports
 from control_plane.ids import docker_name_for, volume_name_for
 from control_plane.shim_client import ShimClient
 
+_CPU_PERIOD_US = 100_000  # matches docker_ctl/__init__.py's _CPU_PERIOD_US — must stay in sync (Docker's --cpus/nano_cpus conversion)
+
 
 @dataclass
 class ProvisionResult:
@@ -139,7 +141,8 @@ def build_run_kwargs(
         "pids_limit": settings.agent_pids_limit,
         "mem_limit": mem_limit,
         "memswap_limit": mem_limit,
-        "nano_cpus": int(cpus * 1_000_000_000),
+        "cpu_period": _CPU_PERIOD_US,
+        "cpu_quota": int(cpus * _CPU_PERIOD_US),
         "restart_policy": {"Name": "no"},
         "environment": _env_for(cid, tenant_id, shim_token, max_concurrent_tasks),
         "labels": {
