@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Button } from "../ui/Button";
+import { Dropdown } from "../ui/Dropdown";
 import { Icons } from "../ui/Icon";
 import { useUpdateResources } from "../api/queries";
+import { MEM_OPTIONS, CPU_OPTIONS, withCurrentValue } from "../lib/resourceOptions";
 import { useToast } from "./Toast";
 
 /**
@@ -30,14 +32,16 @@ export function UpdateResourcesEditor({
     setCpus(String(currentCpus));
   }, [currentMemLimit, currentCpus]);
 
-  const parsedCpus = Number(cpus);
-  const canSubmit =
-    !!memLimit.trim() && !Number.isNaN(parsedCpus) && parsedCpus > 0 && !update.isPending;
+  // Values only ever come from the fixed dropdown lists (or the pre-filled
+  // current value), both always valid, so there's nothing left to validate.
+  const canSubmit = !update.isPending;
+  const memOptions = withCurrentValue(MEM_OPTIONS, currentMemLimit);
+  const cpuOptions = withCurrentValue(CPU_OPTIONS, String(currentCpus));
 
   async function submit() {
     if (!canSubmit) return;
     try {
-      const result = await update.mutateAsync({ mem_limit: memLimit.trim(), cpus: parsedCpus });
+      const result = await update.mutateAsync({ mem_limit: memLimit, cpus: Number(cpus) });
       if (result.applied) {
         toast.success("Resources updated", "The new limits are in effect.");
       } else {
@@ -52,23 +56,11 @@ export function UpdateResourcesEditor({
   return (
     <div style={{ marginTop: 12 }}>
       <label className="cw-label" htmlFor="res-mem">Memory</label>
-      <input
-        id="res-mem"
-        className="cw-input"
-        value={memLimit}
-        onChange={(e) => setMemLimit(e.target.value)}
-        placeholder="e.g. 2g"
-      />
+      <Dropdown id="res-mem" value={memLimit} onChange={setMemLimit} options={memOptions} />
       <label className="cw-label" htmlFor="res-cpu" style={{ marginTop: 8, display: "block" }}>
         CPUs
       </label>
-      <input
-        id="res-cpu"
-        className="cw-input"
-        value={cpus}
-        onChange={(e) => setCpus(e.target.value)}
-        placeholder="e.g. 1.5"
-      />
+      <Dropdown id="res-cpu" value={cpus} onChange={setCpus} options={cpuOptions} />
 
       <p className="cw-sub" style={{ marginTop: 12 }}>
         Applies immediately on a running container, no restart. A paused container

@@ -3,10 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { useTemplates, useCreateContainer } from "../api/queries";
 import { useToast } from "../components/Toast";
 import { ApiError } from "../api/client";
-import { Button, SegControl, Field, Input, Note } from "../ui";
+import { Button, SegControl, Field, Input, Note, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { ModelPicker } from "../components/ModelPicker";
+import { MEM_OPTIONS, CPU_OPTIONS } from "../lib/resourceOptions";
 import type { Template } from "../api/types";
+
+const DEFAULT_OPTION = { value: "", label: "Default (by image variant)" };
+const MEM_OPTIONS_WITH_DEFAULT = [DEFAULT_OPTION, ...MEM_OPTIONS];
+const CPU_OPTIONS_WITH_DEFAULT = [DEFAULT_OPTION, ...CPU_OPTIONS];
 
 function templateTags(t: Template): string[] {
   const tags: string[] = [];
@@ -98,11 +103,6 @@ export default function CreateContainer() {
   if (!chosen) missing.push("Select a template");
   if (!name.trim()) missing.push("Name the container");
   if (!model) missing.push("Choose a model");
-  const trimmedCpus = cpus.trim();
-  const parsedCpusValid = trimmedCpus ? Number(trimmedCpus) : undefined;
-  if (trimmedCpus && (Number.isNaN(parsedCpusValid) || (parsedCpusValid as number) <= 0)) {
-    missing.push("Enter a valid CPU count");
-  }
   const ready = missing.length === 0;
 
   async function onCreate() {
@@ -117,11 +117,12 @@ export default function CreateContainer() {
             context: chosen.context,
           }
         : undefined;
-      const trimmedMem = memLimit.trim();
-      const parsedCpus = parsedCpusValid;
+      // Both dropdowns default to "" (use the image-variant default) — only
+      // include resource_limits, and only the fields the user actually picked.
+      const parsedCpus = cpus ? Number(cpus) : undefined;
       const resource_limits =
-        trimmedMem || parsedCpus !== undefined
-          ? { ...(trimmedMem && { mem_limit: trimmedMem }), ...(parsedCpus !== undefined && { cpus: parsedCpus }) }
+        memLimit || parsedCpus !== undefined
+          ? { ...(memLimit && { mem_limit: memLimit }), ...(parsedCpus !== undefined && { cpus: parsedCpus }) }
           : undefined;
       const ctr = await create.mutateAsync({
         name, template_id: effectiveTemplateId, image_variant: variant, config,
@@ -222,23 +223,23 @@ export default function CreateContainer() {
               </div>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
-                <div className="fluid-w" style={{ flex: "1 1 160px", maxWidth: 200 }}>
-                  <Field label="Memory (optional)" htmlFor="mem-limit" hint="e.g. 2g. Defaults by image variant.">
-                    <Input
+                <div className="fluid-w" style={{ flex: "1 1 160px", maxWidth: 220 }}>
+                  <Field label="Memory (optional)" htmlFor="mem-limit" hint="Defaults by image variant.">
+                    <Dropdown
                       id="mem-limit"
                       value={memLimit}
-                      onChange={(e) => setMemLimit(e.target.value)}
-                      placeholder={variant === "full" ? "4g" : "2g"}
+                      onChange={setMemLimit}
+                      options={MEM_OPTIONS_WITH_DEFAULT}
                     />
                   </Field>
                 </div>
-                <div className="fluid-w" style={{ flex: "1 1 160px", maxWidth: 200 }}>
-                  <Field label="CPUs (optional)" htmlFor="cpus" hint="e.g. 1.5. Defaults by image variant.">
-                    <Input
+                <div className="fluid-w" style={{ flex: "1 1 160px", maxWidth: 220 }}>
+                  <Field label="CPUs (optional)" htmlFor="cpus" hint="Defaults by image variant.">
+                    <Dropdown
                       id="cpus"
                       value={cpus}
-                      onChange={(e) => setCpus(e.target.value)}
-                      placeholder={variant === "full" ? "2" : "1"}
+                      onChange={setCpus}
+                      options={CPU_OPTIONS_WITH_DEFAULT}
                     />
                   </Field>
                 </div>
@@ -266,8 +267,8 @@ export default function CreateContainer() {
               <ReviewRow label="Model" value={model || null} mono />
               <ReviewRow label="Driver" value={chosen?.driver ?? null} mono />
               <ReviewRow label="Image" value={variant === "full" ? "Full" : "Slim"} />
-              <ReviewRow label="Memory" value={memLimit.trim() || null} mono />
-              <ReviewRow label="CPUs" value={cpus.trim() || null} mono />
+              <ReviewRow label="Memory" value={MEM_OPTIONS.find((o) => o.value === memLimit)?.label ?? null} />
+              <ReviewRow label="CPUs" value={CPU_OPTIONS.find((o) => o.value === cpus)?.label ?? null} />
             </div>
             <div className="nc-rev-foot">
               <Button

@@ -65,32 +65,15 @@ describe("CreateContainer", () => {
     renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
     expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
     await user.type(screen.getByLabelText(/name/i), "research-prod");
-    await user.type(screen.getByLabelText(/memory/i), "3g");
-    await user.type(screen.getByLabelText(/cpu/i), "1.5");
+    await user.click(screen.getByLabelText(/memory/i));
+    await user.click(screen.getByRole("option", { name: "1 GB" }));
+    await user.click(screen.getByLabelText(/cpu/i));
+    await user.click(screen.getByRole("option", { name: "0.5 CPU" }));
     await user.click(screen.getByRole("button", { name: /Create container/i }));
     await waitFor(() => expect(posted).toMatchObject({
       name: "research-prod",
-      resource_limits: { mem_limit: "3g", cpus: 1.5 },
+      resource_limits: { mem_limit: "1g", cpus: 0.5 },
     }));
-  });
-
-  it("disables Create when a non-numeric CPU value is entered", async () => {
-    const user = userEvent.setup();
-    setupAuth();
-    server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl()] })));
-    let posted: any = null;
-    server.use(http.post("/v1/containers", async ({ request }) => {
-      posted = await request.json();
-      return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
-    }));
-    renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
-    expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
-    await user.type(screen.getByLabelText(/name/i), "research-prod");
-    await user.type(screen.getByLabelText(/cpu/i), "abc");
-    expect(screen.getByRole("button", { name: /Create container/i })).toBeDisabled();
-    expect(screen.getByText(/Enter a valid CPU count/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Create container/i }));
-    expect(posted).toBeNull();
   });
 
   it("omits resource_limits when memory and cpu are left blank", async () => {
