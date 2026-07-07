@@ -81,10 +81,24 @@ export default function SkillEditor() {
   const [refsState, setRefsState] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [refsError, setRefsError] = useState<string | null>(null);
 
-  // Inline "Generate new deploy key" affordance under the Repository access picker.
+  // Repository access: the deploy-key picker only appears for private repos
+  // (progressive disclosure — most installs are public).
+  const [accessMode, setAccessMode] = useState<"public" | "private">("public");
+  // Inline "Generate new deploy key" affordance under the deploy-key picker.
   const [showGenerateKey, setShowGenerateKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [justCreatedKey, setJustCreatedKey] = useState<DeployKey | null>(null);
+
+  function switchAccessMode(v: "public" | "private") {
+    setAccessMode(v);
+    setDraft((d) => (d ? {
+      ...d,
+      // Auto-select the key when there's exactly one — the common case.
+      deploy_key_id: v === "private" && deployKeys.length === 1 ? deployKeys[0].id : "",
+    } : d));
+    setRefsState("idle"); setBranches([]); setRefsError(null);
+    setJustCreatedKey(null); setShowGenerateKey(false); setNewKeyName("");
+  }
 
   // Edit: fetch the full skill (incl. body) once.
   useEffect(() => {
@@ -149,6 +163,7 @@ export default function SkillEditor() {
     ? selected.length > 0
     : isGit
       ? !!draft.source_url && !invalidUrl && !!draft.source_ref
+        && (isEdit || accessMode === "public" || !!draft.deploy_key_id)
       : !!draft.name && !!draft.description && !invalidName;
 
   // Load the repo's branches when the URL field blurs (after normalizing the
@@ -388,9 +403,11 @@ export default function SkillEditor() {
                 )}
                 {refsAuthFailed && !draft.deploy_key_id && (
                   <div style={{ marginTop: 8 }}>
-                    <Note tone="amber" role="alert">
-                      This repository looks private — pick or generate a deploy key under{" "}
-                      <strong>Repository access</strong> below.
+                    <Note tone="amber" role="alert" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span>This repository looks private.</span>
+                      <Button variant="secondary" size="sm" onClick={() => switchAccessMode("private")}>
+                        Use a deploy key
+                      </Button>
                     </Note>
                   </div>
                 )}
@@ -413,20 +430,31 @@ export default function SkillEditor() {
                   </div>
                 )}
               </Field>
-              <Field label="Repository access" htmlFor="deploy-key-sel" hint="Only needed for private repositories.">
-                <Dropdown
-                  id="deploy-key-sel"
-                  aria-label="Repository access"
-                  value={draft.deploy_key_id}
-                  onChange={(v) => {
-                    setDraft({ ...draft, deploy_key_id: v });
-                    setRefsState("idle"); setBranches([]); setRefsError(null); setJustCreatedKey(null);
-                  }}
+              <Field label="Repository access">
+                <SegControl<"public" | "private">
+                  value={accessMode}
+                  onChange={switchAccessMode}
                   options={[
-                    { value: "", label: "Public repository" },
-                    ...deployKeys.map((k) => ({ value: k.id, label: k.name })),
+                    { value: "public", label: "Public" },
+                    { value: "private", label: "Private" },
                   ]}
                 />
+                {accessMode === "private" && (<>
+                <div style={{ marginTop: 8 }}>
+                  <Dropdown
+                    id="deploy-key-sel"
+                    aria-label="Deploy key"
+                    value={draft.deploy_key_id}
+                    onChange={(v) => {
+                      setDraft({ ...draft, deploy_key_id: v });
+                      setRefsState("idle"); setBranches([]); setRefsError(null); setJustCreatedKey(null);
+                    }}
+                    options={[
+                      { value: "", label: "Select a deploy key…" },
+                      ...deployKeys.map((k) => ({ value: k.id, label: k.name })),
+                    ]}
+                  />
+                </div>
                 {!showGenerateKey ? (
                   <button
                     type="button"
@@ -462,6 +490,7 @@ export default function SkillEditor() {
                     <DeployKeyInstallHint publicKey={justCreatedKey.ssh_public_key} />
                   </div>
                 )}
+                </>)}
               </Field>
               <Field label="Subpath" hint="Directory containing SKILL.md. Leave blank for the repo root." htmlFor="git-subpath">
                 <Input id="git-subpath" className="fluid-w" aria-label="Subpath" value={draft.source_subpath}

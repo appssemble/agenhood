@@ -88,9 +88,23 @@ describe("SkillEditor (repository access / deploy keys)", () => {
   };
 
   async function selectDeployKey() {
-    fireEvent.click(screen.getByLabelText("Repository access"));
+    fireEvent.click(screen.getByRole("button", { name: "Private" }));
+    fireEvent.click(screen.getByLabelText("Deploy key"));
     fireEvent.mouseDown(await screen.findByRole("option", { name: "team" }));
   }
+
+  it("hides the deploy-key picker until Private is chosen", async () => {
+    server.use(http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })));
+    renderWithProviders(<SkillEditor />);
+    await userEvent.click(await screen.findByRole("button", { name: "From git" }));
+
+    expect(screen.queryByLabelText("Deploy key")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Generate new deploy key…" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Private" }));
+    expect(screen.getByLabelText("Deploy key")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate new deploy key…" })).toBeInTheDocument();
+  });
 
   it("converts a pasted https URL to ssh when a key is selected", async () => {
     let asked: any = null;
@@ -134,6 +148,10 @@ describe("SkillEditor (repository access / deploy keys)", () => {
     await userEvent.tab();
 
     expect(await screen.findByText(/looks private/i)).toBeInTheDocument();
+
+    // The note's action switches access to Private and reveals the key picker.
+    await userEvent.click(screen.getByRole("button", { name: "Use a deploy key" }));
+    expect(screen.getByLabelText("Deploy key")).toBeInTheDocument();
   });
 
   it("sends deploy_key_id with the git-refs request", async () => {
@@ -196,6 +214,7 @@ describe("SkillEditor (repository access / deploy keys)", () => {
     await userEvent.click(await screen.findByRole("button", { name: "From git" }));
 
     // Generate a new key - instruction box appears
+    fireEvent.click(screen.getByRole("button", { name: "Private" }));
     await userEvent.click(screen.getByRole("button", { name: "Generate new deploy key…" }));
     await userEvent.type(screen.getByLabelText("New deploy key name"), "new-key");
     await userEvent.click(screen.getByRole("button", { name: "Generate" }));
@@ -203,9 +222,8 @@ describe("SkillEditor (repository access / deploy keys)", () => {
     expect(await screen.findByText(/Add "new-key" to GitHub/i)).toBeInTheDocument();
     expect(screen.getByText("ssh-ed25519 BBBB new")).toBeInTheDocument();
 
-    // Change repository access to "Public repository" - instruction box should disappear
-    fireEvent.click(screen.getByLabelText("Repository access"));
-    fireEvent.mouseDown(await screen.findByRole("option", { name: "Public repository" }));
+    // Switching back to Public hides the picker and the instruction box.
+    fireEvent.click(screen.getByRole("button", { name: "Public" }));
 
     expect(screen.queryByText(/Add "new-key" to GitHub/i)).not.toBeInTheDocument();
     expect(screen.queryByText("ssh-ed25519 BBBB new")).not.toBeInTheDocument();
