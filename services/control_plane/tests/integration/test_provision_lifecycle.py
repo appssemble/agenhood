@@ -69,3 +69,44 @@ async def test_create_then_delete_lifecycle(seeded_app: object) -> None:
         )
         g = await c.get(f"/v1/containers/{cid}", headers=headers)
         assert g.status_code == 404
+
+
+async def test_update_resources_live_no_restart(seeded_app: object) -> None:
+    headers = {"Authorization": "Bearer tk_live_seedkey"}
+    async with await _client(seeded_app) as c:
+        r = await c.post(
+            "/v1/containers",
+            headers=headers,
+            json={
+                "name": "res1",
+                "config": {"driver": "vanilla", "model": "claude-opus-4-7", "tools": []},
+            },
+        )
+        assert r.status_code == 201, r.text
+        cid = r.json()["id"]
+        assert r.json()["mem_limit"] == "4g"
+        assert r.json()["cpus"] == 2.0
+        docker_name = "agent-c-" + cid[len("con_"):]
+
+        p = await c.patch(
+            f"/v1/containers/{cid}/resources",
+            headers=headers,
+            json={"mem_limit": "1g", "cpus": 0.5},
+        )
+        assert p.status_code == 200, p.text
+        assert p.json() == {"id": cid, "status": "running", "mem_limit": "1g", "cpus": 0.5}
+
+        inspect = subprocess.run(
+            [
+                "docker", "inspect", docker_name, "--format",
+                "{{.HostConfig.Memory}} {{.HostConfig.CpuPeriod}} {{.HostConfig.CpuQuota}}",
+            ],
+            capture_output=True, text=True,
+        ).stdout.strip()
+        mem_bytes, cpu_period, cpu_quota = inspect.split()
+        assert int(mem_bytes) == 1 * 1024**3
+        assert int(cpu_period) == 100_000
+        assert int(cpu_quota) == 50_000
+
+        d = await c.request("DELETE", f"/v1/containers/{cid}", headers=headers)
+        assert d.status_code == 200, d.text
