@@ -449,7 +449,7 @@ export default function SkillEditor() {
                       borderRadius: "var(--r-3)",
                     }}
                   >
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <Dropdown
                           id="deploy-key-sel"
@@ -467,7 +467,8 @@ export default function SkillEditor() {
                       </div>
                       {!showGenerateKey && (
                         <Button
-                          variant="secondary" size="sm" style={{ gap: 6, flexShrink: 0 }}
+                          variant="secondary"
+                          style={{ gap: 6, flexShrink: 0, whiteSpace: "nowrap", fontSize: 12.5, padding: "0 14px" }}
                           onClick={() => { setNewKeyName(suggestedKeyName()); setShowGenerateKey(true); }}
                         >
                           <Icons.Plus w={13} /> Generate new deploy key…
