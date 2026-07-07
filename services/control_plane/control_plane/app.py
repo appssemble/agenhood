@@ -32,6 +32,7 @@ from control_plane.routers import users as users_router
 from control_plane.routers.analytics import router as analytics_router
 from control_plane.routers.console import router as console_router
 from control_plane.routers.containers import router as containers_router
+from control_plane.routers.deploy_keys import router as deploy_keys_router
 from control_plane.routers.files import router as files_router
 from control_plane.routers.git import router as git_router
 from control_plane.routers.images import router as images_router
@@ -485,6 +486,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(models_router, prefix="/v1")
     app.include_router(templates_router, prefix="/v1")
     app.include_router(skills_router, prefix="/v1")
+    app.include_router(deploy_keys_router, prefix="/v1")
     app.include_router(mcp_servers_router, prefix="/v1")
     app.include_router(prompts_router, prefix="/v1")
     app.include_router(workflows_router, prefix="/v1")

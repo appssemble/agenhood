@@ -6,17 +6,18 @@ contracts.py defines:
 - ALLOW                     — (METHOD, path) pairs reviewed and explicitly exempt
 - CONTRACTS                 — full (method, path_template, sample_url, kind) matrix
 
-Live route count: 119 (as of 2026-06-30 make_app() enumeration).
+Live route count: 122 (as of 2026-07-07, after the /v1/deploy-keys CRUD add).
   ALLOW: 2 (GET /docs/oauth2-redirect + WEBSOCKET console — framework/ws, not HTTP-testable)
-  CONTRACTS: 117 (auth 111 + public 3 + redirect 3)
+  CONTRACTS: 120 (auth 114 + public 3 + redirect 3)
 
-Reconciliation vs AUDIT.md (117):
+Reconciliation vs AUDIT.md (117 as of 2026-06-30):
   The AUDIT missed WEBSOCKET /v1/containers/{cid}/console and GET /docs/oauth2-redirect
   which appear in collect_routes() but not in the 117-route AUDIT tally.  Both are
   ALLOW'd — the websocket is not testable via AsyncClient HTTP; the oauth2-redirect
   is a FastAPI framework route registered at /docs/oauth2-redirect instead of the
   computed /v1/docs/oauth2-redirect (mismatch in _framework_defaults).
-  Net: CONTRACTS == 117 == AUDIT count. ✓
+  The three /v1/deploy-keys routes (GET/POST/DELETE, all require_admin) were added
+  on top of that baseline and are covered below as "auth".
 """
 from __future__ import annotations
 
@@ -335,6 +336,13 @@ CONTRACTS: list[tuple[str, str, str, str]] = [
     ("POST",   "/v1/credentials/oauth/openai/start",
      "/v1/credentials/oauth/openai/start", "auth"),
     ("GET",    "/v1/credentials/providers", "/v1/credentials/providers", "auth"),
+
+    # ------------------------------------------------------------------
+    # AUTH: deploy-keys (require_admin → 401 for no-principal)
+    # ------------------------------------------------------------------
+    ("GET",    "/v1/deploy-keys",         "/v1/deploy-keys",       "auth"),
+    ("POST",   "/v1/deploy-keys",         "/v1/deploy-keys",       "auth"),
+    ("DELETE", "/v1/deploy-keys/{dkid}",  "/v1/deploy-keys/dk_x",  "auth"),
 
     # ------------------------------------------------------------------
     # AUTH: images
