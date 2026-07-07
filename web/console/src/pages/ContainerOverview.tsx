@@ -149,7 +149,7 @@ export default function ContainerOverview() {
               >
                 {container.mem_limit} · {container.cpus} CPU{container.cpus === 1 ? "" : "s"}
               </div>
-              {!editingResources && (
+              {canUpdateImage && !editingResources && (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -159,7 +159,7 @@ export default function ContainerOverview() {
                   Edit resources
                 </Button>
               )}
-              {editingResources && (
+              {canUpdateImage && editingResources && (
                 <UpdateResourcesEditor
                   cid={container.id}
                   currentMemLimit={container.mem_limit}
