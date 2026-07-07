@@ -37,8 +37,12 @@ export function UpdateResourcesEditor({
   async function submit() {
     if (!canSubmit) return;
     try {
-      await update.mutateAsync({ mem_limit: memLimit.trim(), cpus: parsedCpus });
-      toast.success("Resources updated", "The new limits are in effect.");
+      const result = await update.mutateAsync({ mem_limit: memLimit.trim(), cpus: parsedCpus });
+      if (result.applied) {
+        toast.success("Resources updated", "The new limits are in effect.");
+      } else {
+        toast.success("Resources saved", "They'll apply the next time this container is restored.");
+      }
       onDone();
     } catch (e) {
       toast.error("Couldn't update resources", e instanceof Error ? e.message : undefined);

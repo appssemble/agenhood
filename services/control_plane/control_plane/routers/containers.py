@@ -656,6 +656,11 @@ async def update_container_resources(
     tid = _tid(principal)
     row = await _load_owned_container(session, tid, cid)
     settings = _settings(request)
+    # A field omitted from the PATCH body falls back to the container's current
+    # stored value, which is then re-validated against the global bounds like any
+    # explicit request. This keeps resolve_resource_limits to a single code path,
+    # but means a single-field PATCH can be rejected citing the *other*, unchanged
+    # field if an operator has since narrowed the global bounds.
     mem_limit, cpus = resolve_resource_limits(
         variant=row.image_variant,
         requested_mem_limit=body.mem_limit if body.mem_limit is not None else row.mem_limit,
@@ -674,7 +679,13 @@ async def update_container_resources(
         actor_id=tid,
     )
     await session.commit()
-    return {"id": cid, "status": status, "mem_limit": mem_limit, "cpus": cpus}
+    return {
+        "id": cid,
+        "status": status,
+        "mem_limit": mem_limit,
+        "cpus": cpus,
+        "applied": status != "archived",
+    }
 
 
 @router.post("/containers/{cid}/resume")

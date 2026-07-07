@@ -262,7 +262,7 @@ export function useUpdateResources(cid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: { mem_limit?: string; cpus?: number }) =>
-      api.patch<{ id: string; status: string; mem_limit: string; cpus: number }>(
+      api.patch<{ id: string; status: string; mem_limit: string; cpus: number; applied: boolean }>(
         `/v1/containers/${cid}/resources`,
         body,
       ),

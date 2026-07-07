@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { UpdateResourcesEditor } from "./UpdateResourcesEditor";
 
-const mutateAsync = vi.fn().mockResolvedValue({ id: "ctr_1", status: "running", mem_limit: "3g", cpus: 1.5 });
+const mutateAsync = vi.fn().mockResolvedValue({ id: "ctr_1", status: "running", mem_limit: "3g", cpus: 1.5, applied: true });
 
 vi.mock("../api/queries", () => ({
   useUpdateResources: () => ({ mutateAsync, isPending: false }),

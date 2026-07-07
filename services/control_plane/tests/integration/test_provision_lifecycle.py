@@ -94,7 +94,9 @@ async def test_update_resources_live_no_restart(seeded_app: object) -> None:
             json={"mem_limit": "1g", "cpus": 0.5},
         )
         assert p.status_code == 200, p.text
-        assert p.json() == {"id": cid, "status": "running", "mem_limit": "1g", "cpus": 0.5}
+        assert p.json() == {
+            "id": cid, "status": "running", "mem_limit": "1g", "cpus": 0.5, "applied": True,
+        }
 
         inspect = subprocess.run(
             [
