@@ -1940,6 +1940,34 @@ table.tbl{ width: 100%; border-collapse: separate; border-spacing: 0; font-size:
   text-transform: uppercase; letter-spacing: .06em; color: var(--muted); pointer-events: none; }
 .tenant-switcher .dd-list .dd-group:first-child{ padding-top: 2px; }
 
+/* SessionPicker: the submit-header conversation-session control, built on the
+   same shared .dd dropdown as TenantSwitcher above. Sits at the end of the
+   header row, so its menu is right-anchored (grows leftward) instead of the
+   shared default's left/stretch. Options are plain buttons (not li/ul) so the
+   existing role="menu"/"menuitem" semantics stay intact. */
+.session-picker-trigger{
+  gap: 8px; padding: 7px 30px 7px 12px;
+  background-color: var(--surface-2); border-color: var(--border);
+  color: var(--ink); font-size: 12.5px;
+  background-position: right 10px center;
+}
+.session-picker-trigger .icon{ color: var(--muted); flex: 0 0 auto; }
+.session-picker-menu{ left: auto; right: 0; min-width: 300px; padding: 0; }
+.session-picker-list{ display: flex; flex-direction: column; }
+.session-picker-list .dd-option{
+  width: 100%; border: 0; background: transparent; text-align: left;
+  font-family: var(--font-ui); cursor: pointer;
+}
+.session-picker-list .dd-option:hover{ background: var(--surface-2); }
+.session-picker-row{ display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.session-picker-id{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-picker-meta{ font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.session-picker-end{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.session-picker-list .dd-action{ border-top: 1px solid var(--border); margin-top: 4px;
+  padding-top: 10px; color: var(--ink-2); font-weight: 600; gap: 8px; justify-content: flex-start; }
+.session-picker-list .dd-action:hover{ color: var(--ink); }
+.session-picker-list .dd-action-plus{ font-weight: 700; }
+
 /* ── Create Workspace dialog ─────────────────────────────────────────────
    Refined editorial modal: ink-tile header mark, yellow accent, staged entry. */
 /* Transparent click-catcher — no scrim, so it reads as a dropdown, not a modal.
