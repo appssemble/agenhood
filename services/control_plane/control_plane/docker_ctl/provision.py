@@ -98,6 +98,8 @@ def build_run_kwargs(
     shim_token: str,
     max_concurrent_tasks: int,
     image_tag: str,
+    mem_limit: str,
+    cpus: float,
 ) -> dict[str, object]:
     """Return the ``docker_client.containers.run`` keyword-arguments dict for an
     agent container wired to the production networking (spec §4.7, §8.1).
@@ -135,9 +137,9 @@ def build_run_kwargs(
         "cap_add": ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "KILL"],
         "security_opt": ["no-new-privileges:true"],
         "pids_limit": settings.agent_pids_limit,
-        "mem_limit": settings.agent_mem_limit,
-        "memswap_limit": settings.agent_memswap_limit,
-        "nano_cpus": int(settings.agent_cpus * 1_000_000_000),
+        "mem_limit": mem_limit,
+        "memswap_limit": mem_limit,
+        "nano_cpus": int(cpus * 1_000_000_000),
         "restart_policy": {"Name": "no"},
         "environment": _env_for(cid, tenant_id, shim_token, max_concurrent_tasks),
         "labels": {
@@ -154,6 +156,8 @@ async def provision_container(
     tenant_id: str,
     image_tag: str,
     max_workers: int,
+    mem_limit: str,
+    cpus: float,
     reuse_volume_name: str | None = None,
     extra_env: dict[str, str] | None = None,
 ) -> ProvisionResult:
@@ -190,6 +194,8 @@ async def provision_container(
             shim_token=shim_token,
             max_concurrent_tasks=max_workers,
             image_tag=image_tag,   # the resolved per-container tag passed into provision_container
+            mem_limit=mem_limit,
+            cpus=cpus,
         )
         # Daemon-only overlays not in the pure kwargs:
         kwargs["volumes"] = {volume_name: {"bind": "/workspace", "mode": "rw"}}

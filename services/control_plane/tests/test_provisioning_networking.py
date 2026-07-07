@@ -29,6 +29,7 @@ def test_provisioning_uses_internal_network_and_proxy_env():
         tenant_id="tnt_1",
         shim_token="shimtok",
         max_concurrent_tasks=4,
+        mem_limit="4g", cpus=2.0,
     )
 
     assert kwargs["network"] == "agent-runtime-internal"
@@ -56,6 +57,7 @@ def test_build_run_kwargs_runs_as_root():
         tenant_id="t1",
         shim_token="tok",
         max_concurrent_tasks=4,
+        mem_limit="4g", cpus=2.0,
     )
     assert kw["user"] == "0:0"
     # lockdown unchanged:
@@ -78,6 +80,7 @@ def test_build_run_kwargs_grants_cap_kill_for_task_termination():
         tenant_id="t1",
         shim_token="tok",
         max_concurrent_tasks=4,
+        mem_limit="4g", cpus=2.0,
     )
     assert "KILL" in kw["cap_add"]
     assert kw["cap_drop"] == ["ALL"]

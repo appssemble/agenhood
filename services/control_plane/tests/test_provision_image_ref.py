@@ -17,6 +17,7 @@ def test_image_ref_local_when_no_registry():
     kw = build_run_kwargs(
         settings=s, docker_name="agent-x", cid="c1", tenant_id="t1",
         shim_token="tok", max_concurrent_tasks=4, image_tag="v0.3.0",
+        mem_limit="4g", cpus=2.0,
     )
     assert kw["image"] == "agent-runtime:v0.3.0"
 
@@ -26,6 +27,7 @@ def test_image_ref_uses_registry_prefix():
     kw = build_run_kwargs(
         settings=s, docker_name="agent-x", cid="c1", tenant_id="t1",
         shim_token="tok", max_concurrent_tasks=4, image_tag="v0.3.0",
+        mem_limit="4g", cpus=2.0,
     )
     assert kw["image"] == "registry.example.com/agent-runtime:v0.3.0"
 
@@ -38,16 +40,20 @@ def test_image_tag_is_per_container_not_settings_default():
     kw = build_run_kwargs(
         settings=s, docker_name="agent-x", cid="c1", tenant_id="t1",
         shim_token="tok", max_concurrent_tasks=4, image_tag="v0.2.0",
+        mem_limit="4g", cpus=2.0,
     )
     assert kw["image"] == "registry.example.com/agent-runtime:v0.2.0"
 
 
-def test_resources_come_from_settings():
-    s = _settings(agent_mem_limit="2g", agent_memswap_limit="2g",
-                  agent_cpus=1.0, agent_pids_limit=256)
+def test_resources_come_from_explicit_params_not_settings():
+    # mem_limit/cpus are now resolved by the caller (resolve_resource_limits)
+    # and passed in explicitly — build_run_kwargs no longer reads them off
+    # settings. pids_limit is still settings-derived (it isn't per-container).
+    s = _settings(agent_pids_limit=256)
     kw = build_run_kwargs(
         settings=s, docker_name="agent-x", cid="c1", tenant_id="t1",
         shim_token="tok", max_concurrent_tasks=4, image_tag="v0.3.0",
+        mem_limit="2g", cpus=1.0,
     )
     assert kw["mem_limit"] == "2g"
     assert kw["memswap_limit"] == "2g"
