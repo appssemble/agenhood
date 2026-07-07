@@ -441,58 +441,72 @@ export default function SkillEditor() {
                     ]}
                   />
                 </div>
-                {accessMode === "private" && (<>
-                <div style={{ marginTop: 8 }}>
-                  <Dropdown
-                    id="deploy-key-sel"
-                    aria-label="Deploy key"
-                    value={draft.deploy_key_id}
-                    onChange={(v) => {
-                      setDraft({ ...draft, deploy_key_id: v });
-                      setRefsState("idle"); setBranches([]); setRefsError(null); setJustCreatedKey(null);
+                {accessMode === "private" && (
+                  <div
+                    style={{
+                      marginTop: 8, display: "grid", gap: 10, padding: "12px 14px",
+                      background: "var(--surface-2)", border: "1px solid var(--border)",
+                      borderRadius: "var(--r-3)",
                     }}
-                    options={[
-                      { value: "", label: "Select a deploy key…" },
-                      ...deployKeys.map((k) => ({ value: k.id, label: k.name })),
-                    ]}
-                  />
-                </div>
-                {!showGenerateKey ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{ gap: 6, padding: "4px 6px", marginTop: 6 }}
-                    onClick={() => { setNewKeyName(suggestedKeyName()); setShowGenerateKey(true); }}
                   >
-                    <Icons.Plus w={13} /> Generate new deploy key…
-                  </button>
-                ) : (
-                  <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-                    <Input
-                      aria-label="New deploy key name"
-                      className="fluid-w"
-                      value={newKeyName}
-                      onChange={(e) => setNewKeyName(e.target.value)}
-                      placeholder="team"
-                      style={{ maxWidth: 200 }}
-                    />
-                    <Button variant="secondary" size="sm" disabled={!newKeyName.trim() || createDeployKey.isPending} onClick={onGenerateKey}>
-                      {createDeployKey.isPending ? "Generating…" : "Generate"}
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => { setShowGenerateKey(false); setNewKeyName(""); }}>
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-                {justCreatedKey && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                      Add &quot;{justCreatedKey.name}&quot; to GitHub
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Dropdown
+                          id="deploy-key-sel"
+                          aria-label="Deploy key"
+                          value={draft.deploy_key_id}
+                          onChange={(v) => {
+                            setDraft({ ...draft, deploy_key_id: v });
+                            setRefsState("idle"); setBranches([]); setRefsError(null); setJustCreatedKey(null);
+                          }}
+                          options={[
+                            { value: "", label: "Select a deploy key…" },
+                            ...deployKeys.map((k) => ({ value: k.id, label: k.name })),
+                          ]}
+                        />
+                      </div>
+                      {!showGenerateKey && (
+                        <Button
+                          variant="secondary" size="sm" style={{ gap: 6, flexShrink: 0 }}
+                          onClick={() => { setNewKeyName(suggestedKeyName()); setShowGenerateKey(true); }}
+                        >
+                          <Icons.Plus w={13} /> Generate new deploy key…
+                        </Button>
+                      )}
                     </div>
-                    <DeployKeyInstallHint publicKey={justCreatedKey.ssh_public_key} />
+                    {showGenerateKey && (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label htmlFor="new-key-name" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>
+                          Key name
+                        </label>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <Input
+                            id="new-key-name"
+                            aria-label="New deploy key name"
+                            value={newKeyName}
+                            onChange={(e) => setNewKeyName(e.target.value)}
+                            placeholder="org-repo"
+                            style={{ maxWidth: 220 }}
+                          />
+                          <Button variant="primary" size="sm" disabled={!newKeyName.trim() || createDeployKey.isPending} onClick={onGenerateKey}>
+                            {createDeployKey.isPending ? "Generating…" : "Generate"}
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => { setShowGenerateKey(false); setNewKeyName(""); }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {justCreatedKey && (
+                      <div style={{ display: "grid", gap: 8, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                          <Icons.Check w={14} /> Key &quot;{justCreatedKey.name}&quot; created — add it to GitHub
+                        </div>
+                        <DeployKeyInstallHint publicKey={justCreatedKey.ssh_public_key} />
+                      </div>
+                    )}
                   </div>
                 )}
-                </>)}
               </Field>
               <Field label="Subpath" hint="Directory containing SKILL.md. Leave blank for the repo root." htmlFor="git-subpath">
                 <Input id="git-subpath" className="fluid-w" aria-label="Subpath" value={draft.source_subpath}
@@ -625,7 +639,8 @@ function DeployKeyInstallHint({ publicKey }: { publicKey: string }) {
       <div
         className="mono"
         style={{
-          background: "var(--surface-2)", borderRadius: 8, padding: "10px 12px",
+          background: "var(--surface-3)", border: "1px solid var(--border)",
+          borderRadius: 8, padding: "10px 12px",
           fontSize: 12, overflowWrap: "anywhere",
         }}
       >

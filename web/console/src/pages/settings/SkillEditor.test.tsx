@@ -219,13 +219,13 @@ describe("SkillEditor (repository access / deploy keys)", () => {
     await userEvent.type(screen.getByLabelText("New deploy key name"), "new-key");
     await userEvent.click(screen.getByRole("button", { name: "Generate" }));
 
-    expect(await screen.findByText(/Add "new-key" to GitHub/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Key "new-key" created/i)).toBeInTheDocument();
     expect(screen.getByText("ssh-ed25519 BBBB new")).toBeInTheDocument();
 
     // Switching back to Public hides the picker and the instruction box.
     fireEvent.click(screen.getByRole("button", { name: "Public" }));
 
-    expect(screen.queryByText(/Add "new-key" to GitHub/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Key "new-key" created/i)).not.toBeInTheDocument();
     expect(screen.queryByText("ssh-ed25519 BBBB new")).not.toBeInTheDocument();
   });
 });
