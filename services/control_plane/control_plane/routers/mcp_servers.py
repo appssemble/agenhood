@@ -4,9 +4,10 @@ never returned (see mcp_service)."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from control_plane.auth.crypto import encrypt_secret, load_key_from_env
@@ -21,7 +22,19 @@ from control_plane.mcp_service import (
 from control_plane.models_db import mcp_servers
 from control_plane.skills_service import normalize_description
 
-router = APIRouter()
+router = APIRouter(tags=["MCP Servers"])
+
+
+# ---- response models (documentation only) -----------------------------------
+
+class MCPServerListResponse(BaseModel):
+    """Envelope returned by ``GET /mcp-servers``."""
+
+    mcp_servers: list[dict[str, Any]] = Field(
+        description="The tenant's MCP servers; the auth secret is never exposed, "
+        "only a boolean ``secret_set``. Sorted by name."
+    )
+
 
 # secret_ciphertext is included solely to derive secret_set; it is never returned.
 _ROW_COLS = [
@@ -89,10 +102,20 @@ def apply_mcp_patch(existing: dict[str, Any], patch: dict[str, Any]) -> tuple[di
     return merged, directive
 
 
-@router.get("/mcp-servers")
+@router.get(
+    "/mcp-servers",
+    response_model=MCPServerListResponse,
+    response_description="The tenant's MCP servers (secrets omitted).",
+)
 async def list_mcp_servers(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """List all MCP servers owned by the caller's tenant.
+
+    Tenant-scoped read (any authenticated member/API key). The stored auth
+    secret is never returned — each row exposes only ``secret_set`` (whether a
+    secret is configured). Sorted by name.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(*_ROW_COLS).where(mcp_servers.c.tenant_id == principal.tenant_id)
@@ -102,10 +125,22 @@ async def list_mcp_servers(
     return {"mcp_servers": [mcp_public_view(r) for r in rows]}
 
 
-@router.get("/mcp-servers/{mid}")
+@router.get(
+    "/mcp-servers/{mid}",
+    response_description="The MCP server (secret omitted).",
+)
 async def get_mcp_server(
-    mid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    mid: Annotated[str, Path(description="MCP server id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Fetch a single MCP server by id.
+
+    Tenant-scoped read (any authenticated member/API key); a server belonging to
+    another tenant is treated as absent. The auth secret is never returned, only
+    ``secret_set``. Returns ``404 not_found`` if no such server exists for the
+    tenant.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(*_ROW_COLS).where(
@@ -118,10 +153,22 @@ async def get_mcp_server(
     return mcp_detail_view(dict(row._mapping))
 
 
-@router.post("/mcp-servers")
+@router.post(
+    "/mcp-servers",
+    response_description="The created MCP server (secret omitted).",
+)
 async def create_mcp_server(
     request: Request, principal: Principal = Depends(require_admin)
 ) -> dict[str, Any]:
+    """Register a new MCP server for the caller's tenant.
+
+    Admin-only and tenant-scoped. Body requires ``name``, ``description`` and
+    ``url``; optional ``auth_type`` (default ``none``), ``auth_header_name``,
+    ``secret`` and ``enabled`` (default true). Any ``secret`` is encrypted at
+    rest and never returned. Errors: ``403 forbidden`` for a staff principal
+    with no tenant; ``400 validation_error`` for a malformed payload; ``409
+    conflict`` if a server of that name already exists for the tenant.
+    """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "MCP servers are tenant-scoped")
     fields = parse_mcp_create(await request.json())
@@ -148,10 +195,25 @@ async def create_mcp_server(
     return mcp_detail_view(row)
 
 
-@router.patch("/mcp-servers/{mid}")
+@router.patch(
+    "/mcp-servers/{mid}",
+    response_description="The updated MCP server (secret omitted).",
+)
 async def patch_mcp_server(
-    mid: str, request: Request, principal: Principal = Depends(require_admin)
+    mid: Annotated[str, Path(description="MCP server id.")],
+    request: Request,
+    principal: Principal = Depends(require_admin),
 ) -> dict[str, Any]:
+    """Update an existing MCP server (partial patch).
+
+    Admin-only and tenant-scoped. Any of ``name``, ``description``, ``url``,
+    ``auth_type``, ``auth_header_name`` and ``enabled`` may be patched. The
+    ``secret`` field is directive-based: omit it to keep the stored secret, send
+    a non-empty value to replace it (re-encrypted at rest), or send an empty
+    value to clear it. The secret is never returned. Errors: ``404 not_found``
+    if the server does not exist for the tenant; ``409 conflict`` if a rename
+    collides with another server's name.
+    """
     patch = await request.json()
     async with request.app.state.session_factory() as session:
         result = await session.execute(
@@ -195,10 +257,21 @@ async def patch_mcp_server(
     return mcp_detail_view(existing)
 
 
-@router.delete("/mcp-servers/{mid}", status_code=204)
+@router.delete(
+    "/mcp-servers/{mid}",
+    status_code=204,
+    response_description="MCP server deleted; no content returned.",
+)
 async def delete_mcp_server(
-    mid: str, request: Request, principal: Principal = Depends(require_admin)
+    mid: Annotated[str, Path(description="MCP server id.")],
+    request: Request,
+    principal: Principal = Depends(require_admin),
 ) -> None:
+    """Delete an MCP server by id.
+
+    Admin-only and tenant-scoped. Returns ``204 No Content`` on success.
+    Returns ``404 not_found`` if no such server exists for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(mcp_servers.c.id).where(

@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from control_plane.auth.principal import (
@@ -29,9 +30,32 @@ from control_plane.skills_service import (
     validate_skill_fields,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Skills"])
 
 _PATCHABLE = {"name", "description", "body", "enabled"}
+
+
+# ---- response models (documentation only) -----------------------------------
+
+class SkillListResponse(BaseModel):
+    """Envelope returned by ``GET /skills``."""
+
+    skills: list[dict[str, Any]] = Field(
+        description="The tenant's skills in summary form (no body/bundle bytes), "
+        "sorted by name."
+    )
+
+
+class SkillGitRefsResponse(BaseModel):
+    """Branch listing for a remote skill repository (create-form picker)."""
+
+    ok: bool = Field(description="Always true on success.")
+    branches: list[str] = Field(
+        description="Branch names discovered in the remote repository."
+    )
+    default_branch: str | None = Field(
+        description="The repository's default branch, if one could be resolved."
+    )
 
 # Columns selected on read paths — bundle (BYTEA) and bundle_sha256 are excluded
 # so large binary data is never transferred for list/detail views.
@@ -100,10 +124,20 @@ def apply_skill_patch(existing: dict[str, Any], patch: dict[str, Any]) -> dict[s
 
 # ---- routes -----------------------------------------------------------------
 
-@router.get("/skills")
+@router.get(
+    "/skills",
+    response_model=SkillListResponse,
+    response_description="The tenant's skills in summary form.",
+)
 async def list_skills(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """List all skills owned by the caller's tenant.
+
+    Tenant-scoped read (any authenticated member/API key). Returns summary rows
+    only — the full ``body`` and the packed git bundle bytes are omitted. Sorted
+    by name.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(*_LIST_COLS).where(skills.c.tenant_id == principal.tenant_id)
@@ -113,10 +147,21 @@ async def list_skills(
     return {"skills": [skill_public_view(r) for r in rows]}
 
 
-@router.get("/skills/{sid}")
+@router.get(
+    "/skills/{sid}",
+    response_description="The full skill, including its body.",
+)
 async def get_skill(
-    sid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    sid: Annotated[str, Path(description="Skill id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Fetch a single skill by id, including its full ``body``.
+
+    Tenant-scoped read (any authenticated member/API key); a skill belonging to
+    another tenant is treated as absent. Returns ``404 not_found`` if no such
+    skill exists for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(*_DETAIL_COLS).where(
@@ -129,13 +174,22 @@ async def get_skill(
     return skill_detail_view(dict(row._mapping))
 
 
-@router.post("/skills/git-refs")
+@router.post(
+    "/skills/git-refs",
+    response_model=SkillGitRefsResponse,
+    response_description="The remote repository's branches and default branch.",
+)
 async def list_skill_git_refs(
     request: Request, principal: Principal = Depends(require_admin)
 ) -> dict[str, Any]:
-    """List a remote repo's branches (+ default) for the create form's branch
-    picker. Read-only: no skill is created. A rejected URL (bad scheme) is a 422
-    validation error; an unreachable/private remote is a 502."""
+    """List a remote git repository's branches for the create-form picker.
+
+    Admin-only. Read-only lookup: no skill is created. Body must contain
+    ``source_url``. Returns the branch names plus the resolved default branch.
+    Errors: ``400 validation_error`` if ``source_url`` is missing; ``422
+    validation_error`` if the URL is rejected (bad scheme, e.g. ``file://``);
+    ``502 skill_refs_error`` if the remote is unreachable or private.
+    """
     body = await request.json()
     url = body.get("source_url")
     if not isinstance(url, str) or not url:
@@ -153,10 +207,25 @@ async def list_skill_git_refs(
     return {"ok": True, "branches": branches, "default_branch": default_branch}
 
 
-@router.post("/skills")
+@router.post(
+    "/skills",
+    response_description="The created skill, including its body.",
+)
 async def create_skill(
     request: Request, principal: Principal = Depends(require_admin)
 ) -> dict[str, Any]:
+    """Create a skill from an inline body or a remote git source.
+
+    Admin-only and tenant-scoped. Body ``source_type`` selects the mode:
+    ``inline`` (default) requires ``name`` and ``description`` (plus optional
+    ``body``); ``git`` requires ``source_url`` and ``source_ref`` (optional
+    ``source_subpath``), and the name/description/body are derived from the
+    fetched ``SKILL.md``, which is packed into a cached bundle. Errors:
+    ``403 forbidden`` for a staff principal with no tenant; ``400
+    validation_error`` for a malformed payload; ``422 skill_fetch_error`` if the
+    git source cannot be fetched/packed; ``409 conflict`` if a skill of that
+    name already exists for the tenant.
+    """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "Skills are tenant-scoped")
     fields = parse_skill_create(await request.json())
@@ -200,10 +269,24 @@ async def create_skill(
     return skill_detail_view(row)
 
 
-@router.patch("/skills/{sid}")
+@router.patch(
+    "/skills/{sid}",
+    response_description="The updated skill, including its body.",
+)
 async def patch_skill(
-    sid: str, request: Request, principal: Principal = Depends(require_admin)
+    sid: Annotated[str, Path(description="Skill id.")],
+    request: Request,
+    principal: Principal = Depends(require_admin),
 ) -> dict[str, Any]:
+    """Update an existing skill (partial patch).
+
+    Admin-only and tenant-scoped. For inline skills, ``name``, ``description``,
+    ``body`` and ``enabled`` may be patched. For git skills only ``enabled`` may
+    be toggled — changing name/description/body would desync the stored name
+    from the bundle's ``SKILL.md`` folder, so those fields are ignored. Errors:
+    ``404 not_found`` if the skill does not exist for the tenant; ``409
+    conflict`` if a rename collides with another skill's name.
+    """
     patch = await request.json()
     async with request.app.state.session_factory() as session:
         result = await session.execute(
@@ -253,12 +336,24 @@ async def patch_skill(
     return skill_detail_view(existing)
 
 
-@router.post("/skills/{sid}/refresh")
+@router.post(
+    "/skills/{sid}/refresh",
+    response_description="The refreshed skill, re-pinned to the latest SHA.",
+)
 async def refresh_skill(
-    sid: str, request: Request, principal: Principal = Depends(require_admin)
+    sid: Annotated[str, Path(description="Skill id.")],
+    request: Request,
+    principal: Principal = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Re-pin a git skill: re-resolve its source_ref → new SHA, re-fetch/pack,
-    replace the cached bundle. Inline skills cannot be refreshed."""
+    """Re-pin a git skill to the latest commit of its source ref.
+
+    Admin-only and tenant-scoped. Re-resolves the stored ``source_ref`` to a new
+    SHA, re-fetches and re-packs the bundle, and replaces the cached name,
+    description, body, pinned SHA and bundle bytes. Errors: ``404 not_found`` if
+    the skill does not exist for the tenant; ``400 validation_error`` if the
+    skill is not a git skill (inline skills cannot be refreshed); ``422
+    skill_fetch_error`` if the source cannot be re-fetched.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(skills).where(
@@ -302,10 +397,21 @@ async def refresh_skill(
     return skill_detail_view(existing)
 
 
-@router.delete("/skills/{sid}", status_code=204)
+@router.delete(
+    "/skills/{sid}",
+    status_code=204,
+    response_description="Skill deleted; no content returned.",
+)
 async def delete_skill(
-    sid: str, request: Request, principal: Principal = Depends(require_admin)
+    sid: Annotated[str, Path(description="Skill id.")],
+    request: Request,
+    principal: Principal = Depends(require_admin),
 ) -> None:
+    """Delete a skill by id.
+
+    Admin-only and tenant-scoped. Returns ``204 No Content`` on success.
+    Returns ``404 not_found`` if no such skill exists for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(skills.c.id).where(

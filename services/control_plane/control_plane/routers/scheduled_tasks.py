@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import uuid as _uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Path, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +31,15 @@ from control_plane.schemas import (
 
 _LEGACY_SUNSET = "Sat, 01 Aug 2026 00:00:00 GMT"
 
-router = APIRouter()
+router = APIRouter(tags=["Scheduled Tasks"])
+
+
+class ScheduledTaskListResponse(BaseModel):
+    """Envelope returned by ``GET /scheduled-tasks``."""
+
+    scheduled_tasks: list[ScheduledTaskOut] = Field(
+        description="The calling tenant's scheduled tasks, newest first."
+    )
 
 _ST_COLS = [
     scheduled_tasks.c.id,
@@ -74,7 +83,13 @@ def _resolve_next_run(schedule: dict, timezone: str, run_at: str | None) -> date
     validate_schedule(schedule, timezone)
     if schedule.get("kind") == "once":
         if not run_at:
-            raise APIError(400, "validation_error", "run_at is required for a one-time schedule (provide a new run_at to re-enable)", "run_at")
+            raise APIError(
+                400,
+                "validation_error",
+                "run_at is required for a one-time schedule (provide a new run_at to "
+                "re-enable)",
+                "run_at",
+            )
         try:
             parsed = datetime.fromisoformat(run_at)
         except ValueError as exc:
@@ -231,10 +246,15 @@ async def _do_update_scheduled_task(
     return _row_to_out(existing).model_dump()
 
 
-@router.get("/scheduled-tasks")
+@router.get("/scheduled-tasks", response_model=ScheduledTaskListResponse)
 async def list_scheduled_tasks(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """List the calling tenant's scheduled tasks (newest first).
+
+    Requires a tenant-scoped bearer token. Returns every schedule owned by the
+    principal's tenant, ordered by creation time descending.
+    """
     async with request.app.state.session_factory() as session:
         rows = (
             await session.execute(
@@ -246,10 +266,20 @@ async def list_scheduled_tasks(
     return {"scheduled_tasks": [_row_to_out(dict(r)).model_dump() for r in rows]}
 
 
-@router.post("/scheduled-tasks", status_code=200)
+@router.post("/scheduled-tasks", status_code=200, response_model=ScheduledTaskOut)
 async def create_scheduled_task(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """Create a scheduled task for the calling tenant.
+
+    Requires a tenant-scoped bearer token; staff principals (``tenant_id`` is
+    None) are rejected with 403 `forbidden`. Body is a
+    `CreateScheduledTaskRequest`. The schedule/timezone are validated (400
+    `validation_error` on failure) and the polymorphic `target` (prompt or
+    workflow) must reference resources that belong to the tenant (400
+    `validation_error`). One-time (`kind: once`) schedules require a valid
+    `run_at`. Returns the created schedule with HTTP 200.
+    """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "scheduled tasks are tenant-scoped")
     payload = CreateScheduledTaskRequest(**(await request.json()))
@@ -273,20 +303,39 @@ async def create_scheduled_task(
         )
 
 
-@router.get("/scheduled-tasks/{sid}")
+@router.get("/scheduled-tasks/{sid}", response_model=ScheduledTaskOut)
 async def get_scheduled_task(
-    sid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    sid: Annotated[str, Path(description="Scheduled-task id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Fetch a single scheduled task by id.
+
+    Requires a tenant-scoped bearer token. Returns 404 `not_found` if no
+    schedule with ``sid`` belongs to the tenant.
+    """
     async with request.app.state.session_factory() as session:
         return _row_to_out(
             await _load_owned_schedule(session, principal.tenant_id, sid)
         ).model_dump()
 
 
-@router.patch("/scheduled-tasks/{sid}")
+@router.patch("/scheduled-tasks/{sid}", response_model=ScheduledTaskOut)
 async def update_scheduled_task(
-    sid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    sid: Annotated[str, Path(description="Scheduled-task id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Update a scheduled task's name, target, schedule, timezone, or enabled flag.
+
+    Requires a tenant-scoped bearer token. Body is an
+    `UpdateScheduledTaskRequest`; omitted fields are left unchanged. Returns 404
+    `not_found` if the schedule is not found for the tenant. A replacement
+    `target` must reference tenant-owned resources (400 `validation_error`).
+    `next_run_at` is recomputed when the schedule, timezone, or `run_at`
+    changes, or when re-enabling a disabled schedule; disabling clears
+    `next_run_at`. Invalid schedules return 400 `validation_error`.
+    """
     patch = UpdateScheduledTaskRequest(**(await request.json()))
     async with request.app.state.session_factory() as session:
         existing = await _load_owned_schedule(session, principal.tenant_id, sid)
@@ -330,8 +379,15 @@ async def update_scheduled_task(
 
 @router.delete("/scheduled-tasks/{sid}", status_code=204)
 async def delete_scheduled_task(
-    sid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    sid: Annotated[str, Path(description="Scheduled-task id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> None:
+    """Delete a scheduled task; returns 204 No Content on success.
+
+    Requires a tenant-scoped bearer token. Returns 404 `not_found` if the
+    schedule does not exist for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         await _load_owned_schedule(session, principal.tenant_id, sid)
         await session.execute(
@@ -352,20 +408,49 @@ async def delete_scheduled_task(
 
 
 @router.get("/containers/{cid}/scheduled-tasks")
-async def legacy_list_scheduled_tasks(cid: str) -> RedirectResponse:
-    """308 redirect: GET /containers/{cid}/scheduled-tasks → /v1/scheduled-tasks."""
+async def legacy_list_scheduled_tasks(
+    cid: Annotated[
+        str, Path(description="Container id (legacy path segment; ignored on redirect).")
+    ],
+) -> RedirectResponse:
+    """Deprecated: 308-redirect to the tenant-scoped list endpoint.
+
+    Legacy container-scoped route (Task 20). Issues a 308 Permanent Redirect to
+    `GET /v1/scheduled-tasks`. Deprecated and slated for removal after the
+    Sunset date; prefer the tenant-scoped route.
+    """
     return RedirectResponse(url="/v1/scheduled-tasks", status_code=308)
 
 
 @router.get("/containers/{cid}/scheduled-tasks/{sid}")
-async def legacy_get_scheduled_task(cid: str, sid: str) -> RedirectResponse:
-    """308 redirect: GET /containers/{cid}/scheduled-tasks/{sid} → /v1/scheduled-tasks/{sid}."""
+async def legacy_get_scheduled_task(
+    cid: Annotated[
+        str, Path(description="Container id (legacy path segment; ignored on redirect).")
+    ],
+    sid: Annotated[str, Path(description="Scheduled-task id.")],
+) -> RedirectResponse:
+    """Deprecated: 308-redirect to the tenant-scoped get endpoint.
+
+    Legacy container-scoped route (Task 20). Issues a 308 Permanent Redirect to
+    `GET /v1/scheduled-tasks/{sid}`. Deprecated and slated for removal after the
+    Sunset date.
+    """
     return RedirectResponse(url=f"/v1/scheduled-tasks/{sid}", status_code=308)
 
 
 @router.delete("/containers/{cid}/scheduled-tasks/{sid}")
-async def legacy_delete_scheduled_task(cid: str, sid: str) -> RedirectResponse:
-    """308 redirect: DELETE /containers/{cid}/scheduled-tasks/{sid} → /v1/scheduled-tasks/{sid}."""
+async def legacy_delete_scheduled_task(
+    cid: Annotated[
+        str, Path(description="Container id (legacy path segment; ignored on redirect).")
+    ],
+    sid: Annotated[str, Path(description="Scheduled-task id.")],
+) -> RedirectResponse:
+    """Deprecated: 308-redirect to the tenant-scoped delete endpoint.
+
+    Legacy container-scoped route (Task 20). Issues a 308 Permanent Redirect to
+    `DELETE /v1/scheduled-tasks/{sid}`. Deprecated and slated for removal after
+    the Sunset date.
+    """
     return RedirectResponse(url=f"/v1/scheduled-tasks/{sid}", status_code=308)
 
 
@@ -416,17 +501,25 @@ def _legacy_headers(response: Response) -> None:
     response.headers["Sunset"] = _LEGACY_SUNSET
 
 
-@router.post("/containers/{cid}/scheduled-tasks", status_code=200)
+@router.post(
+    "/containers/{cid}/scheduled-tasks",
+    status_code=200,
+    response_model=ScheduledTaskOut,
+)
 async def legacy_create_scheduled_task(
-    cid: str,
+    cid: Annotated[str, Path(description="Container the ad-hoc prompt/schedule is bound to.")],
     request: Request,
     principal: Principal = Depends(resolve_principal),
 ) -> Response:
-    """Translate old container-scoped POST body to a prompt-target schedule.
+    """Deprecated: create a schedule from the old container-scoped body.
 
-    Old shape: {name, task_body:{prompt,...}, schedule, timezone, run_at?}
-    Creates an ad-hoc prompt from task_body["prompt"] and delegates to the
-    shared _do_create_scheduled_task helper (which validates and inserts).
+    Legacy container-scoped route (Task 20). Requires a tenant-scoped bearer
+    token; staff principals (``tenant_id`` is None) get 403 `forbidden`. Old
+    body shape: `{name, task_body:{prompt,...}, schedule, timezone, run_at?}`.
+    Creates an ad-hoc prompt from ``task_body["prompt"]`` (bound to ``cid``) and
+    delegates to the shared create helper, which validates and inserts (400
+    `validation_error` on a bad schedule/target). Returns the created schedule
+    (HTTP 200) with `Deprecation`/`Sunset` response headers.
     """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "scheduled tasks are tenant-scoped")
@@ -463,18 +556,26 @@ async def legacy_create_scheduled_task(
     return resp
 
 
-@router.patch("/containers/{cid}/scheduled-tasks/{sid}", status_code=200)
+@router.patch(
+    "/containers/{cid}/scheduled-tasks/{sid}",
+    status_code=200,
+    response_model=ScheduledTaskOut,
+)
 async def legacy_update_scheduled_task(
-    cid: str,
-    sid: str,
+    cid: Annotated[str, Path(description="Container the ad-hoc prompt/schedule is bound to.")],
+    sid: Annotated[str, Path(description="Scheduled-task id.")],
     request: Request,
     principal: Principal = Depends(resolve_principal),
 ) -> Response:
-    """Translate old container-scoped PATCH body to a prompt-target schedule update.
+    """Deprecated: update a schedule from the old container-scoped body.
 
-    If task_body is provided in the payload, creates a new ad-hoc prompt from it
-    and rewires the target. Otherwise delegates name/schedule/timezone/enabled
-    updates to the shared _do_update_scheduled_task helper.
+    Legacy container-scoped route (Task 20). Requires a tenant-scoped bearer
+    token; staff principals (``tenant_id`` is None) get 403 `forbidden`. Returns
+    404 `not_found` if the schedule is not found for the tenant. If ``task_body``
+    is present, a new ad-hoc prompt is created (bound to ``cid``) and the target
+    is rewired; otherwise name/schedule/timezone/enabled updates are delegated
+    to the shared update helper (400 `validation_error` on a bad schedule).
+    Returns the updated schedule (HTTP 200) with `Deprecation`/`Sunset` headers.
     """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "scheduled tasks are tenant-scoped")

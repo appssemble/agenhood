@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ from control_plane.routers.containers import (
 )
 from control_plane.shim_client import ShimClient
 
-router = APIRouter()
+router = APIRouter(tags=["Files"])
 
 
 def _shim_for(request: Request, row: Any) -> ShimClient:
@@ -95,27 +95,67 @@ def _attachment_disposition(path: str) -> str:
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
 
 
-@router.get("/containers/{cid}/files")
+@router.get(
+    "/containers/{cid}/files",
+    response_description="Listing of workspace files (as returned by the container shim).",
+)
 async def list_files(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
-    prefix: str | None = None,
+    prefix: Annotated[
+        str | None,
+        Query(description="Optional workspace-relative path prefix to filter the listing."),
+    ] = None,
 ) -> dict:  # type: ignore[type-arg]
+    """List files in a container's workspace.
+
+    Requires a tenant-scoped bearer credential owning the container (staff
+    credentials with tenant_id=None are rejected with 403). Accessing a
+    container's files wakes it: a paused container auto-resumes and an archived
+    one rehydrates under admission control (spec §4.6), so this call has the
+    side effect of bringing the container to running.
+
+    Errors: 403 when the credential is not tenant-scoped; 404 when the
+    container does not exist or belongs to another tenant; 409 if the container
+    cannot be brought to running.
+    """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     async with _shim_for(request, row) as shim:
         return await shim.list_files(prefix)
 
 
-@router.get("/containers/{cid}/files/raw", response_model=None)
+@router.get(
+    "/containers/{cid}/files/raw",
+    response_model=None,
+    response_description=(
+        "Raw file bytes streamed as an attachment download; media type mirrors the "
+        "file's own content type, defaulting to application/octet-stream."
+    ),
+)
 async def download_file(
-    cid: str,
-    path: str,
+    cid: Annotated[str, Path(description="Container id.")],
+    path: Annotated[str, Query(description="Workspace-relative path of the file to download.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> Response:
+    """Download the raw contents of a single workspace file.
+
+    Returns the file bytes with a Content-Disposition attachment header naming
+    the file by its original basename. The response media type is taken from
+    the container shim's content-type header, defaulting to
+    application/octet-stream.
+
+    Requires a tenant-scoped bearer credential owning the container (staff
+    credentials are rejected with 403). Wakes the container as a side effect
+    (spec §4.6): a paused container auto-resumes and an archived one rehydrates.
+
+    Errors: 403 when the credential is not tenant-scoped; 404 when the
+    container does not exist or belongs to another tenant; 409 if the container
+    cannot be brought to running.
+    """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     async with _shim_for(request, row) as shim:
         resp = await shim.download_file(path)
@@ -127,14 +167,35 @@ async def download_file(
     )
 
 
-@router.put("/containers/{cid}/files/raw", status_code=204, response_model=None)
+@router.put(
+    "/containers/{cid}/files/raw",
+    status_code=204,
+    response_model=None,
+    response_description="No content; the file was written to the workspace.",
+)
 async def upload_file(
-    cid: str,
-    path: str,
+    cid: Annotated[str, Path(description="Container id.")],
+    path: Annotated[
+        str, Query(description="Workspace-relative path to write the uploaded bytes to.")
+    ],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> Response:
+    """Upload (create or overwrite) a single workspace file.
+
+    The raw request body (any media type, e.g. application/octet-stream) is
+    written verbatim to the given workspace path in the container. Returns 204
+    No Content on success.
+
+    Requires a tenant-scoped bearer credential owning the container (staff
+    credentials are rejected with 403). Wakes the container as a side effect
+    (spec §4.6): a paused container auto-resumes and an archived one rehydrates.
+
+    Errors: 403 when the credential is not tenant-scoped; 404 when the
+    container does not exist or belongs to another tenant; 409 if the container
+    cannot be brought to running.
+    """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     content = await request.body()
     async with _shim_for(request, row) as shim:
@@ -142,27 +203,67 @@ async def upload_file(
     return Response(status_code=204)
 
 
-@router.delete("/containers/{cid}/files/raw", status_code=204, response_model=None)
+@router.delete(
+    "/containers/{cid}/files/raw",
+    status_code=204,
+    response_model=None,
+    response_description="No content; the file was removed from the workspace.",
+)
 async def delete_file(
-    cid: str,
-    path: str,
+    cid: Annotated[str, Path(description="Container id.")],
+    path: Annotated[str, Query(description="Workspace-relative path of the file to delete.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> Response:
+    """Delete a single workspace file.
+
+    Removes the file at the given workspace path in the container. Returns 204
+    No Content on success.
+
+    Requires a tenant-scoped bearer credential owning the container (staff
+    credentials are rejected with 403). Wakes the container as a side effect
+    (spec §4.6): a paused container auto-resumes and an archived one rehydrates.
+
+    Errors: 403 when the credential is not tenant-scoped; 404 when the
+    container does not exist or belongs to another tenant; 409 if the container
+    cannot be brought to running.
+    """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     async with _shim_for(request, row) as shim:
         await shim.delete_file(path)
     return Response(status_code=204)
 
 
-@router.get("/containers/{cid}/files/archive", response_model=None)
+@router.get(
+    "/containers/{cid}/files/archive",
+    response_model=None,
+    response_description=(
+        "The workspace streamed as a zip archive (media type application/zip) "
+        "delivered as a `<name>-workspace.zip` attachment download."
+    ),
+)
 async def download_archive(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> StreamingResponse:
+    """Download the entire workspace as a zip archive.
+
+    Streams the container's workspace as an application/zip archive delivered
+    with a Content-Disposition attachment header (filename derived from the
+    container name, e.g. `<name>-workspace.zip`). The archive is streamed
+    chunk-by-chunk from the container shim.
+
+    Requires a tenant-scoped bearer credential owning the container (staff
+    credentials are rejected with 403). Wakes the container as a side effect
+    (spec §4.6): a paused container auto-resumes and an archived one rehydrates.
+
+    Errors: 403 when the credential is not tenant-scoped; 404 when the
+    container does not exist or belongs to another tenant; 409 if the container
+    cannot be brought to running.
+    """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     filename = _archive_filename(row.name or cid)
     shim = _shim_for(request, row)

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import control_plane.tables as t
@@ -13,7 +13,7 @@ from control_plane.auth.principal import Principal, actor_type_for, resolve_prin
 from control_plane.errors import api_error
 from control_plane.tenant_service import create_tenant_owned_by
 
-router = APIRouter(prefix="/v1/tenants", tags=["tenants"])
+router = APIRouter(prefix="/v1/tenants", tags=["Tenants"])
 
 
 async def _session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -23,16 +23,37 @@ async def _session(request: Request) -> AsyncIterator[AsyncSession]:
 
 
 class CreateWorkspace(BaseModel):
-    name: str
+    name: str = Field(description="Display name for the new workspace (tenant).")
 
 
-@router.post("", status_code=201)
+class CreateWorkspaceResponse(BaseModel):
+    id: str = Field(description="Id of the newly created workspace.")
+    name: str = Field(description="Display name of the workspace.")
+    owner_id: str = Field(description="Id of the user who created and owns the workspace.")
+
+
+@router.post(
+    "",
+    status_code=201,
+    response_model=CreateWorkspaceResponse,
+    response_description="The new workspace's id, name, and owner id.",
+)
 async def create_workspace(
     body: CreateWorkspace,
     request: Request,
     principal: Principal = Depends(resolve_principal),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Create a new workspace owned by the calling user.
+
+    Requires a valid user session; the caller becomes the workspace owner. Non-staff
+    users are subject to a soft per-user cap on owned workspaces
+    (`max_owned_tenants_per_user`); staff are exempt. Audited as `tenant.create`
+    plus a `membership.add` for the self-owner.
+
+    Errors: 401 unauthorized when unauthenticated; 403 forbidden for an API-key
+    principal (no user session) or when the owned-workspace limit is reached.
+    """
     if principal.user_id is None:
         raise api_error(403, "forbidden", "Creating a workspace requires a user session")
 

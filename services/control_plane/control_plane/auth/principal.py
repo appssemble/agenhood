@@ -173,7 +173,14 @@ class DbPrincipalRepo:
 
 async def resolve_principal(
     request: Request,
-    authorization: str | None = Header(default=None),
+    authorization: str | None = Header(
+        default=None,
+        description=(
+            "Bearer token for authentication: a tenant API key (`tk_live_…`) or a "
+            "session token, sent as `Authorization: Bearer <token>`. The console may "
+            "authenticate via the session cookie instead."
+        ),
+    ),
 ) -> Principal:
     from sqlalchemy.ext.asyncio import async_sessionmaker  # local to avoid circular at module load
 

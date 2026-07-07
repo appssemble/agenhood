@@ -309,6 +309,134 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             pass
 
 
+_API_DESCRIPTION = """\
+The **control plane** is the public REST + SSE API for Agenhood. Everything the
+console does is available here — the console is just one client.
+
+### Agents are containers
+
+An *agent* is a long-lived, isolated **container** with its own workspace,
+configuration, and git state. You provision a container, PATCH its config, then
+submit **tasks** to it. Most task, file, git, and console routes are scoped under
+`/v1/containers/{cid}/…`.
+
+### Base path
+
+Every endpoint is served under the **`/v1`** prefix (account/admin routes carry
+their own prefixes, e.g. `/v1/auth`, `/admin/v1`). The same origin serves the
+console, so in production the API lives beside the SPA under `/v1`.
+
+### Authentication
+
+Send an API key or session token as a **bearer token**:
+
+```
+Authorization: Bearer tk_live_xxx
+```
+
+API keys are tenant-scoped (`tk_live_…`); the console uses a session cookie.
+Admin routes (`/admin/v1`) require a staff or admin-role principal.
+
+### Streaming
+
+Live feeds — task events, workflow run events, OAuth connection status — are
+served as **Server-Sent Events** (`text/event-stream`). Open them with a
+streaming client (`curl -N`, `EventSource`) rather than a normal JSON fetch.
+
+### Errors
+
+Errors return a JSON envelope with a stable machine-readable `code`:
+
+```json
+{ "error": { "code": "not_found", "message": "container … not found" } }
+```
+
+Request-validation failures (422) instead return `{ "detail": [ … ] }` with the
+offending field locations (request bodies are never echoed back, to avoid
+leaking secrets).
+"""
+
+# Tag metadata drives grouping, ordering, and per-group descriptions in the
+# Swagger/ReDoc UIs. Each router sets a matching ``tags=[…]`` on its APIRouter;
+# the canonical tag name for each router is the ``name`` below.
+_OPENAPI_TAGS = [
+    {
+        "name": "Containers",
+        "description": (
+            "Provision, configure, and manage the lifecycle of agent containers "
+            "(create, pause, resume, destroy, restore, resize, update image)."
+        ),
+    },
+    {
+        "name": "Tasks",
+        "description": (
+            "Submit prompts to a container, list tasks and sessions, cancel runs, "
+            "and stream live task events."
+        ),
+    },
+    {
+        "name": "Scheduled Tasks",
+        "description": (
+            "Cron- and one-shot schedules that fire a prompt or workflow against a container."
+        ),
+    },
+    {
+        "name": "Workflows",
+        "description": (
+            "Multi-step prompt pipelines, their runs, and live run-event streams."
+        ),
+    },
+    {
+        "name": "Files",
+        "description": (
+            "Browse, read, write, delete, and archive files inside a container's workspace."
+        ),
+    },
+    {"name": "Console", "description": "Interactive shell access to a container over a WebSocket."},
+    {
+        "name": "Git",
+        "description": (
+            "Workspace git state — snapshots, remotes, push, rollback, and repo linking."
+        ),
+    },
+    {
+        "name": "Skills",
+        "description": (
+            "Reusable agent skills sourced from git refs, attachable to a container's config."
+        ),
+    },
+    {
+        "name": "MCP Servers",
+        "description": "Model Context Protocol server definitions available to agents.",
+    },
+    {"name": "Prompts", "description": "Saved, reusable prompt templates."},
+    {
+        "name": "Templates",
+        "description": "Reusable container configurations used to seed new agents.",
+    },
+    {"name": "Models", "description": "The catalog of LLM models available for agent configs."},
+    {"name": "Images", "description": "Available agent container image tags."},
+    {"name": "Analytics", "description": "Token- and task-usage time series and breakdowns."},
+    {"name": "Auth", "description": "Login, logout, tenant selection, and the current principal."},
+    {"name": "Users", "description": "Manage users within a tenant."},
+    {"name": "Tenants", "description": "Tenant self-service operations."},
+    {"name": "API Keys", "description": "Create, list, and revoke tenant API keys."},
+    {
+        "name": "Credentials",
+        "description": (
+            "LLM provider credentials and subscription OAuth connection flows."
+        ),
+    },
+    {
+        "name": "Admin",
+        "description": (
+            "Staff-only administration of tenants, users, and platform health."
+        ),
+    },
+    {"name": "Health", "description": "Liveness and readiness probes."},
+]
+
+
 def create_app(settings: Settings) -> FastAPI:
     setup_logging()
     # Serve the OpenAPI docs under /v1 so they sit behind the same path prefix
@@ -316,10 +444,13 @@ def create_app(settings: Settings) -> FastAPI:
     # SPA owns every other path and would otherwise swallow /docs.
     app = FastAPI(
         title="agent-runtime control plane",
+        description=_API_DESCRIPTION,
+        version="0.1.0",
         lifespan=_lifespan,
         docs_url="/v1/docs",
         redoc_url="/v1/redoc",
         openapi_url="/v1/openapi.json",
+        openapi_tags=_OPENAPI_TAGS,
     )
     app.state.settings = settings
     app.state.engine = make_engine(settings)

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-router = APIRouter()
+router = APIRouter(tags=["Health"])
 
 DbCheck = Callable[[], Awaitable[None]]
 
@@ -32,10 +32,28 @@ def db_check(request: Request) -> DbCheck:
     return _check
 
 
-@router.get("/healthz", response_model=None)
+@router.get(
+    "/healthz",
+    response_model=None,
+    response_description=(
+        "`{\"status\": \"ok\"}` with HTTP 200 when Postgres is reachable, or "
+        "`{\"status\": \"unavailable\"}` with HTTP 503 when the `SELECT 1` "
+        "readiness probe fails."
+    ),
+)
 async def healthz(
     request: Request, check: DbCheck = Depends(db_check)
 ) -> JSONResponse:
+    """Report control-plane liveness/readiness (spec §12).
+
+    Public and unauthenticated; mounted at the application root with no `/v1`
+    prefix. Runs a `SELECT 1` against Postgres to confirm the database is
+    reachable.
+
+    Returns HTTP 200 with `{"status": "ok"}` when the check succeeds, or HTTP
+    503 with `{"status": "unavailable"}` when Postgres is unreachable (any
+    exception from the check is treated as an unhealthy signal). Never raises.
+    """
     try:
         await check()
     except Exception:  # noqa: BLE001 — any DB failure is an unhealthy signal

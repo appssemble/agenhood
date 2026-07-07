@@ -7,11 +7,12 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,9 @@ from control_plane.schemas import (
     CreateWorkflowRequest,
     RunWorkflowRequest,
     UpdateWorkflowRequest,
+    WorkflowOut,
+    WorkflowRunDetailOut,
+    WorkflowRunOut,
 )
 from control_plane.sse import format_sse, should_forward
 from control_plane.workflow_engine import start_run
@@ -39,7 +43,23 @@ from control_plane.workflows_service import (
     workflow_view,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Workflows"])
+
+
+class WorkflowListResponse(BaseModel):
+    """Envelope returned by ``GET /workflows``."""
+
+    workflows: list[WorkflowOut] = Field(
+        description="The calling tenant's workflows, ordered by name."
+    )
+
+
+class WorkflowRunListResponse(BaseModel):
+    """Envelope returned by ``GET /workflows/{wid}/runs``."""
+
+    runs: list[WorkflowRunOut] = Field(
+        description="Recent runs for the workflow, newest first (max 100)."
+    )
 
 _WF_COLS = [
     workflows.c.id,
@@ -119,10 +139,15 @@ async def _load_run(
     return dict(row) if row is not None else None
 
 
-@router.get("/workflows")
+@router.get("/workflows", response_model=WorkflowListResponse)
 async def list_workflows(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """List the calling tenant's workflows.
+
+    Requires a tenant-scoped bearer token. Returns every workflow owned by the
+    principal's tenant, ordered by name.
+    """
     async with request.app.state.session_factory() as session:
         rows = (
             await session.execute(
@@ -134,10 +159,18 @@ async def list_workflows(
     return {"workflows": [workflow_view(dict(r)) for r in rows]}
 
 
-@router.post("/workflows")
+@router.post("/workflows", response_model=WorkflowOut)
 async def create_workflow(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """Create a new workflow in the calling tenant.
+
+    Requires a tenant-scoped bearer token; staff principals (``tenant_id`` is
+    None) are rejected with 403 `forbidden`. Body is a `CreateWorkflowRequest`.
+    Every referenced prompt and container must belong to the tenant, else 400
+    `validation_error`. Workflow names are unique per tenant — a duplicate
+    returns 409 `conflict`. Invalid name/steps also return 400 `validation_error`.
+    """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "workflows are tenant-scoped")
     payload = CreateWorkflowRequest(**(await request.json()))
@@ -175,20 +208,37 @@ async def create_workflow(
     return workflow_view(row)
 
 
-@router.get("/workflows/{wid}")
+@router.get("/workflows/{wid}", response_model=WorkflowOut)
 async def get_workflow(
-    wid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    wid: Annotated[str, Path(description="Workflow id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Fetch a single workflow by id.
+
+    Requires a tenant-scoped bearer token. Returns 404 `not_found` if no
+    workflow with ``wid`` belongs to the tenant.
+    """
     async with request.app.state.session_factory() as session:
         return workflow_view(
             await _load_owned_workflow(session, principal.tenant_id, wid)
         )
 
 
-@router.patch("/workflows/{wid}")
+@router.patch("/workflows/{wid}", response_model=WorkflowOut)
 async def patch_workflow(
-    wid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    wid: Annotated[str, Path(description="Workflow id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Update a workflow's name, description, and/or steps.
+
+    Requires a tenant-scoped bearer token. Body is an `UpdateWorkflowRequest`;
+    omitted fields are left unchanged. Returns 404 `not_found` if the workflow
+    is not found for the tenant. When steps are replaced, every referenced
+    prompt/container must belong to the tenant (400 `validation_error`).
+    Renaming to a name already used by another workflow returns 409 `conflict`.
+    """
     patch = UpdateWorkflowRequest(**(await request.json()))
     async with request.app.state.session_factory() as session:
         existing = await _load_owned_workflow(session, principal.tenant_id, wid)
@@ -241,8 +291,15 @@ async def patch_workflow(
 
 @router.delete("/workflows/{wid}", status_code=204)
 async def delete_workflow(
-    wid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    wid: Annotated[str, Path(description="Workflow id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> None:
+    """Delete a workflow; returns 204 No Content on success.
+
+    Requires a tenant-scoped bearer token. Returns 404 `not_found` if the
+    workflow does not exist for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         await _load_owned_workflow(session, principal.tenant_id, wid)
         await session.execute(
@@ -253,10 +310,22 @@ async def delete_workflow(
         await session.commit()
 
 
-@router.post("/workflows/{wid}/run")
+@router.post("/workflows/{wid}/run", response_model=WorkflowRunOut)
 async def run_workflow(
-    wid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    wid: Annotated[str, Path(description="Workflow id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Start a run of the workflow and return the created run.
+
+    Requires a tenant-scoped bearer token. Optional body is a
+    `RunWorkflowRequest` (defaults are applied when the body is empty). Launches
+    the run via the workflow engine. Returns 404 `not_found` if the workflow is
+    not found for the tenant. If the run cannot be submitted (container can't
+    start, missing credential, admission denied) the endpoint returns 502
+    `workflow_start_failed`; validation/not-found errors raised before submit
+    propagate unchanged.
+    """
     body = await request.body()
     payload = RunWorkflowRequest(**(await request.json() if body else {}))
     st = request.app.state
@@ -288,10 +357,17 @@ async def run_workflow(
     return run_view(run)
 
 
-@router.get("/workflows/{wid}/runs")
+@router.get("/workflows/{wid}/runs", response_model=WorkflowRunListResponse)
 async def list_workflow_runs(
-    wid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    wid: Annotated[str, Path(description="Workflow id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """List recent runs for a workflow (newest first, capped at 100).
+
+    Requires a tenant-scoped bearer token. Returns 404 `not_found` if the
+    workflow is not found for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         await _load_owned_workflow(session, principal.tenant_id, wid)
         rows = (
@@ -308,13 +384,18 @@ async def list_workflow_runs(
     return {"runs": [run_view(dict(r)) for r in rows]}
 
 
-@router.get("/workflows/{wid}/runs/{run_id}")
+@router.get("/workflows/{wid}/runs/{run_id}", response_model=WorkflowRunDetailOut)
 async def get_workflow_run(
-    wid: str,
-    run_id: str,
+    wid: Annotated[str, Path(description="Workflow id.")],
+    run_id: Annotated[str, Path(description="Workflow-run id.")],
     request: Request,
     principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Fetch a single workflow run, including per-step detail.
+
+    Requires a tenant-scoped bearer token. Returns 404 `not_found` if the
+    workflow, or the run scoped to that workflow, is not found for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         await _load_owned_workflow(session, principal.tenant_id, wid)
         run = await _load_run(session, principal.tenant_id, run_id)
@@ -369,14 +450,38 @@ async def _workflow_events_stream(
         await asyncio.sleep(poll_interval)
 
 
-@router.get("/workflows/{wid}/runs/{run_id}/events", response_model=None)
+@router.get(
+    "/workflows/{wid}/runs/{run_id}/events",
+    response_model=None,
+    response_description=(
+        "When the client sends `Accept: text/event-stream`, an SSE "
+        "`text/event-stream` of run events; otherwise a JSON "
+        '`{"events": [...]}` snapshot of the buffered events.'
+    ),
+)
 async def stream_workflow_run_events(
-    wid: str,
-    run_id: str,
+    wid: Annotated[str, Path(description="Workflow id.")],
+    run_id: Annotated[str, Path(description="Workflow-run id.")],
     request: Request,
     principal: Principal = Depends(resolve_principal),
-    after_seq: int | None = None,
+    after_seq: Annotated[
+        int | None,
+        Query(
+            description="Only include events with a sequence number greater "
+            "than this value (resume/backfill cursor)."
+        ),
+    ] = None,
 ) -> StreamingResponse | dict[str, Any]:
+    """Stream a workflow run's events, or return a one-shot snapshot.
+
+    Requires a tenant-scoped bearer token. Behaviour depends on the `Accept`
+    header: with `Accept: text/event-stream` the endpoint returns an SSE
+    `text/event-stream` that emits the backlog after ``after_seq`` then polls
+    for newer events until a terminal (`completed`/`failed`) frame is sent or
+    the client disconnects; otherwise it returns a JSON `{"events": [...]}`
+    snapshot. Returns 404 `not_found` if the workflow or run is not found for
+    the tenant.
+    """
     async with request.app.state.session_factory() as session:
         await _load_owned_workflow(session, principal.tenant_id, wid)
         run = await _load_run(session, principal.tenant_id, run_id)

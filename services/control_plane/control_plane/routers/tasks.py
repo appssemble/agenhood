@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -44,10 +44,10 @@ from control_plane.errors import (
 )
 from control_plane.ids import new_task_id
 from control_plane.limits import LimitExceeded, resolve_limits
+from control_plane.mcp_service import resolve_mcp_for_request
 from control_plane.model_catalog import driver_can_use_subscription
-from control_plane.models_db import containers, events, git_remotes, tasks
+from control_plane.models_db import containers, events, git_remotes, prompts, tasks
 from control_plane.models_db import mcp_servers as mcp_servers_table
-from control_plane.models_db import prompts
 from control_plane.models_db import skills as skills_table
 from control_plane.prompts_service import resolve_body
 from control_plane.routers.containers import (
@@ -57,13 +57,12 @@ from control_plane.routers.containers import (
     _tid,
     load_tenant_limits,
 )
-from control_plane.mcp_service import resolve_mcp_for_request
 from control_plane.schemas import SessionOut, TaskOut, TaskSubmitResponse
 from control_plane.shim_client import ShimClient, ShimError, ShimTooManyTasks
 from control_plane.skills_service import resolve_skills_for_request
 from control_plane.sse import format_sse, parse_event_line, should_forward
 
-router = APIRouter()
+router = APIRouter(tags=["Tasks"])
 
 # Drivers that shell out to a native CLI which discovers SKILL.md / MCP config
 # on disk (as opposed to the in-process "vanilla" driver). Skills and MCP
@@ -91,12 +90,49 @@ async def _load_tenant_rows_by_id(
 class PromptTaskBody(BaseModel):
     """Submit-by-prompt body: like TaskBody but the prompt comes from a stored
     prompt id, with caller-supplied variable values."""
-    prompt_id: str
-    variables: dict[str, str] = Field(default_factory=dict)
-    output: OutputContract = Field(default_factory=OutputContract)
-    limits: TaskLimits = Field(default_factory=TaskLimits)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    session_id: str | None = None
+    prompt_id: str = Field(
+        description="Id of a stored prompt (scoped to your tenant) whose body "
+        "supplies the task prompt after variable substitution.",
+    )
+    variables: dict[str, str] = Field(
+        default_factory=dict,
+        description="Values substituted into the stored prompt's variable "
+        "placeholders. Missing/extra keys follow the prompt's own rules.",
+    )
+    output: OutputContract = Field(
+        default_factory=OutputContract,
+        description="Structured-output contract the agent must satisfy "
+        "(same shape as TaskBody.output).",
+    )
+    limits: TaskLimits = Field(
+        default_factory=TaskLimits,
+        description="Per-task resource limits (iterations, timeout, tokens). "
+        "Clamped against tenant and container limits at submit time.",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arbitrary caller metadata stored with the task. The "
+        "resolved prompt_id is added under the 'prompt_id' key.",
+    )
+    session_id: str | None = Field(
+        default=None,
+        description="Optional session id to continue a multi-task session. "
+        "Must match the driver of the session's first task.",
+    )
+
+
+class TaskListResponse(BaseModel):
+    """Wrapper for endpoints that list tasks."""
+    tasks: list[TaskOut] = Field(
+        description="Tasks in the result, newest first.",
+    )
+
+
+class SessionListResponse(BaseModel):
+    """Wrapper for the container sessions listing."""
+    sessions: list[SessionOut] = Field(
+        description="Sessions for the container, most recently active first.",
+    )
 
 
 async def _load_prompt(session: AsyncSession, tenant_id: str, pid: str) -> dict[str, Any]:
@@ -593,14 +629,34 @@ async def submit_task_core(
     ).model_dump()
 
 
-@router.post("/containers/{cid}/tasks", status_code=200)
+@router.post(
+    "/containers/{cid}/tasks",
+    status_code=200,
+    responses={200: {"model": TaskSubmitResponse}},
+    response_description="Accepted task with its id, running status and chosen credential.",
+)
 async def submit_task(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to run the task in.")],
     body: TaskBody,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Submit a task to a container and start running it.
+
+    Tenant-scoped (API key/bearer). Brings the container to running under
+    admission control, resolves per-task limits and the provider credential
+    (decrypted in memory only, never persisted), persists the task row, forwards
+    it to the container's shim, and spawns background event ingestion. When
+    ``body.session_id`` is set the task continues that session (spec §5).
+
+    Errors: 400 validation_error (empty prompt, prompt > 100 KiB, limits exceeded);
+    400 no_credential (no usable provider credential for the tenant); 404 not_found
+    (container not owned by tenant); 409 session_driver_mismatch / session_busy
+    (session used a different driver, or already has a task in flight); 429
+    too_many_tasks (per-container concurrency limit reached); 502 shim_unavailable
+    (the container's shim could not accept the task).
+    """
     st = request.app.state
     return await submit_task_core(
         session,
@@ -614,14 +670,30 @@ async def submit_task(
     )
 
 
-@router.post("/containers/{cid}/tasks/from-prompt", status_code=200)
+@router.post(
+    "/containers/{cid}/tasks/from-prompt",
+    status_code=200,
+    responses={200: {"model": TaskSubmitResponse}},
+    response_description="Accepted task with its id, running status and chosen credential.",
+)
 async def submit_task_from_prompt(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to run the task in.")],
     body: PromptTaskBody,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Submit a task whose prompt comes from a stored prompt id.
+
+    Tenant-scoped (API key/bearer). Loads the tenant's prompt, substitutes the
+    caller-supplied ``variables`` into its body, and submits the resulting task
+    exactly like POST /containers/{cid}/tasks (the resolved prompt_id is recorded
+    in the task metadata).
+
+    Errors: 404 prompt_not_found (no such prompt for the tenant); 404 not_found
+    (container not owned by tenant); plus the same 400 / 409 / 429 / 502 errors
+    as the regular task-submit endpoint.
+    """
     tenant_id = _tid(principal)
     prompt = await _load_prompt(session, tenant_id, body.prompt_id)
     text = resolve_body(prompt["body"], body.variables, prompt.get("variables"))
@@ -644,15 +716,31 @@ async def submit_task_from_prompt(
     )
 
 
-@router.get("/containers/{cid}/tasks")
+@router.get(
+    "/containers/{cid}/tasks",
+    response_model=TaskListResponse,
+    response_description="The container's most recent tasks (up to 100), newest first.",
+)
 async def list_tasks(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id whose tasks to list.")],
     request: Request,
-    scheduled_task_id: str | None = None,
-    session_id: str | None = None,
+    scheduled_task_id: Annotated[
+        str | None,
+        Query(description="Only return tasks created by this scheduled task."),
+    ] = None,
+    session_id: Annotated[
+        str | None,
+        Query(description="Only return tasks belonging to this session."),
+    ] = None,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """List a container's most recent tasks (newest first, capped at 100).
+
+    Tenant-scoped (API key/bearer). Optionally filter by ``scheduled_task_id``
+    and/or ``session_id``. Returns 404 not_found if the container is not owned by
+    the tenant.
+    """
     tid = _tid(principal)
     await _load_owned_container(session, tid, cid)
     stmt = (
@@ -669,13 +757,25 @@ async def list_tasks(
     return {"tasks": [_row_to_task_out(r).model_dump() for r in rows]}
 
 
-@router.get("/containers/{cid}/sessions")
+@router.get(
+    "/containers/{cid}/sessions",
+    response_model=SessionListResponse,
+    response_description="Sessions in this container, most recently active first.",
+)
 async def list_sessions(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id whose sessions to list.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """List the container's sessions with per-session aggregates.
+
+    Tenant-scoped (API key/bearer). Groups the container's tasks by session_id
+    (tasks with no session are excluded) and reports the driver, task count,
+    first/last activity timestamps, and whether the session is busy (a task is
+    pending or running). Returns 404 not_found if the container is not owned by
+    the tenant.
+    """
     tid = _tid(principal)
     await _load_owned_container(session, tid, cid)
     rows = (
@@ -688,7 +788,11 @@ async def list_sessions(
                 sa.func.max(tasks.c.created_at).label("last_created_at"),
                 sa.func.bool_or(tasks.c.status.in_(("pending", "running"))).label("busy"),
             )
-            .where(tasks.c.container_id == cid, tasks.c.tenant_id == tid, tasks.c.session_id.isnot(None))
+            .where(
+                tasks.c.container_id == cid,
+                tasks.c.tenant_id == tid,
+                tasks.c.session_id.isnot(None),
+            )
             .group_by(tasks.c.session_id)
             .order_by(sa.func.max(tasks.c.created_at).desc())
         )
@@ -727,13 +831,25 @@ async def recent_tenant_tasks(
     return [_row_to_task_out(r, container_name=r.container_name) for r in rows]
 
 
-@router.get("/tasks")
+@router.get(
+    "/tasks",
+    response_model=TaskListResponse,
+    response_description="Newest tasks across all of the tenant's containers.",
+)
 async def list_tenant_tasks(
     request: Request,
-    limit: int = 50,
+    limit: Annotated[
+        int,
+        Query(description="Max tasks to return. Clamped to the 1–100 range."),
+    ] = 50,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """List the tenant's most recent tasks across all its containers.
+
+    Tenant-scoped (API key/bearer). Returns tasks newest first (each with its
+    container name); ``limit`` is clamped to the 1–100 range.
+    """
     tid = _tid(principal)
     limit = max(1, min(limit, 100))
     out = await recent_tenant_tasks(session, tenant_id=tid, limit=limit)
@@ -757,28 +873,47 @@ async def _load_owned_task(
     return row
 
 
-@router.get("/containers/{cid}/tasks/{tid}")
+@router.get(
+    "/containers/{cid}/tasks/{tid}",
+    response_model=TaskOut,
+    response_description="The task's current state, result and usage.",
+)
 async def get_task(
-    cid: str,
-    tid: str,
+    cid: Annotated[str, Path(description="Container id that owns the task.")],
+    tid: Annotated[str, Path(description="Task id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Get a single task's current status, result and token usage.
+
+    Tenant-scoped (API key/bearer). Returns 404 not_found if the container or the
+    task is not owned by the tenant.
+    """
     tenant_id = _tid(principal)
     await _load_owned_container(session, tenant_id, cid)
     row = await _load_owned_task(session, tenant_id, cid, tid)
     return _row_to_task_out(row).model_dump()
 
 
-@router.post("/containers/{cid}/tasks/{tid}/cancel")
+@router.post(
+    "/containers/{cid}/tasks/{tid}/cancel",
+    response_description="The shim's cancel acknowledgement (task id and new status).",
+)
 async def cancel_task(
-    cid: str,
-    tid: str,
+    cid: Annotated[str, Path(description="Container id that owns the task.")],
+    tid: Annotated[str, Path(description="Task id to cancel.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Request cancellation of a running task.
+
+    Tenant-scoped (API key/bearer). Verifies ownership, then asks the container's
+    shim to cancel the task and returns the shim's acknowledgement dict verbatim
+    (no response_model, so every key the shim returns is preserved). Returns 404
+    not_found if the container or the task is not owned by the tenant.
+    """
     tenant_id = _tid(principal)
     crow = await _load_owned_container(session, tenant_id, cid)
     await _load_owned_task(session, tenant_id, cid, tid)
@@ -787,15 +922,40 @@ async def cancel_task(
     return result
 
 
-@router.get("/containers/{cid}/tasks/{tid}/events", response_model=None)
+@router.get(
+    "/containers/{cid}/tasks/{tid}/events",
+    response_model=None,
+    response_description=(
+        "With Accept: text/event-stream, a live text/event-stream (SSE) of task "
+        "events. Otherwise a JSON replay of the stored events "
+        "({\"events\": [...]})."
+    ),
+)
 async def stream_events(
-    cid: str,
-    tid: str,
+    cid: Annotated[str, Path(description="Container id that owns the task.")],
+    tid: Annotated[str, Path(description="Task id whose events to read.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
-    after_seq: int | None = None,
+    after_seq: Annotated[
+        int | None,
+        Query(description="Only return events with seq greater than this value."),
+    ] = None,
 ) -> StreamingResponse | dict:  # type: ignore[type-arg]
+    """Stream a task's events, or replay the stored ones.
+
+    Tenant-scoped (API key/bearer). Content negotiated on the Accept header:
+
+    - ``Accept: text/event-stream`` -> a live Server-Sent Events (SSE) stream
+      (media type ``text/event-stream``) forwarded from the container's shim;
+      events are persisted best-effort as they flow. The request-scoped DB
+      connection is released before streaming to avoid pool exhaustion.
+    - otherwise -> a one-shot JSON replay of the stored events, shape
+      ``{"events": [...]}`` in ascending seq order.
+
+    ``after_seq`` filters to events with a higher seq in both modes. Returns 404
+    not_found if the container or the task is not owned by the tenant.
+    """
     tenant_id = _tid(principal)
     crow = await _load_owned_container(session, tenant_id, cid)
     await _load_owned_task(session, tenant_id, cid, tid)

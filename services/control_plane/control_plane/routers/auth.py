@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import control_plane.tables as t
@@ -14,11 +14,11 @@ from control_plane.auth.passwords import verify_password
 from control_plane.auth.principal import SESSION_COOKIE, Principal, resolve_principal
 from control_plane.auth.sessions import build_session_row
 from control_plane.auth.tokens import hash_token
-from control_plane.membership_service import default_active_tenant
 from control_plane.errors import api_error
+from control_plane.membership_service import default_active_tenant
 from control_plane.tenant_defaults import merge_limits
 
-router = APIRouter(prefix="/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/v1/auth", tags=["Auth"])
 
 
 # ---------------------------------------------------------------------------
@@ -36,8 +36,17 @@ async def _session(request: Request) -> AsyncIterator[AsyncSession]:
 # ---------------------------------------------------------------------------
 
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+    email: EmailStr = Field(
+        description=(
+            "Account email address. Case-insensitive; normalized to lowercase before lookup."
+        ),
+    )
+    password: str = Field(
+        description=(
+            "Account password. Sent as a secret and never echoed back, even in a 422 "
+            "validation error."
+        ),
+    )
 
     @field_validator("email")
     @classmethod
@@ -46,7 +55,35 @@ class LoginRequest(BaseModel):
 
 
 class SelectTenantRequest(BaseModel):
-    tenant_id: str | None = None
+    tenant_id: str | None = Field(
+        default=None,
+        description=(
+            "Workspace (tenant) to activate for the current session. Members must pass a "
+            "tenant they actively belong to. Staff may pass any existing tenant to impersonate "
+            "it, or null to clear back to the cross-tenant (unscoped) state."
+        ),
+    )
+
+
+class SelectTenantResponse(BaseModel):
+    active_tenant_id: str | None = Field(
+        description=(
+            "The tenant now active on the session, or null when a staff caller cleared "
+            "their selection."
+        ),
+    )
+    role: str | None = Field(
+        description=(
+            "The caller's role in the active tenant (owner/admin/member), or null when no "
+            "tenant is active."
+        ),
+    )
+
+
+class LogoutResponse(BaseModel):
+    ok: bool = Field(
+        description="Always true; the session (if any) was revoked and the cookie cleared."
+    )
 
 
 def build_login_response(
@@ -125,13 +162,33 @@ def _set_cookie(resp: Response, token: str, secure: bool = True) -> None:
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.post("/login")
+@router.post(
+    "/login",
+    response_description=(
+        "The authenticated user's profile plus tenant switcher list and resolved active tenant. "
+        "An `HttpOnly` session cookie is set on the response."
+    ),
+)
 async def login(
     body: LoginRequest,
     response: Response,
     request: Request,
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Authenticate with email + password and start a session.
+
+    Unauthenticated endpoint. On success it creates a `sessions` row and sets an
+    `HttpOnly`, `SameSite=Lax` session cookie (14-day sliding lifetime), then
+    resolves the active tenant: staff resume their last-used (or first) workspace;
+    members resume a workspace they still belong to, else their owner-first default.
+    The response body carries the user profile, the tenant switcher list, and the
+    resolved `active_tenant_id` / `needs_tenant_selection` hint.
+
+    Attempts are rate-limited per email + client IP. Errors: 429 too_many_requests
+    when the limiter trips; 401 unauthorized for an unknown email, wrong password,
+    or an inactive account (the same message is returned for all, to avoid
+    user-enumeration). The password is a secret and is never echoed back.
+    """
     from control_plane.auth.ratelimit import login_limiter
 
     client_ip = request.client.host if request.client else "unknown"
@@ -188,7 +245,9 @@ async def login(
     elif member_tids:
         # Members resume only a tenant they still belong to, else owner-first default.
         active_tenant_id = (
-            prior_tenant_id if prior_tenant_id in member_tids else default_active_tenant(memberships)
+            prior_tenant_id
+            if prior_tenant_id in member_tids
+            else default_active_tenant(memberships)
         )
 
     token, srow = build_session_row(user_id=user_row["id"])
@@ -199,12 +258,22 @@ async def login(
     return build_login_response(dict(user_row), active_tenant_id=active_tenant_id, tenants=tenants)
 
 
-@router.post("/logout")
+@router.post(
+    "/logout",
+    response_model=LogoutResponse,
+    response_description="Confirmation that the session was revoked and the cookie cleared.",
+)
 async def logout(
     request: Request,
     response: Response,
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Revoke the current session and clear the session cookie.
+
+    If a session cookie is present, its backing `sessions` row is marked revoked;
+    the cookie is deleted regardless. Idempotent and safe to call without an active
+    session (still returns `{"ok": true}`). No authentication is required.
+    """
     cookie = request.cookies.get(SESSION_COOKIE)
     if cookie:
         await conn.execute(
@@ -217,13 +286,33 @@ async def logout(
     return {"ok": True}
 
 
-@router.post("/select-tenant")
+@router.post(
+    "/select-tenant",
+    response_model=SelectTenantResponse,
+    response_description="The now-active tenant id and the caller's role within it.",
+)
 async def select_tenant(
     body: SelectTenantRequest,
     request: Request,
     principal: Principal = Depends(resolve_principal),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Switch the active workspace (tenant) for the current session.
+
+    Requires a valid user session (a session cookie or bearer session token);
+    unauthenticated callers get 401. The selection is persisted on the `sessions`
+    row so it survives reconnects.
+
+    Staff may activate any existing tenant (audited as an impersonation) or pass
+    `tenant_id: null` to clear back to the cross-tenant state (audited as an
+    impersonation exit). Members must pass a tenant they are an active member of and
+    cannot clear their selection.
+
+    Errors: 401 unauthorized when unauthenticated; 403 forbidden for an API-key
+    principal (no user session) or for a member who is not in the requested tenant;
+    404 not_found when staff target a tenant that does not exist; 400
+    validation_error when a member omits `tenant_id`.
+    """
     if principal.user_id is None:
         raise api_error(403, "forbidden", "Tenant selection requires a user session")
     cookie = request.cookies.get(SESSION_COOKIE)
@@ -287,11 +376,28 @@ async def select_tenant(
     return {"active_tenant_id": body.tenant_id, "role": m["role"]}
 
 
-@router.get("/me")
+@router.get(
+    "/me",
+    response_description=(
+        "Identity of the calling principal. User sessions return the full user profile with the "
+        "active tenant and switcher list; API-key/staff-bootstrap principals return a compact "
+        "`{principal, tenant_id, role, is_staff}` identity."
+    ),
+)
 async def me(
     conn: AsyncSession = Depends(_session),
     principal: Principal = Depends(resolve_principal),
 ) -> dict:  # type: ignore[type-arg]
+    """Return the identity of the authenticated caller.
+
+    Requires a valid session cookie, session bearer token, or API key; otherwise
+    401 unauthorized. For a user principal it returns the user profile (id, name,
+    email, staff flag, must-change-password), the active tenant with its effective
+    limits, the caller's role, and the tenant switcher list. For an API-key or
+    bootstrap principal it returns a compact tenant identity instead.
+
+    Error: 404 not_found if the session references a user that no longer exists.
+    """
     if principal.user_id is None:
         # API key or bootstrap principal: return the tenant identity.
         return {

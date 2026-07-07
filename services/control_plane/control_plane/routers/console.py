@@ -26,7 +26,7 @@ from control_plane.console_exec import make_console_exec
 from control_plane.models_db import containers
 
 log = logging.getLogger("control_plane.console")
-router = APIRouter()
+router = APIRouter(tags=["Console"])
 
 # Idle timeout: close a session after this long with no client input (resource
 # hygiene; not a usage limit).
@@ -149,6 +149,32 @@ async def console(
     cid: str,
     principal: Principal | None = Depends(_principal_ws),
 ) -> None:
+    """Open an interactive root shell into a container over WebSocket.
+
+    This is a WebSocket endpoint (it does not appear in the HTTP OpenAPI
+    schema). It attaches an xterm-compatible `docker exec` root shell to the
+    container identified by the `cid` path segment.
+
+    Auth mirrors the HTTP routers: a tenant-scoped Principal is resolved from
+    the WebSocket handshake (the `agent_session` cookie or `Authorization`
+    header). Staff-only credentials (tenant_id=None) are rejected. A
+    same-origin check guards against cross-site WebSocket hijacking.
+
+    Message protocol (after the WebSocket is accepted):
+      - Client -> server binary frames: raw stdin bytes forwarded to the shell.
+      - Client -> server text frames: JSON control messages. Currently only
+        `{"type": "resize", "rows": <int>, "cols": <int>}` is honored (resizes
+        the pty); other/invalid JSON is ignored.
+      - Server -> client binary frames: raw stdout/stderr bytes from the shell.
+
+    Sessions are closed after 15 minutes of no client input (idle timeout).
+    Opening and closing a session are recorded in the audit log.
+
+    Close codes: 4401 unauthorized (auth failed / staff credential); 4403
+    forbidden (bad Origin); 4404 container not found or owned by another
+    tenant; 4409 container is not running; 1011 internal error (Docker
+    unavailable or the shell failed to start).
+    """
     if not _origin_ok(websocket):
         await websocket.close(code=_CLOSE_FORBIDDEN, reason="bad origin")
         return

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Annotated
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Path, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import control_plane.tables as t
@@ -16,7 +17,7 @@ from control_plane.auth.tokens import generate_api_key
 from control_plane.errors import api_error
 from control_plane.ids_compat import new_id
 
-router = APIRouter(prefix="/v1/api-keys", tags=["api-keys"])
+router = APIRouter(prefix="/v1/api-keys", tags=["API Keys"])
 
 
 async def _session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -26,7 +27,64 @@ async def _session(request: Request) -> AsyncIterator[AsyncSession]:
 
 
 class CreateKey(BaseModel):
-    name: str
+    name: Annotated[
+        str,
+        Field(description="Human-readable label for the new API key, shown in listings."),
+    ]
+
+
+class ApiKeyView(BaseModel):
+    """Public, non-secret view of an API key (never includes the token)."""
+
+    id: Annotated[str, Field(description="Opaque API key id (prefixed `key_`).")]
+    name: Annotated[str, Field(description="Human-readable label given at creation.")]
+    prefix: Annotated[
+        str,
+        Field(description="Non-secret key prefix, shown to help identify the key."),
+    ]
+    created_by: Annotated[
+        str | None,
+        Field(description="User id of the session user who created the key, if known."),
+    ]
+    last_used_at: Annotated[
+        datetime | None,
+        Field(description="When the key was last used to authenticate, or null if never."),
+    ]
+    created_at: Annotated[datetime, Field(description="When the key was created (UTC).")]
+    status: Annotated[
+        str,
+        Field(description="Key lifecycle status: `active` or `revoked`."),
+    ]
+
+
+class ApiKeyList(BaseModel):
+    """Wrapper for the list-keys response."""
+
+    keys: Annotated[
+        list[ApiKeyView],
+        Field(description="All API keys owned by the caller's tenant."),
+    ]
+
+
+class ApiKeyCreated(ApiKeyView):
+    """Create-key response: the public view plus the one-time plaintext token."""
+
+    key: Annotated[
+        str,
+        Field(
+            description=(
+                "The full plaintext API key. Returned EXACTLY ONCE at creation and "
+                "never retrievable again — store it securely."
+            )
+        ),
+    ]
+
+
+class RevokeResult(BaseModel):
+    """Result of revoking an API key."""
+
+    id: Annotated[str, Field(description="Id of the revoked API key.")]
+    status: Annotated[str, Field(description="Always `revoked` on success.")]
 
 
 def build_api_key_row(
@@ -60,11 +118,21 @@ def public_view(row: dict) -> dict:  # type: ignore[type-arg]
     }
 
 
-@router.get("")
+@router.get("", response_model=ApiKeyList, response_description="The tenant's API keys.")
 async def list_keys(
     p: Principal = Depends(require_session_admin),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """List the calling tenant's API keys (no secrets).
+
+    Requires a tenant-scoped admin/owner **user session** (an API key principal
+    cannot manage keys — spec §4.2). Only non-secret metadata is returned; the
+    plaintext token is never included.
+
+    Errors: 400 `validation_error` if called with a staff session (staff manage
+    a tenant's keys through that tenant's own session); 403 if the caller is not
+    a tenant admin/owner or authenticates with an API key instead of a session.
+    """
     if p.is_staff:
         raise api_error(400, "validation_error",
                         "Staff manage tenant keys via the tenant's own session")
@@ -76,12 +144,33 @@ async def list_keys(
     return {"keys": [public_view(dict(r)) for r in rows]}
 
 
-@router.post("", status_code=201)
+@router.post(
+    "",
+    status_code=201,
+    response_model=ApiKeyCreated,
+    response_description=(
+        "The created key's metadata plus the one-time plaintext token in `key`."
+    ),
+)
 async def create_key(
     body: CreateKey,
     p: Principal = Depends(require_session_admin),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Create a tenant API key and reveal its plaintext token once.
+
+    Requires a tenant-scoped admin/owner **user session** (spec §4.2). Mints a
+    new key for the caller's tenant, stores only its Argon2id hash, and writes
+    an `api_key.create` audit entry.
+
+    Side effect / one-time reveal: the full plaintext key is returned in `key`
+    EXACTLY ONCE in this response and can never be retrieved again — the server
+    keeps only the hash.
+
+    Errors: 400 `validation_error` if the session has no active tenant; 403 if
+    the caller is not a tenant admin/owner or uses an API key instead of a
+    session.
+    """
     if p.tenant_id is None:
         raise api_error(400, "validation_error", "An API key belongs to a tenant")
     secret, row = build_api_key_row(
@@ -102,12 +191,27 @@ async def create_key(
     return {**public_view(row), "key": secret}
 
 
-@router.delete("/{kid}")
+@router.delete(
+    "/{kid}",
+    response_model=RevokeResult,
+    response_description="The revoked key's id and its new `revoked` status.",
+)
 async def revoke_key(
-    kid: str,
+    kid: Annotated[str, Path(description="Id of the API key to revoke (`key_` prefix).")],
     p: Principal = Depends(require_session_admin),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Revoke an API key (destructive, irreversible).
+
+    Requires a tenant-scoped admin/owner **user session**; staff may revoke any
+    tenant's key. Marks the key `revoked` and stamps `revoked_at`, immediately
+    disabling all authentication with it, and writes an `api_key.revoke` audit
+    entry. There is no un-revoke.
+
+    Errors: 404 `not_found` if the key does not exist or belongs to another
+    tenant (non-staff callers); 403 if the caller is not a tenant admin/owner or
+    uses an API key instead of a session.
+    """
     row = (
         await conn.execute(sa.select(t.api_keys).where(t.api_keys.c.id == kid))
     ).mappings().first()

@@ -3,9 +3,10 @@ no admin gate. Mirrors routers/mcp_servers.py minus the secret handling."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from control_plane.auth.principal import Principal, resolve_principal
@@ -19,7 +20,19 @@ from control_plane.prompts_service import (
     validate_prompt_fields,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Prompts"])
+
+
+# ---- response models (documentation only) -----------------------------------
+
+class PromptListResponse(BaseModel):
+    """Envelope returned by ``GET /prompts``."""
+
+    prompts: list[dict[str, Any]] = Field(
+        description="The tenant's prompts, each with body, tags and resolved "
+        "variables. Sorted by name."
+    )
+
 
 _ROW_COLS = [
     prompts.c.id, prompts.c.tenant_id, prompts.c.name, prompts.c.body,
@@ -64,10 +77,19 @@ def apply_prompt_patch(existing: dict[str, Any], patch: dict[str, Any]) -> dict[
     }
 
 
-@router.get("/prompts")
+@router.get(
+    "/prompts",
+    response_model=PromptListResponse,
+    response_description="The tenant's prompts.",
+)
 async def list_prompts(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """List all prompts owned by the caller's tenant.
+
+    Tenant-scoped read (any authenticated member/API key; no admin gate). Sorted
+    by name.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(*_ROW_COLS).where(prompts.c.tenant_id == principal.tenant_id)
@@ -77,10 +99,21 @@ async def list_prompts(
     return {"prompts": [prompt_view(r) for r in rows]}
 
 
-@router.get("/prompts/{pid}")
+@router.get(
+    "/prompts/{pid}",
+    response_description="The prompt.",
+)
 async def get_prompt(
-    pid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    pid: Annotated[str, Path(description="Prompt id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Fetch a single prompt by id.
+
+    Tenant-scoped read (any authenticated member/API key; no admin gate); a
+    prompt belonging to another tenant is treated as absent. Returns ``404
+    not_found`` if no such prompt exists for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(*_ROW_COLS).where(
@@ -93,10 +126,22 @@ async def get_prompt(
     return prompt_view(dict(row._mapping))
 
 
-@router.post("/prompts")
+@router.post(
+    "/prompts",
+    response_description="The created prompt.",
+)
 async def create_prompt(
     request: Request, principal: Principal = Depends(resolve_principal)
 ) -> dict[str, Any]:
+    """Create a prompt for the caller's tenant.
+
+    Tenant-scoped write (any authenticated member/API key; no admin gate). Body
+    requires ``name`` and ``body``; optional ``tags`` and ``variables``. The
+    ``{{name}}`` placeholders in the body are reconciled against the supplied
+    variable metadata. Errors: ``403 forbidden`` for a staff principal with no
+    tenant; ``400 validation_error`` for a malformed payload; ``409 conflict``
+    if a prompt of that name already exists for the tenant.
+    """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "prompts are tenant-scoped")
     fields = parse_prompt_create(await request.json())
@@ -121,10 +166,24 @@ async def create_prompt(
     return prompt_view(row)
 
 
-@router.patch("/prompts/{pid}")
+@router.patch(
+    "/prompts/{pid}",
+    response_description="The updated prompt.",
+)
 async def patch_prompt(
-    pid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    pid: Annotated[str, Path(description="Prompt id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> dict[str, Any]:
+    """Update an existing prompt (partial patch).
+
+    Tenant-scoped write (any authenticated member/API key; no admin gate). Any
+    of ``name``, ``body``, ``tags`` and ``variables`` may be patched; omitted
+    fields keep their current values. Variables are reconciled against the
+    body's ``{{name}}`` placeholders. Errors: ``404 not_found`` if the prompt
+    does not exist for the tenant; ``400 validation_error`` for a malformed
+    field; ``409 conflict`` if a rename collides with another prompt's name.
+    """
     patch = await request.json()
     async with request.app.state.session_factory() as session:
         result = await session.execute(
@@ -156,17 +215,31 @@ async def patch_prompt(
             "updated_at": datetime.now(UTC),
         }
         await session.execute(
-            prompts.update().where(prompts.c.id == pid, prompts.c.tenant_id == principal.tenant_id).values(**values)
+            prompts.update()
+            .where(prompts.c.id == pid, prompts.c.tenant_id == principal.tenant_id)
+            .values(**values)
         )
         await session.commit()
         existing.update(values)
     return prompt_view(existing)
 
 
-@router.delete("/prompts/{pid}", status_code=204)
+@router.delete(
+    "/prompts/{pid}",
+    status_code=204,
+    response_description="Prompt deleted; no content returned.",
+)
 async def delete_prompt(
-    pid: str, request: Request, principal: Principal = Depends(resolve_principal)
+    pid: Annotated[str, Path(description="Prompt id.")],
+    request: Request,
+    principal: Principal = Depends(resolve_principal),
 ) -> None:
+    """Delete a prompt by id.
+
+    Tenant-scoped write (any authenticated member/API key; no admin gate).
+    Returns ``204 No Content`` on success. Returns ``404 not_found`` if no such
+    prompt exists for the tenant.
+    """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
             select(prompts.c.id).where(
@@ -175,5 +248,9 @@ async def delete_prompt(
         )
         if result.fetchone() is None:
             raise not_found("prompt not found")
-        await session.execute(prompts.delete().where(prompts.c.id == pid, prompts.c.tenant_id == principal.tenant_id))
+        await session.execute(
+            prompts.delete().where(
+                prompts.c.id == pid, prompts.c.tenant_id == principal.tenant_id
+            )
+        )
         await session.commit()

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Annotated
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, Depends, Path, Request
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import control_plane.tables as t
@@ -28,7 +29,7 @@ from control_plane.users_service import (
     new_user_row,
 )
 
-router = APIRouter(prefix="/v1/users", tags=["users"])
+router = APIRouter(prefix="/v1/users", tags=["Users"])
 
 
 async def _session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -60,29 +61,121 @@ async def _active_owner_count(conn: AsyncSession, tenant_id: str) -> int:
 
 
 class CreateUser(BaseModel):
-    email: EmailStr
-    name: str
-    role: str                       # admin | member (owner is set at tenant creation)
-    password: str | None = None     # required only for a brand-new identity
-    tenant_id: str | None = None    # staff only
+    email: EmailStr = Field(
+        description=(
+            "Email of the user to add. Matched case-insensitively against existing accounts."
+        ),
+    )
+    name: str = Field(description="Display name for the user.")
+    role: str = Field(
+        description=(
+            "Membership role in the target workspace: 'admin' or 'member'. "
+            "('owner' is set only at tenant creation.)"
+        ),
+    )
+    password: str | None = Field(
+        default=None,
+        description=(
+            "Initial password, required only when creating a brand-new identity (an email not "
+            "already present). Ignored when adding an existing user to the workspace. Secret; "
+            "never echoed back."
+        ),
+    )
+    tenant_id: str | None = Field(
+        default=None,
+        description=(
+            "Target workspace id. Staff only; ignored for tenant admins, who are scoped "
+            "to their active workspace."
+        ),
+    )
 
 
 class PatchUser(BaseModel):
-    name: str | None = None
-    role: str | None = None
-    status: str | None = None       # active | disabled
+    name: str | None = Field(default=None, description="New display name. Omit to leave unchanged.")
+    role: str | None = Field(
+        default=None,
+        description="New membership role: 'owner', 'admin', or 'member'. Omit to leave unchanged.",
+    )
+    status: str | None = Field(
+        default=None,
+        description=(
+            "New membership status: 'active' or 'disabled'. Disabling revokes the user's "
+            "sessions in this workspace. Omit to leave unchanged."
+        ),
+    )
 
 
 class PasswordChange(BaseModel):
-    new_password: str
-    current_password: str | None = None  # required for self-change
+    new_password: str = Field(description="The new password to set. Secret; never echoed back.")
+    current_password: str | None = Field(
+        default=None,
+        description=(
+            "The caller's current password, required for a self-service change (ignored "
+            "for an admin reset). Secret; never echoed back."
+        ),
+    )
 
 
-@router.get("")
+class UserSummary(BaseModel):
+    id: str = Field(description="User id.")
+    email: str = Field(description="User email address.")
+    name: str = Field(description="User display name.")
+    role: str = Field(description="Membership role in the workspace (owner/admin/member).")
+    status: str = Field(description="Membership status (active/disabled).")
+    must_change_password: bool = Field(
+        description="True if the user must change their password at next login."
+    )
+
+
+class UserListResponse(BaseModel):
+    users: list[UserSummary] = Field(description="Active members of the active workspace.")
+
+
+class CreateUserResponse(BaseModel):
+    id: str = Field(description="Id of the created or newly-added user.")
+    email: str = Field(description="Normalized (lowercased) email of the user.")
+    role: str = Field(description="Role granted in the workspace.")
+    must_change_password: bool = Field(
+        description=(
+            "True when a brand-new identity was created (it must set its own password "
+            "at first login)."
+        ),
+    )
+
+
+class PasswordChangeResponse(BaseModel):
+    id: str = Field(description="Id of the user whose password was changed.")
+    must_change_password: bool = Field(
+        description=(
+            "True after an admin reset (forces a change at next login); false after "
+            "a self-service change."
+        ),
+    )
+
+
+class DeleteUserResponse(BaseModel):
+    id: str = Field(description="Id of the removed user.")
+    status: str = Field(description="Resulting membership status; always 'disabled' (soft delete).")
+
+
+@router.get(
+    "",
+    response_model=UserListResponse,
+    response_description="Active members of the caller's active workspace.",
+)
 async def list_users(
     p: Principal = Depends(require_session_admin),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """List the active members of the current workspace.
+
+    Requires an admin/owner user session (session-only: API keys are rejected 403;
+    staff are allowed). Returns each active membership with the user's id, email,
+    name, role, status, and must-change-password flag.
+
+    Error: 400 validation_error when no workspace is active (e.g. a staff caller
+    with no impersonated tenant); cross-tenant listing lives at /admin/v1/users.
+    """
     if p.tenant_id is None:
         # Staff or no active tenant: cross-tenant listing lives at /admin/v1/users.
         raise api_error(400, "validation_error", "No active workspace selected")
@@ -101,12 +194,33 @@ async def list_users(
     return {"users": [dict(r) for r in rows]}
 
 
-@router.post("", status_code=201)
+@router.post(
+    "",
+    status_code=201,
+    response_model=CreateUserResponse,
+    response_description=(
+        "The created or newly-added user's id, email, role, and must-change-password flag."
+    ),
+)
 async def create_user(
     body: CreateUser,
     p: Principal = Depends(require_session_admin),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Create a user or add an existing user to the workspace.
+
+    Requires an admin/owner user session (session-only: API keys are rejected 403;
+    staff are allowed and target a tenant via `tenant_id` or their impersonated
+    workspace). If the email is unknown, a new identity is created (a `password` is
+    then required) and made a member; if the email already exists, that user is
+    simply added to the workspace. Audited as `user.create` or `membership.add`.
+
+    Errors: 400 validation_error for an invalid `role` (must be admin/member),
+    missing `password` on a new identity, or (staff) a missing target tenant; 409
+    validation_error when the email is already in use, belongs to a staff account,
+    or the user is already a member of this workspace. The password is a secret and
+    is never echoed back.
+    """
     tenant_id = _tenant_scope(p, body.tenant_id)
     if body.role not in ("admin", "member"):
         raise api_error(400, "validation_error",
@@ -151,7 +265,8 @@ async def create_user(
 
     actor_type = actor_type_for(p)
     await audit(
-        conn, actor_type=actor_type, actor_id=p.user_id, action="user.create" if created_identity else "membership.add",
+        conn, actor_type=actor_type, actor_id=p.user_id,
+        action="user.create" if created_identity else "membership.add",
         target_type="user", target_id=user_id,
         details={"email": str(body.email).lower(), "role": body.role, "tenant_id": tenant_id},
     )
@@ -162,13 +277,31 @@ async def create_user(
     }
 
 
-@router.patch("/{uid}")
+@router.patch(
+    "/{uid}",
+    response_description=(
+        "The user id plus only the fields that were changed (any of name, role, status)."
+    ),
+)
 async def patch_user(
-    uid: str,
+    uid: Annotated[str, Path(description="Id of the user to update within the active workspace.")],
     body: PatchUser,
     p: Principal = Depends(require_session_admin),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Update a member's name, role, or status in the current workspace.
+
+    Requires an admin/owner user session (session-only: API keys are rejected 403;
+    staff allowed). All supplied fields are validated before any write. Disabling a
+    member also revokes their sessions in this workspace. Changes are audited
+    (rename / role change / enable / disable). The response echoes back only the
+    fields that were actually changed.
+
+    Errors: 400 validation_error when no workspace is active or `role`/`status` is
+    invalid; 404 not_found when the user is not a member of this workspace; 409
+    validation_error when the change would remove the last owner or otherwise
+    violates the owner-protection rules.
+    """
     if p.tenant_id is None:
         raise api_error(400, "validation_error", "No active workspace selected")
     membership = (
@@ -255,14 +388,34 @@ async def patch_user(
     return response
 
 
-@router.post("/{uid}/password")
+@router.post(
+    "/{uid}/password",
+    response_model=PasswordChangeResponse,
+    response_description="The user id and the resulting must-change-password flag.",
+)
 async def change_password(
-    uid: str,
+    uid: Annotated[str, Path(description="Id of the user whose password is being changed.")],
     body: PasswordChange,
     request: Request,
     p: Principal = Depends(resolve_principal),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Change a user's password (self-service or admin reset).
+
+    Requires authentication. A user may change their own password (must supply the
+    correct `current_password`); an admin/owner of the user's workspace, or staff,
+    may reset it without the current password. An admin reset re-forces a change at
+    next login (`must_change_password=true`); a self-change does not.
+
+    Changing a password revokes the user's OTHER sessions (spec §4.3); a
+    self-change keeps the caller's current session so a forced first-login change
+    does not immediately log them out. Audited as `user.password_reset`.
+
+    Errors: 404 not_found when the user does not exist; 403 forbidden when the
+    caller is neither the user nor an admin over them; 400 validation_error when a
+    self-change omits or gives a wrong `current_password`. Passwords are secrets and
+    are never echoed back.
+    """
     target = (
         await conn.execute(sa.select(t.users).where(t.users.c.id == uid))
     ).mappings().first()
@@ -328,12 +481,26 @@ async def change_password(
     return {"id": uid, "must_change_password": must_change}
 
 
-@router.delete("/{uid}")
+@router.delete(
+    "/{uid}",
+    response_model=DeleteUserResponse,
+    response_description="The user id and resulting membership status ('disabled').",
+)
 async def delete_user(
-    uid: str,
+    uid: Annotated[str, Path(description="Id of the user to remove from the active workspace.")],
     p: Principal = Depends(require_session_admin),
     conn: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Remove a member from the current workspace (soft delete).
+
+    Requires an admin/owner user session (session-only: API keys are rejected 403;
+    staff allowed). Disables the membership rather than deleting the identity and
+    revokes the user's sessions in this workspace. Audited as `membership.disable`.
+
+    Errors: 400 validation_error when no workspace is active; 404 not_found when the
+    user is not a member of this workspace; 409 validation_error when removing them
+    would leave the workspace without an owner.
+    """
     if p.tenant_id is None:
         raise api_error(400, "validation_error", "No active workspace selected")
     membership = (

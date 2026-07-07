@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Annotated, Any
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Body, Depends, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, Path, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,14 +52,63 @@ from control_plane.variants import assert_config_runnable_on_variant
 
 
 class PauseBody(BaseModel):
-    force: bool = False
+    force: bool = Field(
+        default=False,
+        description=(
+            "When true, cancel any in-flight tasks before pausing. When false, "
+            "a container with active tasks is rejected with 409."
+        ),
+    )
 
 
 class UpdateImageRequest(BaseModel):
-    image_tag: str
+    image_tag: str = Field(
+        description=(
+            "Docker image tag to move the container onto. Any tag is accepted, "
+            "including downgrades. Must be non-empty."
+        ),
+    )
 
 
-router = APIRouter()
+class ContainerListOut(BaseModel):
+    """Envelope returned by the list-containers endpoint."""
+
+    containers: list[ContainerOut] = Field(
+        description="Containers owned by the caller's tenant that match the filters.",
+    )
+
+
+class ContainerStatusOut(BaseModel):
+    """Minimal lifecycle-action result: the container id and its new status."""
+
+    id: str = Field(description="Container id the action was applied to.")
+    status: str = Field(description="Container lifecycle status after the action.")
+
+
+class UpdateImageResponse(BaseModel):
+    """Result of moving a container to a new image tag."""
+
+    id: str = Field(description="Container id that was updated.")
+    status: str = Field(description="Container lifecycle status after the update.")
+    image_tag: str = Field(description="Image tag the container now runs on.")
+
+
+class ResourceUpdateResponse(BaseModel):
+    """Result of updating a container's memory/CPU limits."""
+
+    id: str = Field(description="Container id that was updated.")
+    status: str = Field(description="Container lifecycle status after the update.")
+    mem_limit: str = Field(description="Effective memory limit (Docker size string).")
+    cpus: float = Field(description="Effective CPU allowance in fractional cores.")
+    applied: bool = Field(
+        description=(
+            "True if the new limits were applied to a live container; false when "
+            "only persisted for a later rehydrate (archived container)."
+        ),
+    )
+
+
+router = APIRouter(tags=["Containers"])
 
 # ---------------------------------------------------------------------------
 # Default limits used for the config-preview assembled_prompt. These are
@@ -234,13 +283,33 @@ async def _load_owned_container(
 
 
 # ---- routes ----------------------------------------------------------------
-@router.post("/containers", status_code=201)
+@router.post(
+    "/containers",
+    status_code=201,
+    response_model=ContainerOut,
+    response_description="The newly provisioned container.",
+)
 async def create_container(
     request: Request,
     body: CreateContainerRequest,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Provision a new agent container for the caller's tenant.
+
+    Requires a tenant-scoped credential. The active config is resolved from an
+    inline ``config`` (which wins), otherwise the named ``template_id``, otherwise
+    the driver default. The config is validated against tenant limits and the
+    chosen image variant before any Docker work, then a container and workspace
+    volume are provisioned and a row is persisted with status ``running``.
+
+    Errors: 400 (validation_error) for an invalid/empty config or a template that
+    lacks a model; 404 (not_found) if ``template_id`` does not exist; 409
+    (max_containers_reached) if the tenant is at its container cap; 409
+    (external_id_in_use) if a live container already uses the given
+    ``external_id``; 503 (container_not_runnable) if the container fails to become
+    ready (no row is persisted and any partial container/volume is cleaned up).
+    """
     settings: Settings = request.app.state.settings
     tid = _tid(principal)
     limits = await load_tenant_limits(session, tid)
@@ -374,14 +443,30 @@ async def create_container(
     return _row_to_container_out(row).model_dump()
 
 
-@router.get("/containers")
+@router.get(
+    "/containers",
+    response_model=ContainerListOut,
+    response_description="Envelope with the list of matching containers.",
+)
 async def list_containers(
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
-    external_id: str | None = None,
-    status: str | None = None,
+    external_id: Annotated[
+        str | None,
+        Query(description="Filter to the container carrying this caller-supplied external id."),
+    ] = None,
+    status: Annotated[
+        str | None,
+        Query(description="Filter by lifecycle status (e.g. running, paused, archived, error)."),
+    ] = None,
 ) -> dict:  # type: ignore[type-arg]
+    """List the caller's containers, optionally filtered.
+
+    Requires a tenant-scoped credential. Only containers owned by the caller's
+    tenant are returned. Supply ``external_id`` and/or ``status`` to narrow the
+    results.
+    """
     q = select(containers).where(containers.c.tenant_id == _tid(principal))
     if external_id is not None:
         q = q.where(containers.c.external_id == external_id)
@@ -391,38 +476,72 @@ async def list_containers(
     return {"containers": [_row_to_container_out(r).model_dump() for r in rows]}
 
 
-@router.get("/containers/{cid}")
+@router.get(
+    "/containers/{cid}",
+    response_model=ContainerOut,
+    response_description="The requested container.",
+)
 async def get_container(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to fetch.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Fetch a single container by id.
+
+    Requires a tenant-scoped credential. Returns 404 (not_found) if the container
+    does not exist or is not owned by the caller's tenant.
+    """
     row = await _load_owned_container(session, _tid(principal), cid)
     return _row_to_container_out(row).model_dump()
 
 
-@router.get("/containers/{cid}/config")
+@router.get(
+    "/containers/{cid}/config",
+    response_model=ConfigOut,
+    response_description="The container's config plus its assembled system-prompt preview.",
+)
 async def get_config(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id whose config to fetch.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Return a container's agent config and an assembled system-prompt preview.
+
+    Requires a tenant-scoped credential. The ``assembled_prompt`` is a preview
+    rendered with placeholder task/limits and does not reflect live task
+    execution. Returns 404 (not_found) if the container is missing or not owned by
+    the caller's tenant.
+    """
     row = await _load_owned_container(session, _tid(principal), cid)
     cfg = AgentConfig(**row.config)
     preview = _preview_prompt(cfg)
     return ConfigOut(config=cfg, assembled_prompt=preview).model_dump()
 
 
-@router.patch("/containers/{cid}/config")
+@router.patch(
+    "/containers/{cid}/config",
+    response_model=ConfigOut,
+    response_description="The updated config plus its assembled system-prompt preview.",
+)
 async def patch_config(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id whose config to update.")],
     patch: ConfigPatch,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Update a container's agent config; applies to subsequent tasks only.
+
+    Requires a tenant-scoped credential. Unknown/foreign skill and MCP-server ids
+    are silently dropped so only tenant-owned ones persist. The new config is
+    validated against tenant limits and the container's image variant.
+
+    Errors: 404 (not_found) if the container is missing or not owned by the
+    caller; 400 (validation_error) if the resulting config is invalid or violates
+    the tenant's allowed drivers/models or the image variant's feature gate.
+    """
     # Verify ownership — raises not_found if missing or wrong tenant.
     tid = _tid(principal)
     row = await _load_owned_container(session, tid, cid)
@@ -497,15 +616,25 @@ def _shim(request: Request) -> Any:
     return getattr(request.app.state, "shim", None)
 
 
-@router.post("/containers/{cid}/destroy", status_code=200)
+@router.post(
+    "/containers/{cid}/destroy",
+    status_code=200,
+    response_model=ContainerStatusOut,
+    response_description="The container id and its status after being archived.",
+)
 async def destroy_container_ep(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to destroy (archive).")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Destroy a container (spec §4.2): remove the Docker container, keep the
-    workspace volume + record so it can be restored. Recoverable."""
+    """Destroy (archive) a container, keeping its volume for later restore.
+
+    Requires a tenant-scoped credential. Removes the Docker container but retains
+    the workspace volume and the database record so the container can be restored
+    (spec §4.2). Recoverable. Returns 404 (not_found) if the container is missing
+    or not owned by the caller.
+    """
     await _load_owned_container(session, _tid(principal), cid)
     await lifecycle.destroy(
         session,
@@ -520,16 +649,24 @@ async def destroy_container_ep(
     return {"id": cid, "status": status or "archived"}
 
 
-@router.delete("/containers/{cid}", status_code=200)
+@router.delete(
+    "/containers/{cid}",
+    status_code=200,
+    response_model=ContainerStatusOut,
+    response_description="The container id and a 'deleted' status.",
+)
 async def delete_container_ep(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to permanently delete.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Permanently delete a container and all data about it (spec §4.2).
+    """Permanently delete a container and all of its data (irreversible).
 
-    404 if the container row no longer exists.
+    Requires a tenant-scoped credential. Removes the Docker container, workspace
+    volume, and database record (spec §4.2); unlike destroy, this cannot be
+    restored. Returns 404 (not_found) if the container row no longer exists or is
+    not owned by the caller.
     """
     await _load_owned_container(session, _tid(principal), cid)
     await lifecycle.delete(
@@ -544,14 +681,30 @@ async def delete_container_ep(
     return {"id": cid, "status": "deleted"}
 
 
-@router.post("/containers/{cid}/restore", status_code=200)
+@router.post(
+    "/containers/{cid}/restore",
+    status_code=200,
+    response_model=ContainerStatusOut,
+    response_description="The container id and a 'running' status.",
+)
 async def restore_container_ep(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to restore to running.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Restore a destroyed (archived) container back to running (spec §4.2)."""
+    """Restore an archived (or paused) container back to running.
+
+    Requires a tenant-scoped credential. Rehydrates the container from its
+    retained volume under admission control, honoring the tenant's
+    ``max_running_containers`` limit (spec §4.2). An already-running container is
+    an idempotent no-op.
+
+    Errors: 404 (not_found) if the container is missing or not owned by the
+    caller; 409 (container_not_runnable) if restored from a terminal state; 503
+    (running_capacity_exhausted) if the tenant is at its running-container limit
+    and no idle container can be evicted.
+    """
     tid = _tid(principal)
     await _load_owned_container(session, tid, cid)
     tenant_limits = await load_tenant_limits(session, tid)
@@ -571,9 +724,13 @@ async def restore_container_ep(
     return {"id": cid, "status": "running"}
 
 
-@router.post("/containers/{cid}/pause")
+@router.post(
+    "/containers/{cid}/pause",
+    response_model=ContainerStatusOut,
+    response_description="The container id and a 'paused' status.",
+)
 async def pause_container(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to pause.")],
     request: Request,
     body: PauseBody = Body(default_factory=PauseBody),
     principal: Principal = Depends(_principal),
@@ -581,8 +738,10 @@ async def pause_container(
 ) -> dict:  # type: ignore[type-arg]
     """Pause a running container (spec §4.10).
 
-    Pass ``force=true`` to cancel in-flight tasks first; otherwise a busy
-    container returns 409.
+    Requires a tenant-scoped credential. Pass ``force=true`` to cancel in-flight
+    tasks before pausing; otherwise a container with active tasks returns 409
+    (container_not_runnable). Returns 404 (not_found) if the container is missing
+    or not owned by the caller.
     """
     await _load_owned_container(session, _tid(principal), cid)
     docker_client = _docker(request)
@@ -600,9 +759,14 @@ async def pause_container(
     return {"id": cid, "status": "paused"}
 
 
-@router.post("/containers/{cid}/update-image", status_code=200)
+@router.post(
+    "/containers/{cid}/update-image",
+    status_code=200,
+    response_model=UpdateImageResponse,
+    response_description="The container id, its status, and the new image tag.",
+)
 async def update_container_image(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to move to a new image.")],
     request: Request,
     body: UpdateImageRequest,
     principal: Principal = Depends(_principal),
@@ -610,9 +774,15 @@ async def update_container_image(
 ) -> dict:  # type: ignore[type-arg]
     """Move a container to a different image tag (spec: update-container-image).
 
-    Pulls the target image first, then (for live containers) destroys + rehydrates
-    from the retained volume so it returns on the new image. The workspace volume
-    is preserved. Any tag is allowed, including downgrades.
+    Requires a tenant-scoped credential. Pulls the target image first, then (for
+    live containers) destroys and rehydrates from the retained volume so it
+    returns on the new image. The workspace volume is preserved. Any tag is
+    allowed, including downgrades.
+
+    Errors: 400 (validation_error) if ``image_tag`` is empty; 404 (not_found) if
+    the container is missing or not owned by the caller; 409
+    (container_not_updatable) if the container's state does not allow an update;
+    422 (image_unavailable) if the target image cannot be pulled.
     """
     tag = body.image_tag.strip()
     if not tag:
@@ -638,9 +808,16 @@ async def update_container_image(
     return {"id": cid, "status": status, "image_tag": tag}
 
 
-@router.patch("/containers/{cid}/resources", status_code=200)
+@router.patch(
+    "/containers/{cid}/resources",
+    status_code=200,
+    response_model=ResourceUpdateResponse,
+    response_description=(
+        "The container id, status, effective limits, and whether they were applied."
+    ),
+)
 async def update_container_resources(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id whose resource limits to update.")],
     request: Request,
     body: ResourceLimitsIn,
     principal: Principal = Depends(_principal),
@@ -648,8 +825,17 @@ async def update_container_resources(
 ) -> dict:  # type: ignore[type-arg]
     """Update a container's memory/CPU limits.
 
-    Live-updates a running container with no restart; updates then auto-resumes
-    a paused one; persists only (applied next rehydrate) for an archived one.
+    Requires a tenant-scoped credential. Live-updates a running container with no
+    restart; updates then auto-resumes a paused one; persists only (applied on the
+    next rehydrate) for an archived one. Omitted fields fall back to the
+    container's current stored value, which is then re-validated against the
+    global bounds.
+
+    Errors: 400 (validation_error) if neither ``mem_limit`` nor ``cpus`` is given
+    or a value is out of bounds; 404 (not_found) if the container is missing or
+    not owned by the caller; 409 (container_not_updatable) if the container's
+    state does not allow an update; 503 (container_not_runnable) if the Docker
+    daemon fails to apply the new limits.
     """
     if body.mem_limit is None and body.cpus is None:
         raise validation_error("at least one of mem_limit or cpus is required")
@@ -688,14 +874,24 @@ async def update_container_resources(
     }
 
 
-@router.post("/containers/{cid}/resume")
+@router.post(
+    "/containers/{cid}/resume",
+    response_model=ContainerStatusOut,
+    response_description="The container id and a 'running' status.",
+)
 async def resume_container(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to resume.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Resume a paused container (spec §4.10)."""
+    """Resume a paused container (spec §4.10).
+
+    Requires a tenant-scoped credential. An already-running container is an
+    idempotent no-op. Returns 404 (not_found) if the container is missing or not
+    owned by the caller; 409 (container_not_runnable) if the container is in a
+    state other than paused or running.
+    """
     row = await _load_owned_container(session, _tid(principal), cid)
     if row.status == "running":
         # Already running — idempotent success.
@@ -709,16 +905,26 @@ async def resume_container(
     return {"id": cid, "status": "running"}
 
 
-@router.post("/containers/{cid}/recover")
+@router.post(
+    "/containers/{cid}/recover",
+    response_model=ContainerStatusOut,
+    response_description="The container id and a 'running' status.",
+)
 async def recover_container(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id to recover from the 'error' state.")],
     request: Request,
     principal: Principal = Depends(require_admin),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Admin-only: recover a container stuck in 'error' (spec §4.12).
+    """Recover a container stuck in the 'error' state (admin only, spec §4.12).
 
-    Returns 409 if the container is not in 'error'.
+    Requires the admin role. Staff principals (tenant_id=None) may recover any
+    container; admin-role tenants may only recover their own. Recovery is only
+    valid from the ``error`` state.
+
+    Errors: 404 (not_found) if the container is missing or not owned by the
+    caller; 409 (container_not_runnable) if the container is not in the ``error``
+    state.
     """
     # require_admin already checked role; now verify tenant ownership.
     # Staff principals (is_staff=True, tenant_id=None) can recover any container;

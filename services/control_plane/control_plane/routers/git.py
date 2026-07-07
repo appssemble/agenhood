@@ -8,13 +8,13 @@ verify, which needs the shim.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,27 +41,58 @@ from control_plane.routers.containers import (
 from control_plane.routers.files import _require_running, _shim_for
 from control_plane.shim_client import ShimGitConflict, ShimGitNotFound
 
-router = APIRouter()
+router = APIRouter(tags=["Git"])
 
 
 class RemoteIn(BaseModel):
-    url: str
-    branch: str = "main"
-    enabled: bool = True
+    """Payload for configuring the push remote (snapshot mirror target)."""
+
+    url: str = Field(
+        description="Remote git URL (SSH form) to push workspace snapshots to.",
+    )
+    branch: str = Field(
+        default="main",
+        description="Branch that snapshots are pushed to.",
+    )
+    enabled: bool = Field(
+        default=True,
+        description="Whether automatic mirroring of snapshots to the remote is on.",
+    )
 
 
 class VerifyIn(BaseModel):
-    url: str
+    """Payload for a connectivity check against a remote using the stored key."""
+
+    url: str = Field(description="Remote git URL (SSH form) to verify reachability for.")
 
 
 class LinkIn(BaseModel):
-    url: str
-    branch: str = "main"
-    confirm: bool = False
+    """Payload for linking (cloning) a repo into the workspace (pull mode)."""
+
+    url: str = Field(description="Remote git URL (SSH form) to clone into the workspace.")
+    branch: str = Field(
+        default="main",
+        description="Branch to check out after cloning.",
+    )
+    confirm: bool = Field(
+        default=False,
+        description=(
+            "Must be true to proceed; linking replaces the current workspace "
+            "contents. Omitting or setting false yields a 400 confirm_required."
+        ),
+    )
 
 
 class RepullIn(BaseModel):
-    confirm: bool = False
+    """Payload for re-cloning the already-linked repo into the workspace."""
+
+    confirm: bool = Field(
+        default=False,
+        description=(
+            "Must be true to proceed; re-pull replaces the current workspace "
+            "contents. Omitting or setting false yields a 400 confirm_required."
+        ),
+    )
 
 
 async def _shim_verify(shim: Any, *, url: str, key: str) -> dict[str, Any]:
@@ -90,7 +121,9 @@ async def _shim_push(shim: Any, *, url: str, key: str, branch: str) -> dict[str,
 
 
 class RollbackIn(BaseModel):
-    sha: str
+    """Payload selecting the snapshot commit to roll the workspace back to."""
+
+    sha: str = Field(description="Full commit SHA of the snapshot to roll back to.")
 
 
 # ---- pure helpers (unit-tested) ---------------------------------------------
@@ -169,13 +202,29 @@ async def _no_task_running(session: AsyncSession, cid: str) -> None:
 
 # ---- routes -------------------------------------------------------------------
 
-@router.get("/containers/{cid}/git/snapshots")
+@router.get(
+    "/containers/{cid}/git/snapshots",
+    response_description=(
+        "Snapshot history from the shim's git log; for linked (pull-mode) "
+        "containers, an empty list with disabled=true and the linked coordinates."
+    ),
+)
 async def list_snapshots(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """List the workspace snapshot history for rollback.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise). For linked (pull-mode)
+    containers there is no local snapshot history: returns an empty list marked
+    disabled=true plus the linked repo url/branch WITHOUT touching the shim. In
+    snapshot mode it queries the shim's git log; if the shim is unreachable or
+    runs an older image without the route, it degrades to an empty snapshot list
+    rather than erroring.
+    """
     row = await _require_running(session, _tid(principal), cid)
     if row.git_mode == "linked":
         # Pull mode: there are no local snapshots to roll back to. Return a
@@ -201,13 +250,24 @@ async def list_snapshots(
             return {"snapshots": []}
 
 
-@router.get("/containers/{cid}/git/remote")
+@router.get(
+    "/containers/{cid}/git/remote",
+    response_description="{remote: <public remote view without secrets> | null}.",
+)
 async def get_remote(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Get the configured push remote (secrets redacted).
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container.
+    DB-only, so it works in any container state (the delete dialog reads this).
+    Returns {remote: null} when no remote is configured or only a bare deploy
+    key exists (no url yet); otherwise a public view that never includes the
+    private key.
+    """
     # DB-only: works in any container state (the delete dialog reads this).
     await _load_owned_container(session, _tid(principal), cid)
     remote = await _load_remote(session, cid)
@@ -216,18 +276,32 @@ async def get_remote(
     return {"remote": public_remote_view(remote) if remote else None}
 
 
-@router.post("/containers/{cid}/git/remote/key")
+@router.post(
+    "/containers/{cid}/git/remote/key",
+    response_description="{public_key, fingerprint, key_type} of the deploy key.",
+)
 async def remote_key(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
-    rotate: bool = Query(default=False),
+    rotate: Annotated[
+        bool,
+        Query(
+            description=(
+                "When true, generate a fresh keypair even if one exists. When "
+                "false (default), return the existing public key unchanged."
+            ),
+        ),
+    ] = False,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Generate (or rotate) the deploy keypair for the container.
+    """Generate (or rotate) the push deploy keypair for the container.
 
-    DB-only — works in any container state; keygen is pure CP work.
-    Returns {public_key, fingerprint, key_type}.
+    Requires the tenant-scoped bearer (`_principal`) to own the container.
+    DB-only — works in any container state; keygen is pure CP work. The private
+    key is encrypted at rest and never returned; only the public key,
+    fingerprint, and key_type are exposed so it can be added to the remote host.
+    Idempotent unless ?rotate=true forces a new keypair.
     """
     await _load_owned_container(session, _tid(principal), cid)
     existing = await _load_remote(session, cid)
@@ -275,15 +349,28 @@ async def remote_key(
     }
 
 
-@router.post("/containers/{cid}/git/remote/verify")
+@router.post(
+    "/containers/{cid}/git/remote/verify",
+    response_description="{ok: true, branches: [...], default_branch} on success.",
+)
 async def verify_remote_route(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     body: VerifyIn,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Verify connectivity to the remote using the stored deploy key."""
+    """Verify connectivity to the push remote using the stored deploy key.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise), since verification is done via
+    the shim. On success returns the discovered branches and default branch.
+    Errors: 400 validation_error if the url is malformed; 400 no_key if no
+    deploy key has been generated; 400 with the remote's error code (e.g.
+    auth_failed, host_unreachable, repo_not_found) if the check fails; 502
+    shim_unreachable if the agent cannot be reached. The request body carries a
+    remote reference but no secret, and is not echoed on a 422.
+    """
     crow = await _require_running(session, _tid(principal), cid)
     try:
         url = validate_remote_url(body.url)
@@ -309,14 +396,29 @@ async def verify_remote_route(
     }
 
 
-@router.put("/containers/{cid}/git/remote")
+@router.put(
+    "/containers/{cid}/git/remote",
+    response_description="{remote: <public remote view without secrets>}.",
+)
 async def put_remote(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     body: RemoteIn,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Configure (create or replace) the push remote after verifying it.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise). Validates the url and branch,
+    then verifies the url+stored key via the shim BEFORE persisting; the
+    existing keypair is reused, never regenerated. On success upserts the remote
+    (marking verified_at) and returns the redacted public view. Errors: 400
+    validation_error for a bad url/branch; 400 no_key if no deploy key exists;
+    400 with the remote's error code if verification fails; 502 shim_unreachable
+    if the agent is unreachable. The body carries no secret and is not echoed on
+    a 422.
+    """
     crow = await _require_running(session, _tid(principal), cid)
     try:
         url = validate_remote_url(body.url)
@@ -372,13 +474,25 @@ async def put_remote(
     return {"remote": public_remote_view(remote)}  # type: ignore[arg-type]
 
 
-@router.delete("/containers/{cid}/git/remote", status_code=204, response_model=None)
+@router.delete(
+    "/containers/{cid}/git/remote",
+    status_code=204,
+    response_model=None,
+    response_description="No content (204) once the remote row is deleted.",
+)
 async def delete_remote(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> Response:
+    """Delete the push remote and its stored deploy key.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container.
+    DB-only, so it works in any container state. Removes the git_remotes row
+    (including the encrypted private key) and returns 204 No Content. Idempotent:
+    succeeds even if no remote was configured.
+    """
     await _load_owned_container(session, _tid(principal), cid)
     await session.execute(
         git_remotes.delete().where(git_remotes.c.container_id == cid)
@@ -387,13 +501,25 @@ async def delete_remote(
     return Response(status_code=204)
 
 
-@router.post("/containers/{cid}/git/push")
+@router.post(
+    "/containers/{cid}/git/push",
+    response_description="{pushed: true, sha} of the pushed commit on success.",
+)
 async def push_now(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Push the current workspace snapshot to the configured remote now.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise). Decrypts the stored deploy key
+    and asks the shim to push to the remote's url/branch, then records the
+    outcome on the remote row (last_push_status/error/at). Errors: 404 if no
+    remote is linked; 502 with the push error code (or shim_unreachable) if the
+    push fails.
+    """
     crow = await _require_running(session, _tid(principal), cid)
     remote = await _load_remote(session, cid)
     if remote is None or not remote.get("url"):
@@ -412,14 +538,26 @@ async def push_now(
     return {"pushed": True, "sha": result.get("sha")}
 
 
-@router.post("/containers/{cid}/git/rollback")
+@router.post(
+    "/containers/{cid}/git/rollback",
+    response_description="{sha} of the resulting rollback commit.",
+)
 async def rollback(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     body: RollbackIn,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Roll the workspace back to a snapshot commit.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise). Asks the shim to reset the
+    workspace to the given sha; if an enabled push remote is linked, the
+    resulting rollback commit is also mirrored upstream (best-effort, recorded on
+    the remote row). Errors: 404 if the sha is unknown; 409 task_running if a
+    task is currently running.
+    """
     crow = await _require_running(session, _tid(principal), cid)
     async with _shim_for(request, crow) as shim:
         try:
@@ -477,18 +615,32 @@ async def _do_clone(
             ) from exc
 
 
-@router.post("/containers/{cid}/git/link/key")
+@router.post(
+    "/containers/{cid}/git/link/key",
+    response_description="{public_key, fingerprint, key_type} of the pull deploy key.",
+)
 async def link_key(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
-    rotate: bool = Query(default=False),
+    rotate: Annotated[
+        bool,
+        Query(
+            description=(
+                "When true, generate a fresh keypair even if one exists. When "
+                "false (default), return the existing public key unchanged."
+            ),
+        ),
+    ] = False,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Generate (or rotate) the pull deploy keypair for the container.
+    """Generate (or rotate) the pull (link) deploy keypair for the container.
 
-    DB-only — works in any container state. Returns {public_key, fingerprint,
-    key_type}. Stable across calls unless ?rotate=true.
+    Requires the tenant-scoped bearer (`_principal`) to own the container.
+    DB-only — works in any container state. The private key is encrypted at rest
+    and never returned; only the public key, fingerprint, and key_type are
+    exposed so it can be added to the source repo with read access. Idempotent
+    unless ?rotate=true forces a new keypair.
     """
     await _load_owned_container(session, _tid(principal), cid)
     existing = await _load_linked(session, cid)
@@ -532,15 +684,27 @@ async def link_key(
     }
 
 
-@router.post("/containers/{cid}/git/link/verify")
+@router.post(
+    "/containers/{cid}/git/link/verify",
+    response_description="{ok: true, branches: [...], default_branch} on success.",
+)
 async def link_verify(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     body: VerifyIn,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """Verify connectivity to the pull remote using the stored deploy key."""
+    """Verify connectivity to the pull (link) remote using the stored key.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise), since verification is done via
+    the shim. On success returns the discovered branches and default branch.
+    Errors: 400 validation_error for a malformed url; 400 no_key if no pull
+    deploy key exists; 400 with the remote's error code if the check fails; 502
+    shim_unreachable if the agent is unreachable. The body carries no secret and
+    is not echoed on a 422.
+    """
     crow = await _require_running(session, _tid(principal), cid)
     try:
         url = validate_remote_url(body.url)
@@ -566,13 +730,23 @@ async def link_verify(
     }
 
 
-@router.get("/containers/{cid}/git/link")
+@router.get(
+    "/containers/{cid}/git/link",
+    response_description="{linked: <public linked view without secrets> | null}.",
+)
 async def get_link(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Get the linked (pull-mode) repo for the container (secrets redacted).
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container.
+    DB-only, works in any container state. Returns {linked: null} unless the
+    container is in linked git_mode; otherwise a public view (url, branch,
+    clone status) that never includes the private key.
+    """
     crow = await _load_owned_container(session, _tid(principal), cid)
     if crow.git_mode != "linked":
         return {"linked": None}
@@ -643,14 +817,30 @@ async def _link_clone_persist(
     return {"linked": public_linked_view(linked)}  # type: ignore[arg-type]
 
 
-@router.post("/containers/{cid}/git/link")
+@router.post(
+    "/containers/{cid}/git/link",
+    response_description="{linked: <public linked view without secrets>} after clone.",
+)
 async def post_link(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     body: LinkIn,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Link a repo: clone it into the workspace and switch to pull mode.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise). Destructive: replaces the
+    workspace contents, so body.confirm must be true. Validates url/branch,
+    ensures no task is running, clones via the shim using the stored pull key,
+    then flips git_mode to linked and disables the push remote (exclusivity).
+    Errors: 400 confirm_required if confirm is false; 400 validation_error for a
+    bad url/branch; 400 no_key if no pull key exists; 409 task_running if a task
+    is running; 400 clone_failed (or the remote's error code) on clone failure;
+    502 agent_outdated / shim_unreachable if the agent lacks clone support or is
+    unreachable. The body carries no secret and is not echoed on a 422.
+    """
     crow = await _require_running(session, _tid(principal), cid)
     if not body.confirm:
         raise api_error(
@@ -666,14 +856,27 @@ async def post_link(
     return await _link_clone_persist(cid, crow, request, session, url=url, branch=branch)
 
 
-@router.post("/containers/{cid}/git/link/repull")
+@router.post(
+    "/containers/{cid}/git/link/repull",
+    response_description="{linked: <public linked view without secrets>} after re-clone.",
+)
 async def repull_link(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     body: RepullIn,
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
+    """Re-pull the already-linked repo, replacing the workspace contents.
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container and
+    the container to be running (404 otherwise). Destructive: re-clones the
+    stored linked url/branch, so body.confirm must be true. Errors: 400
+    confirm_required if confirm is false; 404 if no repo is linked; 409
+    task_running if a task is running; 400 clone_failed (or the remote's error
+    code) on clone failure; 502 agent_outdated / shim_unreachable if the agent
+    lacks clone support or is unreachable.
+    """
     crow = await _require_running(session, _tid(principal), cid)
     if not body.confirm:
         raise api_error(
@@ -689,13 +892,25 @@ async def repull_link(
     )
 
 
-@router.delete("/containers/{cid}/git/link", status_code=204, response_model=None)
+@router.delete(
+    "/containers/{cid}/git/link",
+    status_code=204,
+    response_model=None,
+    response_description="No content (204) once the container returns to snapshot mode.",
+)
 async def delete_link(
-    cid: str,
+    cid: Annotated[str, Path(description="Container id.")],
     request: Request,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> Response:
+    """Unlink the repo: switch back to snapshot mode (non-destructive).
+
+    Requires the tenant-scoped bearer (`_principal`) to own the container.
+    DB-only, works in any container state. Flips git_mode back to snapshot but
+    keeps the linked_repos row (preserving the pull key for a future relink) and
+    leaves the workspace files untouched. Returns 204 No Content. Idempotent.
+    """
     await _load_owned_container(session, _tid(principal), cid)
     # Keep the linked_repos row (preserves the pull key for a future relink);
     # just flip back to snapshot mode. Files are left exactly as they are.
