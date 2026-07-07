@@ -159,6 +159,8 @@ async def run_from_volume(
         shim_token = str(row.get("shim_token", ""))
         container_id = str(row.get("id", docker_name))
         tenant_id = str(row.get("tenant_id", ""))
+        mem_limit = str(row.get("mem_limit", "4g"))
+        cpus = float(row.get("cpus", 2.0))
 
         ports: dict[str, int | None] | None = None
         if bind_to_host and shim_port is not None:
@@ -189,6 +191,8 @@ async def run_from_volume(
             shim_token=shim_token,
             max_concurrent_tasks=max_workers,
             image_tag=image_tag,
+            mem_limit=mem_limit,
+            cpus=cpus,
         )
         kwargs["volumes"] = {volume_name: {"bind": "/workspace", "mode": "rw"}}
         if extra_env:

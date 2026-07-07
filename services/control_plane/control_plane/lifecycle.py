@@ -139,7 +139,7 @@ async def _load(db: _Executable, cid: str) -> dict[str, Any]:
     res = await db.execute(
         text(
             "SELECT id, tenant_id, docker_name, volume_name, image_tag, image_variant, "
-            "shim_token, config, resources FROM containers WHERE id = :cid"
+            "shim_token, config, resources, mem_limit, cpus FROM containers WHERE id = :cid"
         ),
         {"cid": cid},
     )
@@ -149,6 +149,7 @@ async def _load(db: _Executable, cid: str) -> dict[str, Any]:
     keys = [
         "id", "tenant_id", "docker_name", "volume_name",
         "image_tag", "image_variant", "shim_token", "config", "resources",
+        "mem_limit", "cpus",
     ]
     return dict(zip(keys, row, strict=False))
 
