@@ -266,6 +266,46 @@ async def test_run_materializes_skills_and_mcp(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_uses_makedirs_agent_for_skills_dir(monkeypatch, tmp_path):
+    """Regression (found via live E2E verification against a real hardened
+    container): claude's own resumable transcript lives under
+    `.claude/projects/`, a sibling of `.claude/skills/`. ensure_agent_dir only
+    chowns the leaf it's given, so it left `.claude` itself root-owned the
+    first time it was created as a side effect of making `.claude/skills` —
+    silently blocking claude's transcript writes and breaking session resume.
+    makedirs_agent chowns every newly-created directory in the path, not just
+    the leaf, so `.claude` ends up agent-owned too.
+    """
+    from agentcore.drivers import claude_code
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "agentcore.sandbox.makedirs_agent", lambda p, *a, **k: calls.append(p)
+    )
+    monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **k: None)
+    monkeypatch.setattr("agentcore.sandbox.chown_to_agent", lambda *a, **k: None)
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        return FakeProc([
+            b'{"type":"result","subtype":"success","result":"ok","is_error":false,'
+            b'"usage":{"input_tokens":1,"output_tokens":1}}\n',
+        ])
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+
+    async def _emit(t, p):
+        pass
+
+    ws = str(tmp_path / "ws")
+    await claude_code.ClaudeCodeDriver().run(
+        task=TaskBody(prompt="hi"), config=_cfg(), limits=_limits(),
+        credential="k", emit=_emit, cancel=asyncio.Event(), workspace=ws,
+    )
+
+    assert calls == [claude_code.skills_dir(ws)]
+
+
+@pytest.mark.asyncio
 async def test_run_no_mcp_flag_when_no_servers(monkeypatch, tmp_path):
     from agentcore.drivers import claude_code
 

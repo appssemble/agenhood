@@ -268,9 +268,15 @@ class ClaudeCodeDriver:
         sandbox.ensure_agent_dir(home)
 
         # Materialize skills into the discovery dir (best-effort: a failure must
-        # never change the task outcome — skills are an enhancement).
+        # never change the task outcome — skills are an enhancement). Uses
+        # makedirs_agent, not ensure_agent_dir: this is the first thing to create
+        # `.claude/skills`, so `.claude` itself is a brand-new intermediate — only
+        # makedirs_agent chowns every newly-created directory in the path, not
+        # just the leaf. Left as ensure_agent_dir, `.claude` stays root-owned and
+        # claude's own transcript writes under `.claude/projects/` (needed to
+        # resume a session) fail silently.
         try:
-            sandbox.ensure_agent_dir(skills_dir(workspace))
+            sandbox.makedirs_agent(skills_dir(workspace))
             names = await write_skills(skills_dir(workspace), skills or [])
             if names:
                 await emit("log", {"level": "info", "message": "skills_materialized",

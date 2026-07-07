@@ -362,8 +362,12 @@ class CodexDriver:
 
         # Materialize codex skills into the discovery dir (best-effort: a
         # failure must never change the task outcome — skills are an enhancement).
+        # makedirs_agent, not ensure_agent_dir: `.agents` is a brand-new
+        # intermediate the first time this runs, and ensure_agent_dir only
+        # chowns the leaf it's given, leaving `.agents` root-owned and unwritable
+        # by the dropped agent user (same bug class as claude_code.py).
         try:
-            sandbox.ensure_agent_dir(skills_dir(workspace))
+            sandbox.makedirs_agent(skills_dir(workspace))
             names = await write_skills(skills_dir(workspace), skills or [])
             if names:
                 await emit(
