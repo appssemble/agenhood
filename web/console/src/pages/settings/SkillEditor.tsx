@@ -431,14 +431,16 @@ export default function SkillEditor() {
                 )}
               </Field>
               <Field label="Repository access">
-                <SegControl<"public" | "private">
-                  value={accessMode}
-                  onChange={switchAccessMode}
-                  options={[
-                    { value: "public", label: "Public" },
-                    { value: "private", label: "Private" },
-                  ]}
-                />
+                <div>
+                  <SegControl<"public" | "private">
+                    value={accessMode}
+                    onChange={switchAccessMode}
+                    options={[
+                      { value: "public", label: "Public" },
+                      { value: "private", label: "Private" },
+                    ]}
+                  />
+                </div>
                 {accessMode === "private" && (<>
                 <div style={{ marginTop: 8 }}>
                   <Dropdown
