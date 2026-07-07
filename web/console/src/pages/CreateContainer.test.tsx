@@ -74,6 +74,25 @@ describe("CreateContainer", () => {
     }));
   });
 
+  it("disables Create when a non-numeric CPU value is entered", async () => {
+    const user = userEvent.setup();
+    setupAuth();
+    server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl()] })));
+    let posted: any = null;
+    server.use(http.post("/v1/containers", async ({ request }) => {
+      posted = await request.json();
+      return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+    }));
+    renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+    expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/name/i), "research-prod");
+    await user.type(screen.getByLabelText(/cpu/i), "abc");
+    expect(screen.getByRole("button", { name: /Create container/i })).toBeDisabled();
+    expect(screen.getByText(/Enter a valid CPU count/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Create container/i }));
+    expect(posted).toBeNull();
+  });
+
   it("omits resource_limits when memory and cpu are left blank", async () => {
     const user = userEvent.setup();
     setupAuth();

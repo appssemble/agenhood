@@ -98,6 +98,11 @@ export default function CreateContainer() {
   if (!chosen) missing.push("Select a template");
   if (!name.trim()) missing.push("Name the container");
   if (!model) missing.push("Choose a model");
+  const trimmedCpus = cpus.trim();
+  const parsedCpusValid = trimmedCpus ? Number(trimmedCpus) : undefined;
+  if (trimmedCpus && (Number.isNaN(parsedCpusValid) || (parsedCpusValid as number) <= 0)) {
+    missing.push("Enter a valid CPU count");
+  }
   const ready = missing.length === 0;
 
   async function onCreate() {
@@ -113,7 +118,7 @@ export default function CreateContainer() {
           }
         : undefined;
       const trimmedMem = memLimit.trim();
-      const parsedCpus = cpus.trim() ? Number(cpus.trim()) : undefined;
+      const parsedCpus = parsedCpusValid;
       const resource_limits =
         trimmedMem || parsedCpus !== undefined
           ? { ...(trimmedMem && { mem_limit: trimmedMem }), ...(parsedCpus !== undefined && { cpus: parsedCpus }) }
