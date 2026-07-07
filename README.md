@@ -76,7 +76,7 @@ Chain tasks into ordered **workflows** across one or more agents, with a visual 
 Each agent owns a `/workspace` volume that survives restarts, pauses, and archival — browse, upload, and download files from the console. **Automatic snapshots** after every task give you a restore-point timeline with non-destructive rollback, plus an optional **Git backup remote** (SSH deploy key, push-on-completion).
 
 ### 🧩 Tools, skills & MCP
-The vanilla driver ships a tool palette: read/write/edit/list files, run **bash** and **Python**, **web search** (self-hosted [SearXNG](https://github.com/searxng/searxng) by default), and **web fetch** (text or headless-Chromium-rendered). Extend agents with reusable **skills** (inline or sourced from a Git repo) and **[Model Context Protocol](https://modelcontextprotocol.io) (MCP)** servers.
+The vanilla driver ships a tool palette: read/write/edit/list files, run **bash** and **Python**, **web search** (self-hosted [SearXNG](https://github.com/searxng/searxng) by default), and **web fetch** (text or headless-Chromium-rendered). Extend agents with reusable **skills** (inline or sourced from a Git repo — private repos supported via per-workspace SSH deploy keys) and **[Model Context Protocol](https://modelcontextprotocol.io) (MCP)** servers.
 
 ### 🏢 Multi-tenant workspaces
 Multi-tenant from day one. Every resource is scoped to a workspace; a user can belong to several and switch via a header picker. Per-workspace roles: **owner / admin / member**.
