@@ -258,11 +258,29 @@ export function useUpdateImage(cid: string) {
   });
 }
 
+export function useUpdateResources(cid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { mem_limit?: string; cpus?: number }) =>
+      api.patch<{ id: string; status: string; mem_limit: string; cpus: number }>(
+        `/v1/containers/${cid}/resources`,
+        body,
+      ),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: keys.containers });
+      qc.invalidateQueries({ queryKey: keys.container(cid) });
+    },
+  });
+}
+
 export function useCreateContainer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; template_id: string; image_variant: "full" | "slim"; external_id?: string; config?: AgentConfig }) =>
-      api.post<Container>("/v1/containers", body),
+    mutationFn: (body: {
+      name: string; template_id: string; image_variant: "full" | "slim";
+      external_id?: string; config?: AgentConfig;
+      resource_limits?: { mem_limit?: string; cpus?: number };
+    }) => api.post<Container>("/v1/containers", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.containers }),
   });
 }

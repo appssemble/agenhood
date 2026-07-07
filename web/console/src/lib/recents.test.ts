@@ -15,6 +15,8 @@ function con(id: string, last: string | null): Container {
     last_task_at: last,
     created_at: "2026-01-01T00:00:00Z",
     error_message: null,
+    mem_limit: "1Gi",
+    cpus: 1,
   };
 }
 

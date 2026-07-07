@@ -28,6 +28,7 @@ describe("wire types match index §4/§6.2", () => {
       image_variant: "full", image_tag: "v0.1.0", metadata: {},
       last_task_at: null, created_at: "2026-05-20T10:00:00Z", error_message: null,
       config: { driver: "vanilla", model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } },
+      mem_limit: "1Gi", cpus: 1,
     };
     expect(ctr.status).toBe("running");
   });

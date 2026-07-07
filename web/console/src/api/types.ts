@@ -37,6 +37,8 @@ export interface Container {
   metadata: Record<string, unknown>; last_task_at: string | null;
   created_at: string; error_message: string | null;
   git_mode?: "snapshot" | "linked";
+  mem_limit: string;
+  cpus: number;
 }
 export interface ContainerConfigResponse { config: AgentConfig; assembled_prompt: string; }
 
