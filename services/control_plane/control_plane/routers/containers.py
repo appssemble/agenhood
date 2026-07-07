@@ -44,6 +44,7 @@ from control_plane.schemas import (
     ConfigPatch,
     ContainerOut,
     CreateContainerRequest,
+    ResourceLimitsIn,
 )
 from control_plane.skills_service import filter_known_skill_ids
 from control_plane.tenant_defaults import merge_limits
@@ -635,6 +636,45 @@ async def update_container_image(
     await session.commit()
     status = await lifecycle.current_status(session, cid)
     return {"id": cid, "status": status, "image_tag": tag}
+
+
+@router.patch("/containers/{cid}/resources", status_code=200)
+async def update_container_resources(
+    cid: str,
+    request: Request,
+    body: ResourceLimitsIn,
+    principal: Principal = Depends(_principal),
+    session: AsyncSession = Depends(_session),
+) -> dict:  # type: ignore[type-arg]
+    """Update a container's memory/CPU limits.
+
+    Live-updates a running container with no restart; updates then auto-resumes
+    a paused one; persists only (applied next rehydrate) for an archived one.
+    """
+    if body.mem_limit is None and body.cpus is None:
+        raise validation_error("at least one of mem_limit or cpus is required")
+    tid = _tid(principal)
+    row = await _load_owned_container(session, tid, cid)
+    settings = _settings(request)
+    mem_limit, cpus = resolve_resource_limits(
+        variant=row.image_variant,
+        requested_mem_limit=body.mem_limit if body.mem_limit is not None else row.mem_limit,
+        requested_cpus=body.cpus if body.cpus is not None else row.cpus,
+        settings=settings,
+        field_prefix="",  # this body's fields are top-level, not nested under resource_limits
+    )
+    status = await lifecycle.update_resources(
+        session,
+        _docker(request),
+        cid,
+        mem_limit=mem_limit,
+        cpus=cpus,
+        settings=settings,
+        actor_type="tenant",
+        actor_id=tid,
+    )
+    await session.commit()
+    return {"id": cid, "status": status, "mem_limit": mem_limit, "cpus": cpus}
 
 
 @router.post("/containers/{cid}/resume")

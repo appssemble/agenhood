@@ -138,6 +138,7 @@ SELF_SCOPED_MUTATIONS: set[str] = {
     "/v1/containers/{cid}/config",                 # PATCH config
     "/v1/containers/{cid}/destroy",                # POST lifecycle
     "/v1/containers/{cid}/pause",                  # POST lifecycle
+    "/v1/containers/{cid}/resources",              # PATCH lifecycle
     "/v1/containers/{cid}/restore",                # POST lifecycle
     "/v1/containers/{cid}/resume",                 # POST lifecycle
     "/v1/containers/{cid}/update-image",           # POST lifecycle
@@ -291,6 +292,8 @@ CONTRACTS: list[tuple[str, str, str, str]] = [
      "/v1/containers/c_x/git/snapshots", "auth"),
     ("POST",   "/v1/containers/{cid}/pause",   "/v1/containers/c_x/pause",   "auth"),
     ("POST",   "/v1/containers/{cid}/recover", "/v1/containers/c_x/recover", "auth"),
+    ("PATCH",  "/v1/containers/{cid}/resources",
+     "/v1/containers/c_x/resources", "auth"),
     ("POST",   "/v1/containers/{cid}/restore", "/v1/containers/c_x/restore", "auth"),
     ("POST",   "/v1/containers/{cid}/resume",  "/v1/containers/c_x/resume",  "auth"),
     ("POST",   "/v1/containers/{cid}/scheduled-tasks",
