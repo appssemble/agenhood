@@ -82,6 +82,8 @@ export default function CreateContainer() {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [variant, setVariant] = useState<"full" | "slim">("full");
   const [model, setModel] = useState("");
+  const [memLimit, setMemLimit] = useState("");
+  const [cpus, setCpus] = useState("");
 
   const chosen = templates.find((t) => t.id === templateId) ?? templates[0];
   const effectiveTemplateId = templateId ?? chosen?.id ?? "";
@@ -110,7 +112,16 @@ export default function CreateContainer() {
             context: chosen.context,
           }
         : undefined;
-      const ctr = await create.mutateAsync({ name, template_id: effectiveTemplateId, image_variant: variant, config });
+      const trimmedMem = memLimit.trim();
+      const parsedCpus = cpus.trim() ? Number(cpus.trim()) : undefined;
+      const resource_limits =
+        trimmedMem || parsedCpus !== undefined
+          ? { ...(trimmedMem && { mem_limit: trimmedMem }), ...(parsedCpus !== undefined && { cpus: parsedCpus }) }
+          : undefined;
+      const ctr = await create.mutateAsync({
+        name, template_id: effectiveTemplateId, image_variant: variant, config,
+        ...(resource_limits && { resource_limits }),
+      });
       navigate(`/containers/${ctr.id}`, { replace: true });
     } catch (err) {
       toast.error("Couldn't create container", err instanceof ApiError ? err.message : undefined);
@@ -205,6 +216,29 @@ export default function CreateContainer() {
                 </div>
               </div>
 
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
+                <div className="fluid-w" style={{ flex: "1 1 160px", maxWidth: 200 }}>
+                  <Field label="Memory (optional)" htmlFor="mem-limit" hint="e.g. 2g. Defaults by image variant.">
+                    <Input
+                      id="mem-limit"
+                      value={memLimit}
+                      onChange={(e) => setMemLimit(e.target.value)}
+                      placeholder={variant === "full" ? "4g" : "2g"}
+                    />
+                  </Field>
+                </div>
+                <div className="fluid-w" style={{ flex: "1 1 160px", maxWidth: 200 }}>
+                  <Field label="CPUs (optional)" htmlFor="cpus" hint="e.g. 1.5. Defaults by image variant.">
+                    <Input
+                      id="cpus"
+                      value={cpus}
+                      onChange={(e) => setCpus(e.target.value)}
+                      placeholder={variant === "full" ? "2" : "1"}
+                    />
+                  </Field>
+                </div>
+              </div>
+
               <div className="fluid-w" style={{ maxWidth: 480 }}>
                 <Field label="Model">
                   <ModelPicker driver={chosen?.driver ?? ""} value={model} onChange={setModel} />
@@ -227,6 +261,8 @@ export default function CreateContainer() {
               <ReviewRow label="Model" value={model || null} mono />
               <ReviewRow label="Driver" value={chosen?.driver ?? null} mono />
               <ReviewRow label="Image" value={variant === "full" ? "Full" : "Slim"} />
+              <ReviewRow label="Memory" value={memLimit.trim() || null} mono />
+              <ReviewRow label="CPUs" value={cpus.trim() || null} mono />
             </div>
             <div className="nc-rev-foot">
               <Button

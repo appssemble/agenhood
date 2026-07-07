@@ -52,4 +52,42 @@ describe("CreateContainer", () => {
     }));
     expect(nav).toHaveBeenCalledWith("/containers/con_new", { replace: true });
   });
+
+  it("submits custom memory and cpu limits when provided", async () => {
+    const user = userEvent.setup();
+    setupAuth();
+    server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl()] })));
+    let posted: any = null;
+    server.use(http.post("/v1/containers", async ({ request }) => {
+      posted = await request.json();
+      return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+    }));
+    renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+    expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/name/i), "research-prod");
+    await user.type(screen.getByLabelText(/memory/i), "3g");
+    await user.type(screen.getByLabelText(/cpu/i), "1.5");
+    await user.click(screen.getByRole("button", { name: /Create container/i }));
+    await waitFor(() => expect(posted).toMatchObject({
+      name: "research-prod",
+      resource_limits: { mem_limit: "3g", cpus: 1.5 },
+    }));
+  });
+
+  it("omits resource_limits when memory and cpu are left blank", async () => {
+    const user = userEvent.setup();
+    setupAuth();
+    server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl()] })));
+    let posted: any = null;
+    server.use(http.post("/v1/containers", async ({ request }) => {
+      posted = await request.json();
+      return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+    }));
+    renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+    expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/name/i), "research-prod");
+    await user.click(screen.getByRole("button", { name: /Create container/i }));
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted).not.toHaveProperty("resource_limits");
+  });
 });
