@@ -22,17 +22,26 @@ _MODEL_PREFIX_PROVIDER = (
 # an opencode container run a real task without any LLM credential configured.
 _KEYLESS_PROVIDERS = frozenset({"opencode"})
 
+# claude-code's model catalog offers only these three bare family aliases (see
+# model_catalog._CLAUDE_CODE_ALIASES) — none start with "claude", so they need
+# an explicit exact-match entry alongside the prefix table above.
+_CLAUDE_CODE_ALIAS_PROVIDER = {"opus": "anthropic", "sonnet": "anthropic", "haiku": "anthropic"}
+
 
 def provider_for_model(model: str) -> str:
     """Resolve the credential provider for a model id.
 
     A fully-qualified ``provider/model`` id (e.g. ``opencode/deepseek-v4-flash-free``
     or ``anthropic/claude-...``) takes its provider from the prefix; a bare id
-    (``claude-...``, ``gpt-...``) is matched against the known prefixes.
+    (``claude-...``, ``gpt-...``) is matched against the known prefixes, and
+    claude-code's bare family aliases (``opus``/``sonnet``/``haiku``) against
+    the exact-match table above.
     """
     if "/" in model:
         return model.split("/", 1)[0].lower()
     m = model.lower()
+    if m in _CLAUDE_CODE_ALIAS_PROVIDER:
+        return _CLAUDE_CODE_ALIAS_PROVIDER[m]
     for prefix, provider in _MODEL_PREFIX_PROVIDER:
         if m.startswith(prefix):
             return provider

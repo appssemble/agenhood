@@ -23,6 +23,16 @@ def test_provider_for_model_maps_anthropic() -> None:
     assert provider_for_model("claude-sonnet-4-6") == "anthropic"
 
 
+def test_provider_for_model_maps_claude_code_aliases() -> None:
+    # claude-code's model catalog offers only the bare family aliases (see
+    # model_catalog._CLAUDE_CODE_ALIASES) — none start with "claude", so they
+    # need their own mapping alongside the prefix table.
+    assert provider_for_model("opus") == "anthropic"
+    assert provider_for_model("sonnet") == "anthropic"
+    assert provider_for_model("haiku") == "anthropic"
+    assert provider_for_model("Opus") == "anthropic"  # case-insensitive, like the rest
+
+
 def test_provider_for_model_maps_openai() -> None:
     assert provider_for_model("gpt-4o") == "openai"
 
