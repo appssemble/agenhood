@@ -50,11 +50,18 @@ class Settings:
     # `docker login` is not seen — these env creds are passed as auth_config.
     agent_registry_username: str = ""
     agent_registry_password: str = ""
-    # Per-agent container resource caps (env-tunable for VM sizing). Defaults match
-    # the historical hardcoded values so behavior is unchanged when unset.
-    agent_mem_limit: str = "4g"
-    agent_memswap_limit: str = "4g"
-    agent_cpus: float = 2.0
+    # Variant-tiered per-container defaults (env-tunable). `full` ships Chromium
+    # and needs headroom for browser automation; `slim` doesn't.
+    agent_mem_limit_full: str = "4g"
+    agent_cpus_full: float = 2.0
+    agent_mem_limit_slim: str = "2g"
+    agent_cpus_slim: float = 1.0
+    # Global bounds an explicit per-container override must fall within
+    # (create-time `resource_limits` and the update-resources endpoint).
+    agent_mem_limit_min: str = "256m"
+    agent_mem_limit_max: str = "8g"
+    agent_cpus_min: float = 0.25
+    agent_cpus_max: float = 4.0
     agent_pids_limit: int = 512
     agent_extra_env: dict[str, str] = field(default_factory=dict)
     # When True, provision_container binds the shim port to an ephemeral host
@@ -130,11 +137,14 @@ class Settings:
             agent_registry=os.environ.get("AGENT_REGISTRY", ""),
             agent_registry_username=os.environ.get("AGENT_REGISTRY_USERNAME", ""),
             agent_registry_password=os.environ.get("AGENT_REGISTRY_PASSWORD", ""),
-            agent_mem_limit=os.environ.get("AGENT_MEM_LIMIT", "4g"),
-            agent_memswap_limit=os.environ.get(
-                "AGENT_MEMSWAP_LIMIT", os.environ.get("AGENT_MEM_LIMIT", "4g")
-            ),
-            agent_cpus=float(os.environ.get("AGENT_CPUS", "2")),
+            agent_mem_limit_full=os.environ.get("AGENT_MEM_LIMIT_FULL", "4g"),
+            agent_cpus_full=float(os.environ.get("AGENT_CPUS_FULL", "2")),
+            agent_mem_limit_slim=os.environ.get("AGENT_MEM_LIMIT_SLIM", "2g"),
+            agent_cpus_slim=float(os.environ.get("AGENT_CPUS_SLIM", "1")),
+            agent_mem_limit_min=os.environ.get("AGENT_MEM_LIMIT_MIN", "256m"),
+            agent_mem_limit_max=os.environ.get("AGENT_MEM_LIMIT_MAX", "8g"),
+            agent_cpus_min=float(os.environ.get("AGENT_CPUS_MIN", "0.25")),
+            agent_cpus_max=float(os.environ.get("AGENT_CPUS_MAX", "4")),
             agent_pids_limit=int(os.environ.get("AGENT_PIDS_LIMIT", "512")),
             internal_network=os.environ.get("INTERNAL_NETWORK", "agent-runtime-internal"),
             readyz_timeout_seconds=float(os.environ.get("READYZ_TIMEOUT_SECONDS", "30")),
