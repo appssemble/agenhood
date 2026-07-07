@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useContainer, useTasks, useFiles } from "../api/queries";
 import { TaskBadge } from "../components/StatusBadge";
 import { UpdateImagePicker } from "../components/UpdateImagePicker";
+import { UpdateResourcesEditor } from "../components/UpdateResourcesEditor";
 import { EmptyRow } from "../ui/EmptyState";
 import { Button } from "../ui";
 import { deriveStats } from "../lib/containerStats";
@@ -15,6 +16,7 @@ export default function ContainerOverview() {
   const files = useFiles(cid!).data?.files ?? [];
   const { tokensToday } = deriveStats(tasks);
   const [editingImage, setEditingImage] = useState(false);
+  const [editingResources, setEditingResources] = useState(false);
   const canUpdateImage =
     container != null &&
     ["running", "paused", "archived", "error"].includes(container.status);
@@ -130,6 +132,39 @@ export default function ContainerOverview() {
                   cid={container.id}
                   currentTag={container.image_tag}
                   onDone={() => setEditingImage(false)}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Resources */}
+        <div className="card">
+          <h3 style={{ margin: "0 0 12px", fontSize: 13.5 }}>Resources</h3>
+          {container && (
+            <>
+              <div
+                className="mono"
+                style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}
+              >
+                {container.mem_limit} · {container.cpus} CPU{container.cpus === 1 ? "" : "s"}
+              </div>
+              {!editingResources && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  style={{ marginTop: 12 }}
+                  onClick={() => setEditingResources(true)}
+                >
+                  Edit resources
+                </Button>
+              )}
+              {editingResources && (
+                <UpdateResourcesEditor
+                  cid={container.id}
+                  currentMemLimit={container.mem_limit}
+                  currentCpus={container.cpus}
+                  onDone={() => setEditingResources(false)}
                 />
               )}
             </>
