@@ -54,10 +54,21 @@ services:
       AGENT_REGISTRY: ${AGENT_REGISTRY}
       AGENT_REGISTRY_USERNAME: ${AGENT_REGISTRY_USERNAME:-}
       AGENT_REGISTRY_PASSWORD: ${AGENT_REGISTRY_PASSWORD:-}
-      # Per-agent resource caps for VM sizing (Phase 5).
-      AGENT_MEM_LIMIT: ${AGENT_MEM_LIMIT:-2g}
-      AGENT_MEMSWAP_LIMIT: ${AGENT_MEMSWAP_LIMIT:-2g}
-      AGENT_CPUS: ${AGENT_CPUS:-1}
+      # Per-agent resource caps for VM sizing (Phase 5), tiered by image variant:
+      # `full` ships Chromium and needs more headroom than `slim`. Defaults below
+      # preserve this deploy's pre-tiering behavior (2g/1 CPU for every agent) —
+      # raise AGENT_MEM_LIMIT_FULL/AGENT_CPUS_FULL if full-variant (browser) agents
+      # need more room once you start using the variant split.
+      AGENT_MEM_LIMIT_FULL: ${AGENT_MEM_LIMIT_FULL:-2g}
+      AGENT_CPUS_FULL: ${AGENT_CPUS_FULL:-1}
+      AGENT_MEM_LIMIT_SLIM: ${AGENT_MEM_LIMIT_SLIM:-2g}
+      AGENT_CPUS_SLIM: ${AGENT_CPUS_SLIM:-1}
+      # Bounds a caller's explicit per-container override must fall within
+      # (create-time override and the update-resources endpoint).
+      AGENT_MEM_LIMIT_MIN: ${AGENT_MEM_LIMIT_MIN:-256m}
+      AGENT_MEM_LIMIT_MAX: ${AGENT_MEM_LIMIT_MAX:-8g}
+      AGENT_CPUS_MIN: ${AGENT_CPUS_MIN:-0.25}
+      AGENT_CPUS_MAX: ${AGENT_CPUS_MAX:-4}
       AGENT_PIDS_LIMIT: ${AGENT_PIDS_LIMIT:-512}
       CONNECTORS_BASE_URL: http://connectors:8090
       CONNECTORS_S2S_TOKEN: ${CONNECTORS_S2S_TOKEN:-}
