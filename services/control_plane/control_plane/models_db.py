@@ -236,6 +236,7 @@ skills = Table(
     Column("source_url", Text, nullable=True),
     Column("source_subpath", Text, nullable=True),
     Column("source_ref", Text, nullable=True),
+    Column("deploy_key_id", Text, ForeignKey("deploy_keys.id"), nullable=True),
     Column("pinned_sha", Text, nullable=True),
     Column("bundle", LargeBinary, nullable=True),
     Column("bundle_sha256", Text, nullable=True),
@@ -246,6 +247,24 @@ skills = Table(
     Column("updated_at", TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")),
 )
 Index("idx_skills_tenant_name", skills.c.tenant_id, skills.c.name, unique=True)
+
+# Workspace-scoped SSH deploy keys for private git skill sources. Private key
+# follows the LLM-credential rules: AES-GCM ciphertext at rest, decrypted in
+# memory only, never logged, never in any GET response (public key +
+# fingerprint only) — same idiom as git_remotes.
+deploy_keys = Table(
+    "deploy_keys", metadata,
+    Column("id", Text, primary_key=True),
+    Column("tenant_id", Text, ForeignKey("tenants.id"), nullable=False),
+    Column("name", Text, nullable=False),
+    Column("ssh_private_key_ciphertext", LargeBinary, nullable=False),
+    Column("ssh_public_key", Text, nullable=False),
+    Column("key_type", Text, nullable=False),
+    Column("key_fingerprint", Text, nullable=False),
+    Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")),
+    Column("updated_at", TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")),
+)
+Index("idx_deploy_keys_tenant_name", deploy_keys.c.tenant_id, deploy_keys.c.name, unique=True)
 
 mcp_servers = Table(
     "mcp_servers", metadata,

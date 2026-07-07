@@ -24,6 +24,10 @@ def new_skill_id() -> str:
     return "skl_" + _ulid_lower()
 
 
+def new_deploy_key_id() -> str:
+    return "dk_" + _ulid_lower()
+
+
 def new_mcp_id() -> str:
     return "mcp_" + _ulid_lower()
 
