@@ -851,6 +851,11 @@ async def update_resources(
     matching ``update_image``'s guard.
 
     Returns the resulting status string (``"running"`` or ``"archived"``).
+
+    Deliberately does NOT wrap itself in ``container_lock``, matching
+    ``update_image``'s convention: the ``paused`` branch below calls
+    ``resume()``, which self-acquires the same (non-reentrant) lock, so
+    holding it here would deadlock.
     """
     status = await current_status(db, cid)
     if status not in _RESOURCE_UPDATABLE_STATES:
