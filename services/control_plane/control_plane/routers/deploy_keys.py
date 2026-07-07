@@ -39,10 +39,11 @@ async def create_deploy_key(
     name = body.get("name")
     if not isinstance(name, str) or not name.strip():
         raise api_error(400, "validation_error", "name is required", "name")
+    master_key = load_key_from_env()
     try:
         row = build_deploy_key_row(
             tenant_id=principal.tenant_id, name=name,
-            master_key=load_key_from_env(),
+            master_key=master_key,
         )
     except ValueError as exc:
         raise api_error(400, "validation_error", str(exc), "name") from exc

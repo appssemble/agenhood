@@ -181,3 +181,38 @@ async def test_git_refs_with_key_passes_private_key(
     })
     assert r.status_code == 200, r.text
     assert seen["pk"] and "OPENSSH PRIVATE KEY" in seen["pk"]
+
+
+async def test_create_with_misconfigured_master_key_is_500_not_400(
+    db_session: AsyncSession, tenant_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server-side CREDENTIAL_ENCRYPTION_KEY misconfiguration must surface as
+    a 500 (generic internal error), not a 400 blaming the ``name`` field.
+
+    Uses its own client with ``raise_app_exceptions=False`` so the unhandled
+    ValueError is turned into a response by the app's generic exception
+    handler instead of propagating up through httpx.
+    """
+
+    def _broken_load_key() -> bytes:
+        raise ValueError("CREDENTIAL_ENCRYPTION_KEY is not set")
+
+    monkeypatch.setattr(
+        "control_plane.routers.deploy_keys.load_key_from_env", _broken_load_key
+    )
+    app = _make_app(db_session, tenant_id)
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as c:
+        r = await c.post("/v1/deploy-keys", json={"name": "x"})
+    assert r.status_code == 500, r.text
+    assert "CREDENTIAL_ENCRYPTION_KEY" not in r.text
+
+
+async def test_git_refs_with_non_string_deploy_key_id_400(client: AsyncClient) -> None:
+    r = await client.post("/v1/skills/git-refs", json={
+        "source_url": "git@github.com:org/repo.git", "deploy_key_id": {"x": 1},
+    })
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["field"] == "deploy_key_id"

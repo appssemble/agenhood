@@ -217,7 +217,8 @@ async def list_skill_git_refs(
     ``source_url``; an optional ``deploy_key_id`` selects a stored deploy key
     to authenticate as (in which case ``source_url`` must be an ssh URL).
     Returns the branch names plus the resolved default branch.
-    Errors: ``400 validation_error`` if ``source_url`` is missing; ``422
+    Errors: ``400 validation_error`` if ``source_url`` is missing or
+    ``deploy_key_id`` is present but not a non-empty string; ``422
     validation_error`` if the URL is rejected (bad scheme, e.g. ``file://``) or
     ``deploy_key_id`` does not resolve to a key of this tenant; ``502
     skill_refs_error`` if the remote is unreachable or private — when a deploy
@@ -229,6 +230,13 @@ async def list_skill_git_refs(
     if not isinstance(url, str) or not url:
         raise api_error(400, "validation_error", "source_url is required", "source_url")
     deploy_key_id = body.get("deploy_key_id")
+    if deploy_key_id is not None and (
+        not isinstance(deploy_key_id, str) or not deploy_key_id
+    ):
+        raise api_error(
+            400, "validation_error",
+            "deploy_key_id must be a non-empty string", "deploy_key_id",
+        )
     private_key = None
     if deploy_key_id is not None:
         async with request.app.state.session_factory() as session:
