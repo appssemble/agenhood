@@ -11,4 +11,8 @@ export const handlers: RequestHandler[] = [
     "https://raw.githubusercontent.com/appssemble/awesome-skill-md/main/skills.json",
     () => HttpResponse.json({ skills: [] }),
   ),
+  // The skill editor's "Repository access" picker fetches deploy keys unconditionally
+  // on mount (all tabs); default to none so tests that don't care about deploy keys
+  // don't need their own stub. Override with server.use() to exercise the picker.
+  http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [] })),
 ];

@@ -491,7 +491,10 @@ export const useRecommendedSkills = () =>
 
 type SaveSkillInput =
   | { id?: string; source_type?: "inline"; name: string; description: string; body: string; enabled?: boolean }
-  | { id?: string; source_type: "git"; source_url: string; source_subpath: string; source_ref: string; enabled?: boolean };
+  | {
+      id?: string; source_type: "git"; source_url: string; source_subpath: string; source_ref: string;
+      enabled?: boolean; deploy_key_id?: string | null;
+    };
 
 export function useSaveSkill() {
   const qc = useQueryClient();
@@ -505,11 +508,12 @@ export function useSaveSkill() {
 }
 
 // List a git repo's branches for the create form's branch picker (read-only).
+// A deploy_key_id switches the control plane's fetch to ssh + that key's clone access.
 export function useSkillGitRefs() {
   return useMutation({
-    mutationFn: (source_url: string) =>
+    mutationFn: ({ source_url, deploy_key_id }: { source_url: string; deploy_key_id?: string }) =>
       api.post<{ ok: boolean; branches: string[]; default_branch: string | null }>(
-        "/v1/skills/git-refs", { source_url }),
+        "/v1/skills/git-refs", { source_url, deploy_key_id }),
   });
 }
 

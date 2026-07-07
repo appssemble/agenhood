@@ -189,6 +189,7 @@ export interface Skill {
   source_url?: string | null;
   source_subpath?: string | null;
   source_ref?: string | null;
+  deploy_key_id?: string | null;
   pinned_sha?: string | null;
   bundle_size?: number | null;
   created_at: string | null;

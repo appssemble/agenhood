@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { useSaveSkill, useRefreshSkill, fetchSkill, useSkillGitRefs, useRecommendedSkills } from "../../api/queries";
+import {
+  useSaveSkill, useRefreshSkill, fetchSkill, useSkillGitRefs, useRecommendedSkills,
+  useDeployKeys, useCreateDeployKey,
+} from "../../api/queries";
 import { useToast } from "../../components/Toast";
+import { CopyButton } from "../../components/CopyButton";
 import { ApiError } from "../../api/client";
 import { Button, Field, Note } from "../../ui";
 import { Input, Textarea, Switch } from "../../ui/inputs";
 import { SegControl } from "../../ui/SegControl";
+import { Dropdown } from "../../ui/Dropdown";
 import { Icons } from "../../ui/Icon";
-import { urlError, repoLabel } from "../../lib/skillSource";
+import { sourceUrlError, repoLabel } from "../../lib/skillSource";
 import { slugNameError } from "../../lib/validation";
 import { formatOptionalBytes } from "../../lib/format";
 import { groupByCategory, type RecommendedSkill, type RecommendedRepo } from "../../lib/recommendedSkills";
 import type { Skill } from "../../api/types";
+import type { DeployKey } from "../../api/queries";
 
 // On create the user picks a source: a curated recommendation (installed via
 // git), an inline-authored skill, or an arbitrary git repo. On edit the mode is
@@ -28,12 +34,13 @@ type Draft = {
   source_url: string;
   source_subpath: string;
   source_ref: string;
+  deploy_key_id: string;
 };
 
 const EMPTY: Draft = {
   source_type: "inline",
   name: "", description: "", body: "", enabled: true,
-  source_url: "", source_subpath: "", source_ref: "",
+  source_url: "", source_subpath: "", source_ref: "", deploy_key_id: "",
 };
 
 export default function SkillEditor() {
@@ -44,6 +51,9 @@ export default function SkillEditor() {
   const save = useSaveSkill();
   const refresh = useRefreshSkill();
   const gitRefs = useSkillGitRefs();
+  const deployKeysQuery = useDeployKeys();
+  const createDeployKey = useCreateDeployKey();
+  const deployKeys = deployKeysQuery.data ?? [];
 
   const initialSource = searchParams.get("source") === "git" ? "git" : "inline";
   const [draft, setDraft] = useState<Draft | null>(id ? null : { ...EMPTY, source_type: initialSource });
@@ -71,6 +81,11 @@ export default function SkillEditor() {
   const [refsState, setRefsState] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [refsError, setRefsError] = useState<string | null>(null);
 
+  // Inline "Generate new deploy key" affordance under the Repository access picker.
+  const [showGenerateKey, setShowGenerateKey] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [justCreatedKey, setJustCreatedKey] = useState<DeployKey | null>(null);
+
   // Edit: fetch the full skill (incl. body) once.
   useEffect(() => {
     if (!id || draft) return;
@@ -84,7 +99,7 @@ export default function SkillEditor() {
           name: full.name, description: full.description, body: full.body ?? "",
           enabled: full.enabled,
           source_url: full.source_url ?? "", source_subpath: full.source_subpath ?? "",
-          source_ref: full.source_ref ?? "",
+          source_ref: full.source_ref ?? "", deploy_key_id: full.deploy_key_id ?? "",
         });
       })
       .catch(() => { if (alive) setLoadError(true); });
@@ -122,8 +137,10 @@ export default function SkillEditor() {
   const isRecommended = effMode === "recommended";
   const isGit = effMode === "git";
   const invalidName = isGit || isRecommended ? null : slugNameError(draft.name, "git-release");
-  const invalidUrl = isGit ? urlError(draft.source_url) : null;
+  const invalidUrl = isGit ? sourceUrlError(draft.source_url, !!draft.deploy_key_id) : null;
   const busy = save.isPending || installing;
+  const selectedKey = deployKeys.find((k) => k.id === draft.deploy_key_id) ?? null;
+  const refsAuthFailed = refsState === "error" && !!refsError?.startsWith("auth_failed");
   const canSave = isRecommended
     ? selected.length > 0
     : isGit
@@ -134,11 +151,11 @@ export default function SkillEditor() {
   async function loadBranches() {
     if (!draft) return;
     const url = draft.source_url.trim();
-    if (!url || urlError(url)) { setRefsState("idle"); setBranches([]); return; }
+    if (!url || sourceUrlError(url, !!draft.deploy_key_id)) { setRefsState("idle"); setBranches([]); return; }
     setRefsState("loading");
     setRefsError(null);
     try {
-      const res = await gitRefs.mutateAsync(url);
+      const res = await gitRefs.mutateAsync({ source_url: url, deploy_key_id: draft.deploy_key_id || undefined });
       setBranches(res.branches);
       setRefsState("ok");
       const def = res.default_branch;
@@ -150,6 +167,22 @@ export default function SkillEditor() {
       setRefsState("error");
       setBranches([]);
       setRefsError(err instanceof ApiError ? err.message : "Couldn't list branches");
+    }
+  }
+
+  async function onGenerateKey() {
+    if (!newKeyName.trim()) return;
+    try {
+      const key = await createDeployKey.mutateAsync(newKeyName.trim());
+      setDraft((d) => (d ? { ...d, deploy_key_id: key.id } : d));
+      setJustCreatedKey(key);
+      setShowGenerateKey(false);
+      setNewKeyName("");
+      setRefsState("idle");
+      setBranches([]);
+      setRefsError(null);
+    } catch (err) {
+      toast.error("Couldn't generate deploy key", err instanceof ApiError ? err.message : undefined);
     }
   }
 
@@ -197,6 +230,7 @@ export default function SkillEditor() {
           id: draft.id, source_type: "git",
           source_url: draft.source_url, source_subpath: draft.source_subpath,
           source_ref: draft.source_ref, enabled: draft.enabled,
+          deploy_key_id: draft.deploy_key_id || null,
         });
         toast.success(draft.id ? "Skill updated" : "Skill installed");
       } else {
@@ -302,6 +336,16 @@ export default function SkillEditor() {
                 }}
               >
                 <SummaryRow label="Repository" value={<span className="mono">{repoLabel(draft.source_url)}</span>} />
+                {draft.deploy_key_id && (
+                  <SummaryRow
+                    label="Access"
+                    value={
+                      <span className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, padding: "3px 8px" }}>
+                        <Icons.Key w={12} /> {selectedKey?.name ?? "deploy key"}
+                      </span>
+                    }
+                  />
+                )}
                 {draft.source_subpath && <SummaryRow label="Subpath" value={<span className="mono">{draft.source_subpath}</span>} />}
                 <SummaryRow label="Ref" value={<span className="mono">{draft.source_ref}</span>} />
                 {loaded?.pinned_sha && <SummaryRow label="Pinned" value={<span className="tag">{loaded.pinned_sha.slice(0, 12)}</span>} />}
@@ -315,13 +359,76 @@ export default function SkillEditor() {
             </Field>
           ) : (
             <>
+              <Field label="Repository access" htmlFor="deploy-key-sel" hint="Attach a deploy key to install from a private repository over ssh.">
+                <Dropdown
+                  id="deploy-key-sel"
+                  aria-label="Repository access"
+                  value={draft.deploy_key_id}
+                  onChange={(v) => {
+                    setDraft({ ...draft, deploy_key_id: v });
+                    setRefsState("idle"); setBranches([]); setRefsError(null);
+                  }}
+                  options={[
+                    { value: "", label: "Public repository" },
+                    ...deployKeys.map((k) => ({ value: k.id, label: k.name })),
+                  ]}
+                />
+                {!showGenerateKey ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ gap: 6, padding: "4px 6px", marginTop: 6 }}
+                    onClick={() => setShowGenerateKey(true)}
+                  >
+                    <Icons.Plus w={13} /> Generate new deploy key…
+                  </button>
+                ) : (
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    <Input
+                      aria-label="New deploy key name"
+                      className="fluid-w"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                      placeholder="team"
+                      style={{ maxWidth: 200 }}
+                    />
+                    <Button variant="secondary" size="sm" disabled={!newKeyName.trim() || createDeployKey.isPending} onClick={onGenerateKey}>
+                      {createDeployKey.isPending ? "Generating…" : "Generate"}
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => { setShowGenerateKey(false); setNewKeyName(""); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+                {justCreatedKey && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                      Add &quot;{justCreatedKey.name}&quot; to GitHub
+                    </div>
+                    <DeployKeyInstallHint publicKey={justCreatedKey.ssh_public_key} />
+                  </div>
+                )}
+              </Field>
               <Field label="Repository URL" htmlFor="git-url">
                 <Input id="git-url" className="fluid-w" aria-label="Repository URL" value={draft.source_url}
                   aria-invalid={!!invalidUrl}
                   onChange={(e) => { setDraft({ ...draft, source_url: e.target.value }); setRefsState("idle"); setBranches([]); }}
                   onBlur={loadBranches}
-                  placeholder="https://github.com/org/repo" />
+                  placeholder={draft.deploy_key_id ? "git@github.com:org/repo.git" : "https://github.com/org/repo"} />
                 {invalidUrl && <span className="hint" style={{ color: "var(--err-700)" }}>{invalidUrl}</span>}
+                {refsAuthFailed && (
+                  <div style={{ marginTop: 8 }}>
+                    <Note tone="amber">
+                      The key isn&apos;t installed on this repo yet — add the public key below as a read-only
+                      deploy key, then retry.
+                    </Note>
+                    {selectedKey && (
+                      <div style={{ marginTop: 8 }}>
+                        <DeployKeyInstallHint publicKey={selectedKey.ssh_public_key} />
+                      </div>
+                    )}
+                  </div>
+                )}
               </Field>
               <Field label="Subpath" hint="Directory containing SKILL.md. Leave blank for the repo root." htmlFor="git-subpath">
                 <Input id="git-subpath" className="fluid-w" aria-label="Subpath" value={draft.source_subpath}
@@ -337,7 +444,7 @@ export default function SkillEditor() {
                 <datalist id="git-branches">
                   {branches.map((b) => <option key={b} value={b} />)}
                 </datalist>
-                {refsState === "error" && (
+                {refsState === "error" && !refsAuthFailed && (
                   <span className="hint" style={{ color: "var(--warn-700)" }}>
                     Couldn't list branches{refsError ? ` (${refsError})` : ""}. Enter a ref manually.
                   </span>
@@ -441,6 +548,32 @@ export default function SkillEditor() {
           <Button variant="secondary" size="md" onClick={back}>Cancel</Button>
           <Button variant="primary" size="md" onClick={onSave} disabled={!canSave || busy}>{saveLabel}</Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Public half of a deploy key + copy button + the GitHub install instruction.
+    Shown right after generating a key, and again if a git-refs fetch reports
+    auth_failed (the key exists but isn't installed on this particular repo). */
+function DeployKeyInstallHint({ publicKey }: { publicKey: string }) {
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div
+        className="mono"
+        style={{
+          background: "var(--surface-2)", borderRadius: 8, padding: "10px 12px",
+          fontSize: 12, overflowWrap: "anywhere",
+        }}
+      >
+        {publicKey}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <CopyButton text={publicKey} label="Copy public key" />
+        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
+          Add as a deploy key on GitHub (Settings &rarr; Deploy keys &rarr; Add deploy key). Leave
+          &lsquo;Allow write access&rsquo; unchecked.
+        </span>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useSkills, useDeleteSkill, useRefreshSkill } from "../../api/queries";
+import { useSkills, useDeleteSkill, useRefreshSkill, useDeployKeys } from "../../api/queries";
 import { useToast } from "../../components/Toast";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ApiError } from "../../api/client";
@@ -34,6 +34,8 @@ export default function Skills() {
   const del = useDeleteSkill();
   const refresh = useRefreshSkill();
   const toast = useToast();
+  const { data: deployKeys } = useDeployKeys();
+  const keyName = (id?: string | null) => deployKeys?.find((k) => k.id === id)?.name;
 
   const [deleting, setDeleting] = useState<Skill | null>(null);
   const [query, setQuery] = useState("");
@@ -169,6 +171,15 @@ export default function Skills() {
                               <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {repoLabel(s.source_url)}
                               </span>
+                              {s.deploy_key_id && (
+                                <span
+                                  className="chip"
+                                  title={`Private repo via deploy key${keyName(s.deploy_key_id) ? ` "${keyName(s.deploy_key_id)}"` : ""}`}
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, padding: "1px 6px", flex: "0 0 auto" }}
+                                >
+                                  <Icons.Key w={10} /> {keyName(s.deploy_key_id) ?? "deploy key"}
+                                </span>
+                              )}
                             </span>
                           )}
                         </div>

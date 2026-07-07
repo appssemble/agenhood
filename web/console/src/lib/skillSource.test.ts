@@ -1,32 +1,16 @@
-import { describe, it, expect } from "vitest";
-import { urlError } from "./skillSource";
+import { describe, expect, it } from "vitest";
+import { sourceUrlError } from "./skillSource";
 
-describe("urlError", () => {
-  it("accepts a valid https git url (null = no error)", () => {
-    expect(urlError("https://github.com/x/y.git")).toBeNull();
+describe("sourceUrlError", () => {
+  it("requires https without a key", () => {
+    expect(sourceUrlError("git@github.com:o/r.git", false)).toMatch(/https/);
+    expect(sourceUrlError("https://github.com/o/r", false)).toBeNull();
   });
-
-  it("accepts any https:// url with a path", () => {
-    expect(urlError("https://gitlab.com/org/repo")).toBeNull();
+  it("requires ssh with a key", () => {
+    expect(sourceUrlError("https://github.com/o/r", true)).toMatch(/ssh/i);
+    expect(sourceUrlError("git@github.com:o/r.git", true)).toBeNull();
   });
-
-  it("treats empty string as not-yet-an-error", () => {
-    expect(urlError("")).toBeNull();
-  });
-
-  it("rejects http:// url", () => {
-    expect(urlError("http://github.com/x/y")).toMatch(/https/);
-  });
-
-  it("rejects bare domain (no scheme)", () => {
-    expect(urlError("github.com/x/y")).toMatch(/https/);
-  });
-
-  it("rejects ssh/git@ url", () => {
-    expect(urlError("git@github.com:org/repo.git")).toMatch(/https/);
-  });
-
-  it("rejects ftp:// url", () => {
-    expect(urlError("ftp://github.com/x/y")).toMatch(/https/);
+  it("empty url is not an error (field just incomplete)", () => {
+    expect(sourceUrlError("", true)).toBeNull();
   });
 });

@@ -1,11 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "../../test/server";
 import { renderWithProviders } from "../../test/render";
 import SkillEditor from "./SkillEditor";
-import { urlError } from "../../lib/skillSource";
 
 const navigate = vi.fn();
 vi.mock("react-router-dom", async (orig) => ({
@@ -49,15 +48,6 @@ describe("SkillEditor (create mode)", () => {
   });
 });
 
-describe("urlError", () => {
-  it("accepts an https URL and rejects others", () => {
-    expect(urlError("")).toBeNull();
-    expect(urlError("https://github.com/org/repo")).toBeNull();
-    expect(urlError("git@github.com:org/repo.git")).toMatch(/https/i);
-    expect(urlError("http://github.com/org/repo")).toMatch(/https/i);
-  });
-});
-
 describe("SkillEditor (git source)", () => {
   it("validates the URL and loads the branch combobox on blur", async () => {
     let asked: any = null;
@@ -88,5 +78,75 @@ describe("SkillEditor (git source)", () => {
     await waitFor(() => expect(ref).not.toBeDisabled());
     await waitFor(() => expect(ref).toHaveValue("main"));
     expect(document.querySelectorAll("#git-branches option")).toHaveLength(2);
+  });
+});
+
+describe("SkillEditor (repository access / deploy keys)", () => {
+  const DEPLOY_KEY = {
+    id: "dk_1", name: "team", ssh_public_key: "ssh-ed25519 AAAA test", key_type: "ed25519",
+    key_fingerprint: "SHA256:abc123", created_at: null, updated_at: null,
+  };
+
+  async function selectDeployKey() {
+    fireEvent.click(screen.getByLabelText("Repository access"));
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "team" }));
+  }
+
+  it("selecting a key flips URL validation to ssh", async () => {
+    server.use(http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })));
+    renderWithProviders(<SkillEditor />);
+    await userEvent.click(await screen.findByRole("button", { name: "From git" }));
+    await selectDeployKey();
+
+    const url = screen.getByLabelText("Repository URL");
+    expect(url).toHaveAttribute("placeholder", "git@github.com:org/repo.git");
+
+    await userEvent.type(url, "https://github.com/org/repo");
+    await userEvent.tab();
+    expect(screen.getByText(/Enter an ssh URL/i)).toBeInTheDocument();
+  });
+
+  it("sends deploy_key_id with the git-refs request", async () => {
+    let asked: any = null;
+    server.use(
+      http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })),
+      http.post("/v1/skills/git-refs", async ({ request }) => {
+        asked = await request.json();
+        return HttpResponse.json({ ok: true, branches: ["main"], default_branch: "main" });
+      }),
+    );
+    renderWithProviders(<SkillEditor />);
+    await userEvent.click(await screen.findByRole("button", { name: "From git" }));
+    await selectDeployKey();
+
+    const url = screen.getByLabelText("Repository URL");
+    await userEvent.type(url, "git@github.com:org/repo.git");
+    await userEvent.tab();
+
+    await waitFor(() =>
+      expect(asked).toMatchObject({ source_url: "git@github.com:org/repo.git", deploy_key_id: "dk_1" }),
+    );
+  });
+
+  it("shows the auth_failed install hint with the selected key's public key", async () => {
+    server.use(
+      http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })),
+      http.post("/v1/skills/git-refs", () =>
+        HttpResponse.json(
+          { error: { code: "skill_refs_error", message: "auth_failed: permission denied" } },
+          { status: 502 },
+        ),
+      ),
+    );
+    renderWithProviders(<SkillEditor />);
+    await userEvent.click(await screen.findByRole("button", { name: "From git" }));
+    await selectDeployKey();
+
+    const url = screen.getByLabelText("Repository URL");
+    await userEvent.type(url, "git@github.com:org/repo.git");
+    await userEvent.tab();
+
+    expect(await screen.findByText(/isn't installed on this repo yet/i)).toBeInTheDocument();
+    expect(await screen.findByText("ssh-ed25519 AAAA test")).toBeInTheDocument();
   });
 });
