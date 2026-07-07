@@ -12,7 +12,7 @@ import { Input, Textarea, Switch } from "../../ui/inputs";
 import { SegControl } from "../../ui/SegControl";
 import { Dropdown } from "../../ui/Dropdown";
 import { Icons } from "../../ui/Icon";
-import { sourceUrlError, repoLabel } from "../../lib/skillSource";
+import { sourceUrlError, normalizeSourceUrl, repoLabel } from "../../lib/skillSource";
 import { slugNameError } from "../../lib/validation";
 import { formatOptionalBytes } from "../../lib/format";
 import { groupByCategory, type RecommendedSkill, type RecommendedRepo } from "../../lib/recommendedSkills";
@@ -137,7 +137,11 @@ export default function SkillEditor() {
   const isRecommended = effMode === "recommended";
   const isGit = effMode === "git";
   const invalidName = isGit || isRecommended ? null : slugNameError(draft.name, "git-release");
-  const invalidUrl = isGit ? sourceUrlError(draft.source_url, !!draft.deploy_key_id) : null;
+  // Users paste whichever URL form they copied; we convert to the scheme the
+  // backend requires (ssh with a key, https without) instead of erroring.
+  const effectiveUrl = isGit ? normalizeSourceUrl(draft.source_url, !!draft.deploy_key_id) : "";
+  const invalidUrl = isGit ? sourceUrlError(effectiveUrl, !!draft.deploy_key_id) : null;
+  const urlConverted = isGit && !!effectiveUrl && effectiveUrl !== draft.source_url.trim();
   const busy = save.isPending || installing;
   const selectedKey = deployKeys.find((k) => k.id === draft.deploy_key_id) ?? null;
   const refsAuthFailed = refsState === "error" && !!refsError?.startsWith("auth_failed");
@@ -147,10 +151,11 @@ export default function SkillEditor() {
       ? !!draft.source_url && !invalidUrl && !!draft.source_ref
       : !!draft.name && !!draft.description && !invalidName;
 
-  // Load the repo's branches when the URL field blurs (if it's a valid https URL).
+  // Load the repo's branches when the URL field blurs (after normalizing the
+  // pasted URL to the scheme the backend expects for the chosen access).
   async function loadBranches() {
     if (!draft) return;
-    const url = draft.source_url.trim();
+    const url = normalizeSourceUrl(draft.source_url, !!draft.deploy_key_id);
     if (!url || sourceUrlError(url, !!draft.deploy_key_id)) { setRefsState("idle"); setBranches([]); return; }
     setRefsState("loading");
     setRefsError(null);
@@ -168,6 +173,15 @@ export default function SkillEditor() {
       setBranches([]);
       setRefsError(err instanceof ApiError ? err.message : "Couldn't list branches");
     }
+  }
+
+  // Prefill for the generate-key form, derived from the pasted repo (org-repo).
+  function suggestedKeyName(): string {
+    if (!draft) return "";
+    const https = normalizeSourceUrl(draft.source_url, false);
+    const m = /^https:\/\/[^/]+\/(\S+?)(?:\.git)?\/?$/.exec(https);
+    if (!m) return "";
+    return m[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
   }
 
   async function onGenerateKey() {
@@ -228,7 +242,8 @@ export default function SkillEditor() {
       } else if (isGit) {
         await save.mutateAsync({
           id: draft.id, source_type: "git",
-          source_url: draft.source_url, source_subpath: draft.source_subpath,
+          source_url: normalizeSourceUrl(draft.source_url, !!draft.deploy_key_id),
+          source_subpath: draft.source_subpath,
           source_ref: draft.source_ref, enabled: draft.enabled,
           deploy_key_id: draft.deploy_key_id || null,
         });
@@ -359,7 +374,46 @@ export default function SkillEditor() {
             </Field>
           ) : (
             <>
-              <Field label="Repository access" htmlFor="deploy-key-sel" hint="Attach a deploy key to install from a private repository over ssh.">
+              <Field label="Repository URL" htmlFor="git-url" hint="Paste the repository URL — https or ssh both work.">
+                <Input id="git-url" className="fluid-w" aria-label="Repository URL" value={draft.source_url}
+                  aria-invalid={!!invalidUrl}
+                  onChange={(e) => { setDraft({ ...draft, source_url: e.target.value }); setRefsState("idle"); setBranches([]); }}
+                  onBlur={loadBranches}
+                  placeholder="https://github.com/org/repo" />
+                {invalidUrl && <span className="hint" role="alert" style={{ color: "var(--err-700)" }}>{invalidUrl}</span>}
+                {!invalidUrl && urlConverted && (
+                  <span className="hint">
+                    Connecting as <span className="mono">{effectiveUrl}</span>
+                  </span>
+                )}
+                {refsAuthFailed && !draft.deploy_key_id && (
+                  <div style={{ marginTop: 8 }}>
+                    <Note tone="amber" role="alert">
+                      This repository looks private — pick or generate a deploy key under{" "}
+                      <strong>Repository access</strong> below.
+                    </Note>
+                  </div>
+                )}
+                {refsAuthFailed && !!draft.deploy_key_id && (
+                  <div style={{ marginTop: 8 }}>
+                    <Note tone="amber" role="alert">
+                      The key isn&apos;t installed on this repo yet — add the public key below as a read-only
+                      deploy key, then retry.
+                    </Note>
+                    {selectedKey && (
+                      <div style={{ marginTop: 8 }}>
+                        <DeployKeyInstallHint publicKey={selectedKey.ssh_public_key} />
+                      </div>
+                    )}
+                    <div style={{ marginTop: 8 }}>
+                      <Button variant="secondary" size="sm" onClick={loadBranches} style={{ gap: 6 }}>
+                        <Icons.Refresh w={13} /> Retry
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </Field>
+              <Field label="Repository access" htmlFor="deploy-key-sel" hint="Only needed for private repositories.">
                 <Dropdown
                   id="deploy-key-sel"
                   aria-label="Repository access"
@@ -378,7 +432,7 @@ export default function SkillEditor() {
                     type="button"
                     className="btn btn-ghost btn-sm"
                     style={{ gap: 6, padding: "4px 6px", marginTop: 6 }}
-                    onClick={() => setShowGenerateKey(true)}
+                    onClick={() => { setNewKeyName(suggestedKeyName()); setShowGenerateKey(true); }}
                   >
                     <Icons.Plus w={13} /> Generate new deploy key…
                   </button>
@@ -409,27 +463,6 @@ export default function SkillEditor() {
                   </div>
                 )}
               </Field>
-              <Field label="Repository URL" htmlFor="git-url">
-                <Input id="git-url" className="fluid-w" aria-label="Repository URL" value={draft.source_url}
-                  aria-invalid={!!invalidUrl}
-                  onChange={(e) => { setDraft({ ...draft, source_url: e.target.value }); setRefsState("idle"); setBranches([]); }}
-                  onBlur={loadBranches}
-                  placeholder={draft.deploy_key_id ? "git@github.com:org/repo.git" : "https://github.com/org/repo"} />
-                {invalidUrl && <span className="hint" style={{ color: "var(--err-700)" }}>{invalidUrl}</span>}
-                {refsAuthFailed && (
-                  <div style={{ marginTop: 8 }}>
-                    <Note tone="amber">
-                      The key isn&apos;t installed on this repo yet — add the public key below as a read-only
-                      deploy key, then retry.
-                    </Note>
-                    {selectedKey && (
-                      <div style={{ marginTop: 8 }}>
-                        <DeployKeyInstallHint publicKey={selectedKey.ssh_public_key} />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Field>
               <Field label="Subpath" hint="Directory containing SKILL.md. Leave blank for the repo root." htmlFor="git-subpath">
                 <Input id="git-subpath" className="fluid-w" aria-label="Subpath" value={draft.source_subpath}
                   onChange={(e) => setDraft({ ...draft, source_subpath: e.target.value })}
@@ -438,7 +471,6 @@ export default function SkillEditor() {
               <Field label="Ref" hint="Branch, tag, or commit SHA. Resolved and pinned at install." htmlFor="git-ref">
                 <Input id="git-ref" className="fluid-w" aria-label="Ref" value={draft.source_ref}
                   list="git-branches"
-                  disabled={refsState === "idle" || refsState === "loading"}
                   onChange={(e) => setDraft({ ...draft, source_ref: e.target.value })}
                   placeholder={refsState === "loading" ? "Loading branches…" : "main"} />
                 <datalist id="git-branches">

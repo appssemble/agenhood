@@ -49,7 +49,7 @@ describe("SkillEditor (create mode)", () => {
 });
 
 describe("SkillEditor (git source)", () => {
-  it("validates the URL and loads the branch combobox on blur", async () => {
+  it("normalizes pasted URLs and loads the branch combobox on blur", async () => {
     let asked: any = null;
     server.use(
       http.post("/v1/skills/git-refs", async ({ request }) => {
@@ -62,22 +62,22 @@ describe("SkillEditor (git source)", () => {
 
     const url = screen.getByLabelText("Repository URL");
     const ref = screen.getByLabelText("Ref");
-    expect(ref).toBeDisabled();              // disabled until refs load
+    expect(ref).not.toBeDisabled();          // always editable — a SHA/tag can be typed any time
 
-    // Invalid scheme shows a hint and does not load branches.
+    // A pasted ssh URL is converted to https for public access, no error shown.
     await userEvent.type(url, "git@github.com:org/repo.git");
     await userEvent.tab();
-    expect(screen.getByText(/https:\/\//)).toBeInTheDocument();
-    expect(asked).toBeNull();
-
-    // A valid https URL loads branches and prefills the default ref.
-    await userEvent.clear(url);
-    await userEvent.type(url, "https://github.com/org/repo");
-    await userEvent.tab();
     await waitFor(() => expect(asked).toMatchObject({ source_url: "https://github.com/org/repo" }));
-    await waitFor(() => expect(ref).not.toBeDisabled());
     await waitFor(() => expect(ref).toHaveValue("main"));
     expect(document.querySelectorAll("#git-branches option")).toHaveLength(2);
+
+    // Unparseable input shows the validation hint and does not query.
+    asked = null;
+    await userEvent.clear(url);
+    await userEvent.type(url, "not a url");
+    await userEvent.tab();
+    expect(screen.getByRole("alert")).toHaveTextContent(/Enter a repository URL/i);
+    expect(asked).toBeNull();
   });
 });
 
@@ -92,18 +92,48 @@ describe("SkillEditor (repository access / deploy keys)", () => {
     fireEvent.mouseDown(await screen.findByRole("option", { name: "team" }));
   }
 
-  it("selecting a key flips URL validation to ssh", async () => {
-    server.use(http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })));
+  it("converts a pasted https URL to ssh when a key is selected", async () => {
+    let asked: any = null;
+    server.use(
+      http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })),
+      http.post("/v1/skills/git-refs", async ({ request }) => {
+        asked = await request.json();
+        return HttpResponse.json({ ok: true, branches: ["main"], default_branch: "main" });
+      }),
+    );
     renderWithProviders(<SkillEditor />);
     await userEvent.click(await screen.findByRole("button", { name: "From git" }));
     await selectDeployKey();
 
     const url = screen.getByLabelText("Repository URL");
-    expect(url).toHaveAttribute("placeholder", "git@github.com:org/repo.git");
-
     await userEvent.type(url, "https://github.com/org/repo");
     await userEvent.tab();
-    expect(screen.getByText(/Enter an ssh URL/i)).toBeInTheDocument();
+
+    // No wrong-scheme error; the converted target is shown and used for git-refs.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("git@github.com:org/repo.git")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(asked).toMatchObject({ source_url: "git@github.com:org/repo.git", deploy_key_id: "dk_1" }),
+    );
+  });
+
+  it("suggests attaching a deploy key when a public fetch hits auth_failed", async () => {
+    server.use(
+      http.post("/v1/skills/git-refs", () =>
+        HttpResponse.json(
+          { error: { code: "skill_refs_error", message: "auth_failed: permission denied" } },
+          { status: 502 },
+        ),
+      ),
+    );
+    renderWithProviders(<SkillEditor />);
+    await userEvent.click(await screen.findByRole("button", { name: "From git" }));
+
+    const url = screen.getByLabelText("Repository URL");
+    await userEvent.type(url, "https://github.com/org/private-repo");
+    await userEvent.tab();
+
+    expect(await screen.findByText(/looks private/i)).toBeInTheDocument();
   });
 
   it("sends deploy_key_id with the git-refs request", async () => {
