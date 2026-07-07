@@ -18,6 +18,7 @@ function SettingsPanel({ user }: { user: Me }) {
         {admin && <NavLink to="/settings/users" className={navCls}><Icons.Users /> Users</NavLink>}
         {admin && <NavLink to="/settings/api-keys" className={navCls}><Icons.Key /> API keys</NavLink>}
         {admin && <NavLink to="/settings/credentials" className={navCls}><Icons.Credentials /> Credentials</NavLink>}
+        {admin && <NavLink to="/settings/deploy-keys" className={navCls}><Icons.Key /> Deploy keys</NavLink>}
       </div>
     </nav>
   );

@@ -41,6 +41,7 @@ export const keys = {
   workflowRun: (wid: string, rid: string) => ["workflows", wid, "runs", rid] as const,
   apiKeys: ["api-keys"] as const,
   credentials: ["credentials"] as const,
+  deployKeys: ["deploy-keys"] as const,
   users: ["users"] as const,
   usage: (range: string) => ["analytics", "usage", range] as const,
   breakdown: (by: string, range: string) => ["analytics", "breakdown", by, range] as const,
@@ -525,6 +526,39 @@ export function useDeleteSkill() {
   return useMutation({
     mutationFn: (id: string) => api.del(`/v1/skills/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.skills }),
+  });
+}
+
+// ---- Deploy keys -------------------------------------------------------------
+// SSH keypairs used to grant a skill read-only clone access to a private GitHub
+// repo. The API generates the keypair server-side and never returns the private
+// half — only the public key + fingerprint come back.
+export type DeployKey = {
+  id: string; name: string; ssh_public_key: string; key_type: string;
+  key_fingerprint: string; created_at: string | null; updated_at: string | null;
+};
+
+export function useDeployKeys() {
+  return useQuery({
+    queryKey: keys.deployKeys,
+    queryFn: () => api.get<{ deploy_keys: DeployKey[] }>("/v1/deploy-keys"),
+    select: (d) => d.deploy_keys,
+  });
+}
+
+export function useCreateDeployKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.post<DeployKey>("/v1/deploy-keys", { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.deployKeys }),
+  });
+}
+
+export function useDeleteDeployKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/v1/deploy-keys/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.deployKeys }),
   });
 }
 

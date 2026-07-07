@@ -27,6 +27,7 @@ import McpEditor from "../pages/settings/McpEditor";
 import Users from "../pages/settings/Users";
 import ApiKeys from "../pages/settings/ApiKeys";
 import Credentials from "../pages/settings/Credentials";
+import DeployKeys from "../pages/settings/DeployKeys";
 import Profile from "../pages/settings/Profile";
 import CreateContainer from "../pages/CreateContainer";
 import StaffArea from "../pages/staff/StaffArea";
@@ -80,6 +81,7 @@ export const routes: RouteObject[] = [
       { path: "settings/users", element: <RequireRole min="admin"><Users /></RequireRole> },
       { path: "settings/api-keys", element: <RequireRole min="admin"><ApiKeys /></RequireRole> },
       { path: "settings/credentials", element: <RequireRole min="admin"><Credentials /></RequireRole> },
+      { path: "settings/deploy-keys", element: <RequireRole min="admin"><DeployKeys /></RequireRole> },
       { path: "profile", element: <Profile /> },
       { path: "prompts", element: <Prompts /> },
       { path: "prompts/new", element: <PromptForm /> },
