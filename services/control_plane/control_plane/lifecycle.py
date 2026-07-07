@@ -4,6 +4,7 @@ import asyncio
 import weakref
 from typing import Any, Protocol
 
+import docker.errors
 from sqlalchemy import text
 
 from control_plane import admission, docker_ctl
@@ -824,6 +825,76 @@ async def update_image(
             actor_type=actor_type,
             actor_id=actor_id,
         )
+
+
+_RESOURCE_UPDATABLE_STATES: set[str] = {"running", "paused", "archived"}
+
+
+async def update_resources(
+    db: _Executable,
+    docker_client: Any,
+    cid: str,
+    *,
+    mem_limit: str,
+    cpus: float,
+    settings: Any = None,
+    actor_type: str = "system",
+    actor_id: str | None = None,
+) -> str:
+    """Update a container's memory/CPU limits (already resolved+clamped by the caller).
+
+    ``running``: live-updates the container in place (no restart), then persists.
+    ``paused``: live-updates the stopped container (Docker's update API applies
+    regardless of run state), persists, then resumes it so it comes back running
+    on the new limits. ``archived``: persists only — applied the next time
+    someone rehydrates it. Any other state raises 409 ``container_not_updatable``,
+    matching ``update_image``'s guard.
+
+    Returns the resulting status string (``"running"`` or ``"archived"``).
+    """
+    status = await current_status(db, cid)
+    if status not in _RESOURCE_UPDATABLE_STATES:
+        raise api_error(
+            409,
+            "container_not_updatable",
+            f"cannot update resources while container is {status}",
+        )
+
+    row = await _load(db, cid)
+    previous_mem_limit = row.get("mem_limit")
+    previous_cpus = row.get("cpus")
+
+    if status in ("running", "paused"):
+        try:
+            await docker_ctl.update_resources(docker_client, row["docker_name"], mem_limit, cpus)
+        except docker.errors.DockerException as exc:
+            # Mirrors how ReadinessFailed → 503 during create (provision.py):
+            # a daemon-level failure must not be persisted or audited as if it
+            # had applied.
+            raise api_error(
+                503, "container_not_runnable", f"could not update container resources: {exc}"
+            ) from exc
+
+    await _set(db, cid, mem_limit=mem_limit, cpus=cpus)
+
+    await audit(
+        db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="container.update_resources",
+        target_type="container",
+        target_id=cid,
+        details={
+            "mem_limit": mem_limit, "cpus": cpus,
+            "previous_mem_limit": previous_mem_limit, "previous_cpus": previous_cpus,
+        },
+    )
+
+    if status == "paused":
+        await resume(db, docker_client, cid, settings=settings)
+        return "running"
+
+    return status
 
 
 async def delete(
