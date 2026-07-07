@@ -236,7 +236,7 @@ def test_git_refs_bad_scheme_is_422() -> None:
 
 def test_git_refs_unreachable_is_502(monkeypatch) -> None:
     # An https URL that resolves but fails to clone surfaces as a 502 (not 422).
-    def _boom(_url: str) -> Any:
+    def _boom(_url: str, *, private_key: str | None = None) -> Any:
         raise ValueError("git ls-remote failed: repository not found")
 
     monkeypatch.setattr("control_plane.routers.skills.list_branches", _boom)
@@ -253,7 +253,7 @@ def test_git_refs_unreachable_is_502(monkeypatch) -> None:
 def test_git_refs_ok_returns_branches(monkeypatch) -> None:
     monkeypatch.setattr(
         "control_plane.routers.skills.list_branches",
-        lambda _url: (["main", "dev"], "main"),
+        lambda _url, *, private_key=None: (["main", "dev"], "main"),
     )
     _use(ADMIN)
     with TestClient(app) as c:

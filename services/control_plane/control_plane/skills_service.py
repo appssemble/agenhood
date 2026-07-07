@@ -95,6 +95,7 @@ def build_git_skill_row(
     source_subpath: str,
     source_ref: str,
     fetched: FetchedSkill,
+    deploy_key_id: str | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -112,6 +113,7 @@ def build_git_skill_row(
         "bundle": fetched.bundle,
         "bundle_sha256": fetched.bundle_sha256,
         "bundle_size": fetched.bundle_size,
+        "deploy_key_id": deploy_key_id,
         "created_by": created_by,
         "created_at": now,
         "updated_at": now,
@@ -133,6 +135,7 @@ def skill_public_view(row: dict[str, Any]) -> dict[str, Any]:
         "source_ref": row.get("source_ref"),
         "pinned_sha": row.get("pinned_sha"),
         "bundle_size": row.get("bundle_size"),
+        "deploy_key_id": row.get("deploy_key_id"),
         "created_at": str(row["created_at"]) if row.get("created_at") else None,
         "updated_at": str(row["updated_at"]) if row.get("updated_at") else None,
     }

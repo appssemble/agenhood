@@ -11,13 +11,15 @@ from fastapi import APIRouter, Depends, Path, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from control_plane.auth.crypto import load_key_from_env
 from control_plane.auth.principal import (
     Principal,
     require_admin,
     resolve_principal,
 )
+from control_plane.deploy_keys_service import decrypt_deploy_key
 from control_plane.errors import api_error, not_found
-from control_plane.models_db import skills
+from control_plane.models_db import deploy_keys, skills
 from control_plane.skills_fetch import fetch_git_skill, list_branches
 from control_plane.skills_service import (
     MAX_BUNDLE_BYTES,
@@ -63,6 +65,7 @@ _LIST_COLS = [
     skills.c.id, skills.c.tenant_id, skills.c.name, skills.c.description,
     skills.c.source_type, skills.c.source_url, skills.c.source_subpath,
     skills.c.source_ref, skills.c.pinned_sha, skills.c.bundle_size,
+    skills.c.deploy_key_id,
     skills.c.enabled, skills.c.created_by, skills.c.created_at, skills.c.updated_at,
 ]
 _DETAIL_COLS = [*_LIST_COLS, skills.c.body]
@@ -85,12 +88,21 @@ def parse_skill_create(body: dict[str, Any]) -> dict[str, Any]:
             raise api_error(400, "validation_error", "source_url is required", "source_url")
         if not isinstance(ref, str) or not ref:
             raise api_error(400, "validation_error", "source_ref is required", "source_ref")
+        deploy_key_id = body.get("deploy_key_id")
+        if deploy_key_id is not None and (
+            not isinstance(deploy_key_id, str) or not deploy_key_id
+        ):
+            raise api_error(
+                400, "validation_error",
+                "deploy_key_id must be a non-empty string", "deploy_key_id",
+            )
         return {
             "source_type": "git",
             "source_url": url,
             "source_subpath": str(body.get("source_subpath", "") or ""),
             "source_ref": ref,
             "enabled": enabled,
+            "deploy_key_id": deploy_key_id,
         }
     # inline (default)
     name = body.get("name")
@@ -120,6 +132,23 @@ def apply_skill_patch(existing: dict[str, Any], patch: dict[str, Any]) -> dict[s
     )
     merged["enabled"] = bool(merged["enabled"])
     return merged
+
+
+async def _load_private_key(
+    session: Any, tenant_id: str, deploy_key_id: str | None
+) -> str | None:
+    """Resolve a tenant's deploy key to its decrypted private key (or None)."""
+    if deploy_key_id is None:
+        return None
+    row = (await session.execute(
+        select(deploy_keys).where(
+            deploy_keys.c.id == deploy_key_id,
+            deploy_keys.c.tenant_id == tenant_id,
+        )
+    )).fetchone()
+    if row is None:
+        raise api_error(422, "validation_error", "deploy key not found", "deploy_key_id")
+    return decrypt_deploy_key(dict(row._mapping), load_key_from_env())
 
 
 # ---- routes -----------------------------------------------------------------
@@ -185,17 +214,31 @@ async def list_skill_git_refs(
     """List a remote git repository's branches for the create-form picker.
 
     Admin-only. Read-only lookup: no skill is created. Body must contain
-    ``source_url``. Returns the branch names plus the resolved default branch.
+    ``source_url``; an optional ``deploy_key_id`` selects a stored deploy key
+    to authenticate as (in which case ``source_url`` must be an ssh URL).
+    Returns the branch names plus the resolved default branch.
     Errors: ``400 validation_error`` if ``source_url`` is missing; ``422
-    validation_error`` if the URL is rejected (bad scheme, e.g. ``file://``);
-    ``502 skill_refs_error`` if the remote is unreachable or private.
+    validation_error`` if the URL is rejected (bad scheme, e.g. ``file://``) or
+    ``deploy_key_id`` does not resolve to a key of this tenant; ``502
+    skill_refs_error`` if the remote is unreachable or private — when a deploy
+    key was used, its message is prefixed with a stable code (e.g.
+    ``auth_failed: ...``).
     """
     body = await request.json()
     url = body.get("source_url")
     if not isinstance(url, str) or not url:
         raise api_error(400, "validation_error", "source_url is required", "source_url")
+    deploy_key_id = body.get("deploy_key_id")
+    private_key = None
+    if deploy_key_id is not None:
+        async with request.app.state.session_factory() as session:
+            private_key = await _load_private_key(
+                session, principal.tenant_id, deploy_key_id
+            )
     try:
-        branches, default_branch = await asyncio.to_thread(list_branches, url)
+        branches, default_branch = await asyncio.to_thread(
+            lambda: list_branches(url, private_key=private_key)
+        )
     except ValueError as exc:
         msg = str(exc)
         bad_url = "source_url must be" in msg or "file://" in msg
@@ -220,22 +263,33 @@ async def create_skill(
     ``inline`` (default) requires ``name`` and ``description`` (plus optional
     ``body``); ``git`` requires ``source_url`` and ``source_ref`` (optional
     ``source_subpath``), and the name/description/body are derived from the
-    fetched ``SKILL.md``, which is packed into a cached bundle. Errors:
+    fetched ``SKILL.md``, which is packed into a cached bundle. An optional
+    ``deploy_key_id`` (git mode only) selects a stored deploy key to
+    authenticate as, in which case ``source_url`` must be an ssh URL. Errors:
     ``403 forbidden`` for a staff principal with no tenant; ``400
-    validation_error`` for a malformed payload; ``422 skill_fetch_error`` if the
-    git source cannot be fetched/packed; ``409 conflict`` if a skill of that
-    name already exists for the tenant.
+    validation_error`` for a malformed payload; ``422 validation_error`` if
+    ``deploy_key_id`` does not resolve to a key of this tenant; ``422
+    skill_fetch_error`` if the git source cannot be fetched/packed (private
+    remote failures are prefixed with a stable code, e.g. ``auth_failed:
+    ...``); ``409 conflict`` if a skill of that name already exists for the
+    tenant.
     """
     if principal.tenant_id is None:
         raise api_error(403, "forbidden", "Skills are tenant-scoped")
     fields = parse_skill_create(await request.json())
 
     if fields["source_type"] == "git":
+        private_key = None
+        if fields.get("deploy_key_id"):
+            async with request.app.state.session_factory() as session:
+                private_key = await _load_private_key(
+                    session, principal.tenant_id, fields["deploy_key_id"]
+                )
         try:
             fetched = await asyncio.to_thread(
                 fetch_git_skill,
                 url=fields["source_url"], subpath=fields["source_subpath"],
-                ref=fields["source_ref"],
+                ref=fields["source_ref"], private_key=private_key,
                 max_files=MAX_BUNDLE_FILES, max_bytes=MAX_BUNDLE_BYTES,
             )
         except ValueError as exc:
@@ -244,7 +298,7 @@ async def create_skill(
             tenant_id=principal.tenant_id, created_by=principal.user_id,
             enabled=fields["enabled"], source_url=fields["source_url"],
             source_subpath=fields["source_subpath"], source_ref=fields["source_ref"],
-            fetched=fetched,
+            deploy_key_id=fields.get("deploy_key_id"), fetched=fetched,
         )
     else:
         row = build_skill_row(
@@ -349,10 +403,13 @@ async def refresh_skill(
 
     Admin-only and tenant-scoped. Re-resolves the stored ``source_ref`` to a new
     SHA, re-fetches and re-packs the bundle, and replaces the cached name,
-    description, body, pinned SHA and bundle bytes. Errors: ``404 not_found`` if
-    the skill does not exist for the tenant; ``400 validation_error`` if the
-    skill is not a git skill (inline skills cannot be refreshed); ``422
-    skill_fetch_error`` if the source cannot be re-fetched.
+    description, body, pinned SHA and bundle bytes. If the skill was created
+    with a ``deploy_key_id``, the stored key is reused to authenticate the
+    re-fetch. Errors: ``404 not_found`` if the skill does not exist for the
+    tenant; ``400 validation_error`` if the skill is not a git skill (inline
+    skills cannot be refreshed); ``422 skill_fetch_error`` if the source cannot
+    be re-fetched (private remote failures are prefixed with a stable code,
+    e.g. ``auth_failed: ...``).
     """
     async with request.app.state.session_factory() as session:
         result = await session.execute(
@@ -366,12 +423,15 @@ async def refresh_skill(
         existing = dict(row._mapping)
         if existing.get("source_type") != "git":
             raise api_error(400, "validation_error", "only git skills can be refreshed")
+        private_key = await _load_private_key(
+            session, principal.tenant_id, existing.get("deploy_key_id")
+        )
         try:
             fetched = await asyncio.to_thread(
                 fetch_git_skill,
                 url=existing["source_url"],
                 subpath=existing["source_subpath"] or "",
-                ref=existing["source_ref"],
+                ref=existing["source_ref"], private_key=private_key,
                 max_files=MAX_BUNDLE_FILES, max_bytes=MAX_BUNDLE_BYTES,
             )
         except ValueError as exc:

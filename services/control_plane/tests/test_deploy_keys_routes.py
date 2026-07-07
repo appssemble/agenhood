@@ -144,3 +144,40 @@ async def test_delete_in_use_409_names_skills(
     body = r.json()
     assert "skill" in body["error"]["message"].lower()
     assert "uses-the-key" in body["error"]["message"]
+
+
+async def test_create_git_skill_with_unknown_key_422(client: AsyncClient) -> None:
+    r = await client.post("/v1/skills", json={
+        "source_type": "git", "source_url": "git@github.com:org/repo.git",
+        "source_ref": "main", "deploy_key_id": "dk_missing",
+    })
+    assert r.status_code == 422, r.text
+    assert "deploy key" in r.json()["error"]["message"].lower()
+
+
+async def test_create_git_skill_https_plus_key_422(client: AsyncClient) -> None:
+    kid = (await client.post("/v1/deploy-keys", json={"name": "k1"})).json()["id"]
+    r = await client.post("/v1/skills", json={
+        "source_type": "git", "source_url": "https://github.com/org/repo",
+        "source_ref": "main", "deploy_key_id": kid,
+    })
+    assert r.status_code == 422, r.text
+    assert "ssh" in r.json()["error"]["message"].lower()
+
+
+async def test_git_refs_with_key_passes_private_key(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kid = (await client.post("/v1/deploy-keys", json={"name": "k2"})).json()["id"]
+    seen: dict[str, Any] = {}
+
+    def fake_list(url: str, *, private_key: str | None = None) -> tuple[list[str], str]:
+        seen["pk"] = private_key
+        return (["main"], "main")
+
+    monkeypatch.setattr("control_plane.routers.skills.list_branches", fake_list)
+    r = await client.post("/v1/skills/git-refs", json={
+        "source_url": "git@github.com:org/repo.git", "deploy_key_id": kid,
+    })
+    assert r.status_code == 200, r.text
+    assert seen["pk"] and "OPENSSH PRIVATE KEY" in seen["pk"]
