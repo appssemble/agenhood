@@ -101,6 +101,25 @@ class FetchedSkill:
     bundle_size: int
 
 
+@dataclass(frozen=True)
+class DiscoveredSkill:
+    subpath: str
+    name: str
+    description: str
+    valid: bool
+    error: str | None
+
+
+@dataclass(frozen=True)
+class DiscoveredRepo:
+    pinned_sha: str
+    truncated: bool
+    skills: list[DiscoveredSkill]
+
+
+_MAX_DISCOVERED = 50
+
+
 def _run_git(args: list[str], cwd: str | None = None, env: dict[str, str] | None = None) -> str:
     proc = subprocess.run(
         ["git", *args], cwd=cwd, capture_output=True, text=True,
@@ -156,6 +175,25 @@ def _git_env(url: str, private_key: str | None):
 def _remote_error(exc: ValueError) -> ValueError:
     """Prefix a git remote failure with its stable classify_remote_error code."""
     return ValueError(f"{classify_remote_error(str(exc))}: {exc}")
+
+
+@contextmanager
+def _shallow_checkout(url: str, ref: str, private_key: str | None):
+    """Yield ``(repo_root, pinned_sha)`` with the repo checked out at ``ref``.
+
+    Resolves the ref to an immutable SHA, then shallow-fetches exactly that
+    commit into a temp dir that lives only for the duration of the context."""
+    with _git_env(url, private_key) as env:
+        sha = resolve_sha(url, ref, env=env)
+        with tempfile.TemporaryDirectory() as tmp:
+            _run_git(["init", "-q", tmp])
+            _run_git(["-C", tmp, "remote", "add", "origin", url])
+            try:
+                _run_git(["-C", tmp, "fetch", "-q", "--depth", "1", "origin", sha], env=env)
+            except ValueError as exc:
+                raise _remote_error(exc) from exc
+            _run_git(["-C", tmp, "checkout", "-q", sha])
+            yield Path(tmp), sha
 
 
 def list_branches(
@@ -223,56 +261,96 @@ def fetch_git_skill(
     sub = subpath.strip().strip("/")
     if ".." in Path(sub).parts:
         raise ValueError("source_subpath must not contain '..'")
-    with _git_env(url, private_key) as env:
-        sha = resolve_sha(url, ref, env=env)
-        with tempfile.TemporaryDirectory() as tmp:
-            _run_git(["init", "-q", tmp])
-            _run_git(["-C", tmp, "remote", "add", "origin", url])
-            try:
-                _run_git(["-C", tmp, "fetch", "-q", "--depth", "1", "origin", sha], env=env)
-            except ValueError as exc:
-                raise _remote_error(exc) from exc
-            _run_git(["-C", tmp, "checkout", "-q", sha])
-            skill_root = Path(tmp) / sub if sub else Path(tmp)
-            skill_md = skill_root / "SKILL.md"
-            if not skill_md.is_file():
-                # Zero-friction fallback: find where the skill actually lives.
-                # With no explicit subpath and exactly one SKILL.md in the repo,
-                # descend into it; otherwise name the candidates in the error.
-                candidates = sorted(
-                    p.parent.relative_to(tmp).as_posix()
-                    for p in Path(tmp).glob("**/SKILL.md")
-                    if ".git" not in p.parts
-                )[:10]
-                if not sub and len(candidates) == 1:
-                    sub = candidates[0]
-                    skill_root = Path(tmp) / sub
-                    skill_md = skill_root / "SKILL.md"
-                elif candidates:
-                    raise ValueError(
-                        f"no SKILL.md at subpath {subpath!r} — found SKILL.md in: "
-                        + ", ".join(candidates)
-                        + ". Set the subpath to one of these."
-                    )
-                else:
-                    raise ValueError(
-                        f"no SKILL.md at subpath {subpath!r} (no SKILL.md anywhere "
-                        "in the repository at this ref)"
-                    )
-            name, description, body = parse_skill_frontmatter(skill_md.read_text())
-            if not valid_skill_name(name):
+    with _shallow_checkout(url, ref, private_key) as (root, sha):
+        skill_root = root / sub if sub else root
+        skill_md = skill_root / "SKILL.md"
+        if not skill_md.is_file():
+            # Zero-friction fallback: find where the skill actually lives.
+            # With no explicit subpath and exactly one SKILL.md in the repo,
+            # descend into it; otherwise name the candidates in the error.
+            candidates = sorted(
+                p.parent.relative_to(root).as_posix()
+                for p in root.glob("**/SKILL.md")
+                if ".git" not in p.parts
+            )[:10]
+            if not sub and len(candidates) == 1:
+                sub = candidates[0]
+                skill_root = root / sub
+                skill_md = skill_root / "SKILL.md"
+            elif candidates:
                 raise ValueError(
-                    f"SKILL.md name {name!r} must match ^[a-z0-9]+(-[a-z0-9]+)*$ "
-                    "and be 1-64 chars"
+                    f"no SKILL.md at subpath {subpath!r} — found SKILL.md in: "
+                    + ", ".join(candidates)
+                    + ". Set the subpath to one of these."
                 )
-            if len(description) > MAX_DESCRIPTION:
+            else:
                 raise ValueError(
-                    f"SKILL.md description exceeds {MAX_DESCRIPTION} chars"
+                    f"no SKILL.md at subpath {subpath!r} (no SKILL.md anywhere "
+                    "in the repository at this ref)"
                 )
-            bundle, size, sha256 = pack_dir(
-                skill_root, max_files=max_files, max_bytes=max_bytes
+        name, description, body = parse_skill_frontmatter(skill_md.read_text())
+        if not valid_skill_name(name):
+            raise ValueError(
+                f"SKILL.md name {name!r} must match ^[a-z0-9]+(-[a-z0-9]+)*$ "
+                "and be 1-64 chars"
             )
+        if len(description) > MAX_DESCRIPTION:
+            raise ValueError(
+                f"SKILL.md description exceeds {MAX_DESCRIPTION} chars"
+            )
+        bundle, size, sha256 = pack_dir(
+            skill_root, max_files=max_files, max_bytes=max_bytes
+        )
     return FetchedSkill(
         name=name, description=description, body=body, pinned_sha=sha,
         bundle=bundle, bundle_sha256=sha256, bundle_size=size,
     )
+
+
+def discover_git_skills(
+    *, url: str, ref: str, private_key: str | None = None
+) -> DiscoveredRepo:
+    """Scan a repo at ``ref`` and report every directory holding a SKILL.md.
+
+    Read-only companion to ``fetch_git_skill`` for the console's install
+    picker: each entry carries the parsed frontmatter (or why it is invalid)
+    so the user can choose subpaths without exploring the repo. Capped at
+    ``_MAX_DISCOVERED`` entries (sorted by subpath); ``truncated`` reports a
+    hit cap. Raises ValueError on a rejected URL or an unreachable remote."""
+    _validate_url(url, has_key=private_key is not None)
+    with _shallow_checkout(url, ref, private_key) as (root, sha):
+        candidates = sorted(
+            p.parent.relative_to(root).as_posix()
+            for p in root.glob("**/SKILL.md")
+            if ".git" not in p.parts
+        )
+        truncated = len(candidates) > _MAX_DISCOVERED
+        seen_names: set[str] = set()
+        found: list[DiscoveredSkill] = []
+        for candidate in candidates[:_MAX_DISCOVERED]:
+            sub = "" if candidate == "." else candidate
+            md = (root / candidate / "SKILL.md").read_text()
+            name = description = ""
+            valid, error = True, None
+            try:
+                name, description, _body = parse_skill_frontmatter(md)
+                if not valid_skill_name(name):
+                    raise ValueError(
+                        f"name {name!r} must match ^[a-z0-9]+(-[a-z0-9]+)*$ "
+                        "and be 1-64 chars"
+                    )
+                if len(description) > MAX_DESCRIPTION:
+                    raise ValueError(
+                        f"description exceeds {MAX_DESCRIPTION} chars"
+                    )
+            except ValueError as exc:
+                valid, error = False, str(exc)
+            if valid and name in seen_names:
+                valid, error = False, "duplicate name in repo"
+            if valid:
+                seen_names.add(name)
+            found.append(DiscoveredSkill(
+                subpath=sub, name=name, description=description,
+                valid=valid, error=error,
+            ))
+    return DiscoveredRepo(pinned_sha=sha, truncated=truncated, skills=found)

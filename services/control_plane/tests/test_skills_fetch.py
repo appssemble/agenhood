@@ -313,3 +313,130 @@ def test_fetch_git_skill_rejects_file_url_without_flag(monkeypatch) -> None:
     monkeypatch.delenv("AGENHOOD_ALLOW_FILE_SKILL_SOURCE", raising=False)
     with pytest.raises(ValueError, match="file://"):
         fetch_git_skill(url="file:///tmp/any-repo", subpath="", ref="main")
+
+
+# ---------------------------------------------------------------------------
+# discover_git_skills: multi-skill repo discovery
+# ---------------------------------------------------------------------------
+
+from control_plane.skills_fetch import DiscoveredRepo, discover_git_skills
+
+
+def _make_multi_skill_repo(tmp_path, specs):
+    """Create a repo with one skill dir per (subpath, frontmatter) spec.
+
+    ``specs`` is a list of (subpath, skill_md_text). Returns (url, sha)."""
+    repo = tmp_path / "multi"
+    repo.mkdir()
+    _git(["init", "-q", "-b", "main"], repo)
+    for subpath, md in specs:
+        d = repo / subpath if subpath else repo
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(md)
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "init"], repo)
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    return f"file://{repo}", sha
+
+
+def _md(name, description="d"):
+    return f'---\nname: {name}\ndescription: "{description}"\n---\nbody\n'
+
+
+@pytest.mark.unit
+def test_discover_lists_every_skill_sorted_by_subpath(tmp_path) -> None:
+    url, sha = _make_multi_skill_repo(tmp_path, [
+        ("plugins/suite/skills/writer", _md("writer", "writes")),
+        ("plugins/suite/skills/research", _md("research", "researches")),
+    ])
+    out = discover_git_skills(url=url, ref="main")
+    assert isinstance(out, DiscoveredRepo)
+    assert out.pinned_sha == sha
+    assert out.truncated is False
+    assert [s.subpath for s in out.skills] == [
+        "plugins/suite/skills/research", "plugins/suite/skills/writer",
+    ]
+    research = out.skills[0]
+    assert (research.name, research.description, research.valid, research.error) == (
+        "research", "researches", True, None,
+    )
+
+
+@pytest.mark.unit
+def test_discover_single_and_repo_root_skill(tmp_path) -> None:
+    url, _ = _make_multi_skill_repo(tmp_path, [("", _md("root-skill"))])
+    out = discover_git_skills(url=url, ref="main")
+    assert len(out.skills) == 1
+    assert out.skills[0].subpath == ""
+    assert out.skills[0].name == "root-skill"
+
+
+@pytest.mark.unit
+def test_discover_empty_repo_returns_no_skills(tmp_path) -> None:
+    repo = tmp_path / "bare"
+    repo.mkdir()
+    _git(["init", "-q", "-b", "main"], repo)
+    (repo / "README.md").write_text("nothing\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "init"], repo)
+    out = discover_git_skills(url=f"file://{repo}", ref="main")
+    assert out.skills == []
+    assert out.truncated is False
+
+
+@pytest.mark.unit
+def test_discover_broken_frontmatter_is_invalid_but_scan_continues(tmp_path) -> None:
+    url, _ = _make_multi_skill_repo(tmp_path, [
+        ("bad", "no frontmatter at all\n"),
+        ("good", _md("good")),
+    ])
+    out = discover_git_skills(url=url, ref="main")
+    bad = next(s for s in out.skills if s.subpath == "bad")
+    good = next(s for s in out.skills if s.subpath == "good")
+    assert bad.valid is False and bad.error and bad.name == ""
+    assert good.valid is True and good.error is None
+
+
+@pytest.mark.unit
+def test_discover_invalid_name_is_flagged(tmp_path) -> None:
+    url, _ = _make_multi_skill_repo(tmp_path, [
+        ("bad", '---\nname: "Bad Name"\ndescription: "d"\n---\nb\n'),
+    ])
+    out = discover_git_skills(url=url, ref="main")
+    assert out.skills[0].valid is False
+    assert "must match" in (out.skills[0].error or "")
+
+
+@pytest.mark.unit
+def test_discover_duplicate_names_keep_first_flag_rest(tmp_path) -> None:
+    url, _ = _make_multi_skill_repo(tmp_path, [
+        ("a-dir", _md("same-name")),
+        ("b-dir", _md("same-name")),
+    ])
+    out = discover_git_skills(url=url, ref="main")
+    first = next(s for s in out.skills if s.subpath == "a-dir")
+    second = next(s for s in out.skills if s.subpath == "b-dir")
+    assert first.valid is True
+    assert second.valid is False
+    assert second.error == "duplicate name in repo"
+
+
+@pytest.mark.unit
+def test_discover_truncates_at_cap(tmp_path) -> None:
+    specs = [(f"skills/s{i:03d}", _md(f"skill-{i:03d}")) for i in range(55)]
+    url, _ = _make_multi_skill_repo(tmp_path, specs)
+    out = discover_git_skills(url=url, ref="main")
+    assert len(out.skills) == 50
+    assert out.truncated is True
+
+
+@pytest.mark.unit
+def test_discover_pins_by_sha_and_rejects_bad_scheme(tmp_path) -> None:
+    url, sha = _make_multi_skill_repo(tmp_path, [("s", _md("s"))])
+    out = discover_git_skills(url=url, ref=sha)
+    assert out.pinned_sha == sha
+    with pytest.raises(ValueError):
+        discover_git_skills(url="git@github.com:x/y.git", ref="main")
