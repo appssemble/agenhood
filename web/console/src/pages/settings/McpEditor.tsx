@@ -262,7 +262,7 @@ export default function McpEditor() {
             hint={isEdit ? "Write-only. Leave blank to keep the existing secret." : undefined}
             htmlFor="mcp-secret"
           >
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
               <Input
                 id="mcp-secret"
                 type="password"
@@ -276,10 +276,9 @@ export default function McpEditor() {
               {isEdit && draft.secret_set && (
                 <Button
                   variant="danger"
-                  size="sm"
                   onClick={onClearSecret}
                   disabled={busy}
-                  style={{ whiteSpace: "nowrap" }}
+                  style={{ whiteSpace: "nowrap", flexShrink: 0, fontSize: 12.5, padding: "0 14px" }}
                 >
                   Clear secret
                 </Button>
