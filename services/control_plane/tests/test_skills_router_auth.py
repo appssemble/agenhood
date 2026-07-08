@@ -261,3 +261,102 @@ def test_git_refs_ok_returns_branches(monkeypatch) -> None:
     assert r.status_code == 200
     j = r.json()
     assert j == {"ok": True, "branches": ["main", "dev"], "default_branch": "main"}
+
+
+# --- git-discover (multi-skill repo picker) -----------------------------------
+
+def test_member_forbidden_to_discover() -> None:
+    _use(MEMBER)
+    with TestClient(app) as c:
+        r = c.post("/v1/skills/git-discover",
+                   json={"source_url": "https://x/y.git", "source_ref": "main"})
+    assert r.status_code == 403
+
+
+def test_discover_missing_url_is_400() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/skills/git-discover", json={"source_ref": "main"})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "source_url"
+
+
+def test_discover_missing_ref_is_400() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/skills/git-discover", json={"source_url": "https://x/y.git"})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "source_ref"
+
+
+def test_discover_bad_scheme_is_422(monkeypatch) -> None:
+    def _reject(**_kw: Any) -> Any:
+        raise ValueError("source_url must be an https:// git URL")
+
+    monkeypatch.setattr("control_plane.routers.skills.discover_git_skills", _reject)
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/skills/git-discover",
+                   json={"source_url": "git@github.com:x/y.git", "source_ref": "main"})
+    assert r.status_code == 422
+    assert r.json()["error"]["field"] == "source_url"
+
+
+def test_discover_unknown_ref_is_422_on_ref_field(monkeypatch) -> None:
+    def _boom(**_kw: Any) -> Any:
+        raise ValueError("ref 'nope' not found in https://x/y.git")
+
+    monkeypatch.setattr("control_plane.routers.skills.discover_git_skills", _boom)
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/skills/git-discover",
+                   json={"source_url": "https://x/y.git", "source_ref": "nope"})
+    assert r.status_code == 422
+    assert r.json()["error"]["field"] == "source_ref"
+
+
+def test_discover_unreachable_is_502(monkeypatch) -> None:
+    def _boom(**_kw: Any) -> Any:
+        raise ValueError("git fetch failed: repository not found")
+
+    monkeypatch.setattr("control_plane.routers.skills.discover_git_skills", _boom)
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/skills/git-discover",
+                   json={"source_url": "https://x/y.git", "source_ref": "main"})
+    assert r.status_code == 502
+    assert r.json()["error"]["code"] == "skill_discover_error"
+
+
+def test_discover_ok_flags_installed_names(monkeypatch) -> None:
+    from control_plane.skills_fetch import DiscoveredRepo, DiscoveredSkill
+
+    monkeypatch.setattr(
+        "control_plane.routers.skills.discover_git_skills",
+        lambda **_kw: DiscoveredRepo(
+            pinned_sha="a" * 40, truncated=False,
+            skills=[
+                DiscoveredSkill(subpath="x", name="already-here",
+                                description="d1", valid=True, error=None),
+                DiscoveredSkill(subpath="y", name="brand-new",
+                                description="d2", valid=True, error=None),
+                DiscoveredSkill(subpath="z", name="", description="",
+                                valid=False, error="SKILL.md missing frontmatter"),
+            ],
+        ),
+    )
+    # The installed-names query returns one existing skill name.
+    _use(ADMIN, rows=[_Row({"name": "already-here"})])
+    with TestClient(app) as c:
+        r = c.post("/v1/skills/git-discover",
+                   json={"source_url": "https://x/y.git", "source_ref": "main"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["ok"] is True
+    assert j["pinned_sha"] == "a" * 40
+    assert j["truncated"] is False
+    by_subpath = {s["subpath"]: s for s in j["skills"]}
+    assert by_subpath["x"]["installed"] is True
+    assert by_subpath["y"]["installed"] is False
+    assert by_subpath["z"]["installed"] is False
+    assert by_subpath["z"]["valid"] is False

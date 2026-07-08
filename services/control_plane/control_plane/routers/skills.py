@@ -20,7 +20,7 @@ from control_plane.auth.principal import (
 from control_plane.deploy_keys_service import decrypt_deploy_key
 from control_plane.errors import api_error, not_found
 from control_plane.models_db import deploy_keys, skills
-from control_plane.skills_fetch import fetch_git_skill, list_branches
+from control_plane.skills_fetch import discover_git_skills, fetch_git_skill, list_branches
 from control_plane.skills_service import (
     MAX_BUNDLE_BYTES,
     MAX_BUNDLE_FILES,
@@ -57,6 +57,25 @@ class SkillGitRefsResponse(BaseModel):
     )
     default_branch: str | None = Field(
         description="The repository's default branch, if one could be resolved."
+    )
+
+
+class SkillGitDiscoverResponse(BaseModel):
+    """Skill listing for a remote repository (multi-skill install picker)."""
+
+    ok: bool = Field(description="Always true on success.")
+    pinned_sha: str = Field(
+        description="The commit SHA the ref resolved to during the scan."
+    )
+    truncated: bool = Field(
+        description="True when the repository holds more skills than the "
+        "50-entry cap and the listing was cut off."
+    )
+    skills: list[dict[str, Any]] = Field(
+        description="Every directory holding a SKILL.md, sorted by subpath: "
+        "{subpath, name, description, valid, error, installed}. Invalid "
+        "entries carry the reason in `error`; `installed` reports whether a "
+        "skill of that name already exists for the tenant."
     )
 
 # Columns selected on read paths — bundle (BYTEA) and bundle_sha256 are excluded
@@ -256,6 +275,85 @@ async def list_skill_git_refs(
             msg, "source_url",
         ) from exc
     return {"ok": True, "branches": branches, "default_branch": default_branch}
+
+
+@router.post(
+    "/skills/git-discover",
+    response_model=SkillGitDiscoverResponse,
+    response_description="Every skill found in the repository at the ref.",
+)
+async def discover_skill_repo(
+    request: Request, principal: Principal = Depends(require_admin)
+) -> dict[str, Any]:
+    """List every skill (directory holding a SKILL.md) in a repo at a ref.
+
+    Admin-only. Read-only lookup for the console's multi-skill install
+    picker: no skill is created. Body must contain ``source_url`` and
+    ``source_ref``; an optional ``deploy_key_id`` selects a stored deploy key
+    to authenticate as (in which case ``source_url`` must be an ssh URL).
+    Each entry reports the parsed frontmatter, validity, and whether a skill
+    of that name already exists for the tenant. The listing caps at 50
+    entries (``truncated`` reports a hit cap). Errors: ``400
+    validation_error`` if ``source_url``/``source_ref`` are missing or
+    ``deploy_key_id`` is present but not a non-empty string; ``422
+    validation_error`` if the URL is rejected, the ref does not exist, or
+    ``deploy_key_id`` does not resolve to a key of this tenant; ``502
+    skill_discover_error`` if the remote is unreachable or private — when a
+    deploy key was used, its message is prefixed with a stable code (e.g.
+    ``auth_failed: ...``).
+    """
+    body = await request.json()
+    url = body.get("source_url")
+    ref = body.get("source_ref")
+    if not isinstance(url, str) or not url:
+        raise api_error(400, "validation_error", "source_url is required", "source_url")
+    if not isinstance(ref, str) or not ref:
+        raise api_error(400, "validation_error", "source_ref is required", "source_ref")
+    deploy_key_id = body.get("deploy_key_id")
+    if deploy_key_id is not None and (
+        not isinstance(deploy_key_id, str) or not deploy_key_id
+    ):
+        raise api_error(
+            400, "validation_error",
+            "deploy_key_id must be a non-empty string", "deploy_key_id",
+        )
+    private_key = None
+    if deploy_key_id is not None:
+        async with request.app.state.session_factory() as session:
+            private_key = await _load_private_key(
+                session, principal.tenant_id, deploy_key_id
+            )
+    try:
+        discovered = await asyncio.to_thread(
+            lambda: discover_git_skills(url=url, ref=ref, private_key=private_key)
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "source_url must be" in msg or "file://" in msg:
+            raise api_error(422, "validation_error", msg, "source_url") from exc
+        if "not found in" in msg:
+            raise api_error(422, "validation_error", msg, "source_ref") from exc
+        raise api_error(502, "skill_discover_error", msg, "source_url") from exc
+    installed_names: set[str] = set()
+    if principal.tenant_id is not None:
+        async with request.app.state.session_factory() as session:
+            result = await session.execute(
+                select(skills.c.name).where(skills.c.tenant_id == principal.tenant_id)
+            )
+            installed_names = {r._mapping["name"] for r in result.fetchall()}
+    return {
+        "ok": True,
+        "pinned_sha": discovered.pinned_sha,
+        "truncated": discovered.truncated,
+        "skills": [
+            {
+                "subpath": s.subpath, "name": s.name, "description": s.description,
+                "valid": s.valid, "error": s.error,
+                "installed": s.valid and s.name in installed_names,
+            }
+            for s in discovered.skills
+        ],
+    }
 
 
 @router.post(

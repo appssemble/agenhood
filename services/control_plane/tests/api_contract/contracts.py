@@ -387,6 +387,7 @@ CONTRACTS: list[tuple[str, str, str, str]] = [
     ("GET",    "/v1/skills",              "/v1/skills",              "auth"),
     ("POST",   "/v1/skills",              "/v1/skills",              "auth"),
     ("POST",   "/v1/skills/git-refs",     "/v1/skills/git-refs",     "auth"),
+    ("POST",   "/v1/skills/git-discover", "/v1/skills/git-discover", "auth"),
     ("DELETE", "/v1/skills/{sid}",        "/v1/skills/sk_x",         "auth"),
     ("GET",    "/v1/skills/{sid}",        "/v1/skills/sk_x",         "auth"),
     ("PATCH",  "/v1/skills/{sid}",        "/v1/skills/sk_x",         "auth"),
