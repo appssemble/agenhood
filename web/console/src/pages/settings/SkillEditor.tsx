@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   useSaveSkill, useRefreshSkill, fetchSkill, useSkillGitRefs, useRecommendedSkills,
@@ -86,6 +86,7 @@ export default function SkillEditor() {
   // When branches are listed the Ref field is the console's styled Dropdown;
   // this flips it back to a free-text input for tags/commit SHAs.
   const [customRef, setCustomRef] = useState(false);
+  const refsSeq = useRef(0);
 
   // Repository access: the deploy-key picker only appears for private repos
   // (progressive disclosure — most installs are public).
@@ -96,14 +97,15 @@ export default function SkillEditor() {
   const [justCreatedKey, setJustCreatedKey] = useState<DeployKey | null>(null);
 
   function switchAccessMode(v: "public" | "private") {
+    // Auto-select the key when there's exactly one — the common case.
+    const nextKey = v === "private" && deployKeys.length === 1 ? deployKeys[0].id : "";
     setAccessMode(v);
-    setDraft((d) => (d ? {
-      ...d,
-      // Auto-select the key when there's exactly one — the common case.
-      deploy_key_id: v === "private" && deployKeys.length === 1 ? deployKeys[0].id : "",
-    } : d));
+    setDraft((d) => (d ? { ...d, deploy_key_id: nextKey } : d));
     setRefsState("idle"); setBranches([]); setRefsError(null);
     setJustCreatedKey(null); setShowGenerateKey(false); setNewKeyName("");
+    // The auth context changed, so re-list branches without waiting for
+    // another URL blur (skip private-with-no-key: nothing to fetch with yet).
+    if (v === "public" || nextKey) void loadBranches(nextKey);
   }
 
   // Edit: fetch the full skill (incl. body) once.
@@ -174,15 +176,21 @@ export default function SkillEditor() {
 
   // Load the repo's branches when the URL field blurs (after normalizing the
   // pasted URL to the scheme the backend expects for the chosen access).
-  async function loadBranches() {
+  // keyIdOverride lets callers that just changed the key (dropdown, access
+  // switch, generate) fetch with the NEW key before React re-renders the
+  // closure. A sequence counter drops stale responses from superseded calls.
+  async function loadBranches(keyIdOverride?: string) {
     if (!draft) return;
-    const url = normalizeSourceUrl(draft.source_url, !!draft.deploy_key_id);
-    if (!url || sourceUrlError(url, !!draft.deploy_key_id)) { setRefsState("idle"); setBranches([]); return; }
+    const keyId = keyIdOverride !== undefined ? keyIdOverride : draft.deploy_key_id;
+    const url = normalizeSourceUrl(draft.source_url, !!keyId);
+    if (!url || sourceUrlError(url, !!keyId)) { setRefsState("idle"); setBranches([]); return; }
+    const seq = ++refsSeq.current;
     setRefsState("loading");
     setRefsError(null);
     setCustomRef(false);
     try {
-      const res = await gitRefs.mutateAsync({ source_url: url, deploy_key_id: draft.deploy_key_id || undefined });
+      const res = await gitRefs.mutateAsync({ source_url: url, deploy_key_id: keyId || undefined });
+      if (seq !== refsSeq.current) return;
       setBranches(res.branches);
       setRefsState("ok");
       const def = res.default_branch;
@@ -191,6 +199,7 @@ export default function SkillEditor() {
           ? { ...d, source_ref: def } : d));
       }
     } catch (err) {
+      if (seq !== refsSeq.current) return;
       setRefsState("error");
       setBranches([]);
       setRefsError(err instanceof ApiError ? err.message : "Couldn't list branches");
@@ -217,6 +226,9 @@ export default function SkillEditor() {
       setRefsState("idle");
       setBranches([]);
       setRefsError(null);
+      // Probe right away: until the public key is installed on the repo this
+      // surfaces the "not installed yet" hint with the key and a Retry.
+      void loadBranches(key.id);
     } catch (err) {
       toast.error("Couldn't generate deploy key", err instanceof ApiError ? err.message : undefined);
     }
@@ -400,12 +412,15 @@ export default function SkillEditor() {
                 <Input id="git-url" className="fluid-w" aria-label="Repository URL" value={draft.source_url}
                   aria-invalid={!!invalidUrl}
                   onChange={(e) => { setDraft({ ...draft, source_url: e.target.value }); setRefsState("idle"); setBranches([]); }}
-                  onBlur={loadBranches}
+                  onBlur={() => loadBranches()}
                   placeholder="https://github.com/org/repo" />
                 {invalidUrl && <span className="hint" role="alert" style={{ color: "var(--err-700)" }}>{invalidUrl}</span>}
-                {!invalidUrl && urlConverted && (
+                {!invalidUrl && refsState === "loading" && (
+                  <span className="hint">Checking repository…</span>
+                )}
+                {!invalidUrl && refsState !== "loading" && urlConverted && (
                   <span className="hint">
-                    Connecting as <span className="mono">{effectiveUrl}</span>
+                    Connects as <span className="mono">{effectiveUrl}</span>
                   </span>
                 )}
                 {refsAuthFailed && !draft.deploy_key_id && (
@@ -430,7 +445,7 @@ export default function SkillEditor() {
                       </div>
                     )}
                     <div style={{ marginTop: 8 }}>
-                      <Button variant="secondary" size="sm" onClick={loadBranches} style={{ gap: 6 }}>
+                      <Button variant="secondary" size="sm" onClick={() => loadBranches()} style={{ gap: 6 }}>
                         <Icons.Refresh w={13} /> Retry
                       </Button>
                     </div>
@@ -465,6 +480,7 @@ export default function SkillEditor() {
                           onChange={(v) => {
                             setDraft({ ...draft, deploy_key_id: v });
                             setRefsState("idle"); setBranches([]); setRefsError(null); setJustCreatedKey(null);
+                            if (v) void loadBranches(v);
                           }}
                           options={[
                             { value: "", label: "Select a deploy key…" },

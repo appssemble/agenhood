@@ -137,6 +137,32 @@ describe("SkillEditor (repository access / deploy keys)", () => {
     );
   });
 
+  it("re-lists branches automatically when a key is selected after the URL", async () => {
+    const requests: any[] = [];
+    server.use(
+      http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [DEPLOY_KEY] })),
+      http.post("/v1/skills/git-refs", async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json({ ok: true, branches: ["main"], default_branch: "main" });
+      }),
+    );
+    renderWithProviders(<SkillEditor />);
+    await userEvent.click(await screen.findByRole("button", { name: "From git" }));
+
+    // URL first (fetched as public)…
+    await userEvent.type(screen.getByLabelText("Repository URL"), "https://github.com/org/repo");
+    await userEvent.tab();
+    await waitFor(() => expect(requests.length).toBe(1));
+
+    // …then choosing the key must re-fetch over ssh without another blur.
+    await selectDeployKey();
+    await waitFor(() =>
+      expect(requests.at(-1)).toMatchObject({
+        source_url: "git@github.com:org/repo.git", deploy_key_id: "dk_1",
+      }),
+    );
+  });
+
   it("suggests attaching a deploy key when a public fetch hits auth_failed", async () => {
     server.use(
       http.post("/v1/skills/git-refs", () =>
