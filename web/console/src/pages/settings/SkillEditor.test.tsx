@@ -68,8 +68,14 @@ describe("SkillEditor (git source)", () => {
     await userEvent.type(url, "git@github.com:org/repo.git");
     await userEvent.tab();
     await waitFor(() => expect(asked).toMatchObject({ source_url: "https://github.com/org/repo" }));
-    await waitFor(() => expect(ref).toHaveValue("main"));
-    expect(document.querySelectorAll("#git-branches option")).toHaveLength(2);
+    // Once branches load, Ref becomes the styled dropdown with the default branch
+    // selected, listing the branches plus the free-text escape hatch.
+    const refDropdown = await screen.findByRole("button", { name: "Ref" });
+    expect(refDropdown).toHaveTextContent("main");
+    fireEvent.click(refDropdown);
+    expect(await screen.findByRole("option", { name: "dev" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /tag or commit SHA/i })).toBeInTheDocument();
+    fireEvent.click(refDropdown); // close the menu again
 
     // Unparseable input shows the validation hint and does not query.
     asked = null;

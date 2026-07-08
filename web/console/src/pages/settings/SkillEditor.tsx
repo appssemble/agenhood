@@ -37,6 +37,9 @@ type Draft = {
   deploy_key_id: string;
 };
 
+// Sentinel option in the Ref dropdown that switches to free-text entry.
+const CUSTOM_REF = "__custom_ref__";
+
 const EMPTY: Draft = {
   source_type: "inline",
   name: "", description: "", body: "", enabled: true,
@@ -80,6 +83,9 @@ export default function SkillEditor() {
   const [branches, setBranches] = useState<string[]>([]);
   const [refsState, setRefsState] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [refsError, setRefsError] = useState<string | null>(null);
+  // When branches are listed the Ref field is the console's styled Dropdown;
+  // this flips it back to a free-text input for tags/commit SHAs.
+  const [customRef, setCustomRef] = useState(false);
 
   // Repository access: the deploy-key picker only appears for private repos
   // (progressive disclosure — most installs are public).
@@ -174,6 +180,7 @@ export default function SkillEditor() {
     if (!url || sourceUrlError(url, !!draft.deploy_key_id)) { setRefsState("idle"); setBranches([]); return; }
     setRefsState("loading");
     setRefsError(null);
+    setCustomRef(false);
     try {
       const res = await gitRefs.mutateAsync({ source_url: url, deploy_key_id: draft.deploy_key_id || undefined });
       setBranches(res.branches);
@@ -515,13 +522,39 @@ export default function SkillEditor() {
                   placeholder="skills/pdf" />
               </Field>
               <Field label="Ref" hint="Branch, tag, or commit SHA. Resolved and pinned at install." htmlFor="git-ref">
-                <Input id="git-ref" className="fluid-w" aria-label="Ref" value={draft.source_ref}
-                  list="git-branches"
-                  onChange={(e) => setDraft({ ...draft, source_ref: e.target.value })}
-                  placeholder={refsState === "loading" ? "Loading branches…" : "main"} />
-                <datalist id="git-branches">
-                  {branches.map((b) => <option key={b} value={b} />)}
-                </datalist>
+                {refsState === "ok" && !customRef ? (
+                  <>
+                    <Dropdown
+                      id="git-ref"
+                      aria-label="Ref"
+                      value={draft.source_ref}
+                      onChange={(v) => {
+                        if (v === CUSTOM_REF) { setCustomRef(true); return; }
+                        setDraft({ ...draft, source_ref: v });
+                      }}
+                      options={[
+                        ...branches.map((b) => ({ value: b, label: b })),
+                        { value: CUSTOM_REF, label: "Enter a tag or commit SHA…" },
+                      ]}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Input id="git-ref" className="fluid-w" aria-label="Ref" value={draft.source_ref}
+                      onChange={(e) => setDraft({ ...draft, source_ref: e.target.value })}
+                      placeholder={refsState === "loading" ? "Loading branches…" : "main"} />
+                    {refsState === "ok" && customRef && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ gap: 6, padding: "4px 6px", marginTop: 6, alignSelf: "start" }}
+                        onClick={() => setCustomRef(false)}
+                      >
+                        Choose from branches instead
+                      </button>
+                    )}
+                  </>
+                )}
                 {refsState === "error" && !refsAuthFailed && (
                   <span className="hint" style={{ color: "var(--warn-700)" }}>
                     Couldn't list branches{refsError ? ` (${refsError})` : ""}. Enter a ref manually.
