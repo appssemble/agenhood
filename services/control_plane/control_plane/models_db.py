@@ -45,6 +45,11 @@ templates = Table(
     Column("skills", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("mcp_servers", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("limits", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # Runtime shape for containers created from this template (NULL = unset,
+    # fall through to request / variant defaults). Mirrors containers.
+    Column("image_variant", Text, nullable=True),
+    Column("mem_limit", Text, nullable=True),
+    Column("cpus", Float, nullable=True),
     Column("is_builtin", Boolean, nullable=False, server_default=text("false")),
     Column("created_by", Text, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")),
