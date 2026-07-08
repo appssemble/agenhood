@@ -39,9 +39,10 @@ def test_template_skills_flow_into_config() -> None:
         id="tpl_1", driver="opencode", model="claude-sonnet-4-6",
         system_prompt="", system_prompt_mode="augment",
         tools=[], context={}, skills=["skl_1", "skl_2"], mcp_servers=[],
+        image_variant=None, mem_limit=None, cpus=None,
     )
     req = CreateContainerRequest(name="c", template_id="tpl_1")
-    cfg, tid = asyncio.run(_resolve_create_config(_Session(row), req))
+    cfg, tid, _tpl_runtime = asyncio.run(_resolve_create_config(_Session(row), req))
     assert tid == "tpl_1"
     assert cfg.skills == ["skl_1", "skl_2"]
 
@@ -52,8 +53,9 @@ def test_template_mcp_servers_flow_into_config() -> None:
         id="tpl_1", driver="opencode", model="claude-sonnet-4-6",
         system_prompt="", system_prompt_mode="augment",
         tools=[], context={}, skills=[], mcp_servers=["mcp_1"],
+        image_variant=None, mem_limit=None, cpus=None,
     )
     req = CreateContainerRequest(name="c", template_id="tpl_1")
-    cfg, tid = asyncio.run(_resolve_create_config(_Session(row), req))
+    cfg, tid, _tpl_runtime = asyncio.run(_resolve_create_config(_Session(row), req))
     assert tid == "tpl_1"
     assert cfg.mcp_servers == ["mcp_1"]

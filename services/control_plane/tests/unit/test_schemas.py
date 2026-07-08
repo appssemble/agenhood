@@ -15,7 +15,9 @@ def test_create_container_defaults() -> None:
     assert req.template_id is None
     assert req.config is None
     assert req.metadata == {}
-    assert req.image_variant == "full"
+    # Omitted image_variant is now nullable at the request level: it inherits
+    # the template's variant, else resolves to "full" at create time (not here).
+    assert req.image_variant is None
 
 
 def test_create_container_with_inline_config() -> None:

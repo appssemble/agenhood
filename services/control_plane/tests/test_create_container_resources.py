@@ -159,3 +159,112 @@ def test_create_out_of_bounds_override_rejected() -> None:
     assert r.json()["error"]["code"] == "validation_error"
     assert r.json()["error"]["field"] == "resource_limits.cpus"
     assert "mem_limit" not in captured  # rejected before provisioning
+
+
+class _FakeTplRow:
+    """Template row with runtime fields; attribute access like a SA row."""
+
+    def __init__(self, image_variant=None, mem_limit=None, cpus=None) -> None:
+        self.id = "tpl_1"
+        self.driver = "vanilla"
+        self.model = "claude-opus-4-7"
+        self.system_prompt = ""
+        self.system_prompt_mode = "augment"
+        self.tools: list[str] = []
+        self.context: dict = {}
+        self.skills: list[str] = []
+        self.mcp_servers: list[str] = []
+        self.image_variant = image_variant
+        self.mem_limit = mem_limit
+        self.cpus = cpus
+
+
+class _FakeSessionWithTemplate(_FakeSession):
+    def __init__(self, tpl: _FakeTplRow) -> None:
+        super().__init__()
+        self._tpl = tpl
+
+    async def execute(self, stmt: Any, params: Any = None) -> _FakeResult:
+        s = str(stmt).lower()
+        if "from templates" in s:
+            return _FakeResult(value=self._tpl)
+        if "insert into containers" in s:
+            # Reflect what the handler actually persisted so the row re-fetched
+            # for the response isn't the stale hardcoded _FakeRow default.
+            values = stmt.compile().params
+            self._row.image_variant = values.get("image_variant", self._row.image_variant)
+            self._row.mem_limit = values.get("mem_limit", self._row.mem_limit)
+            self._row.cpus = values.get("cpus", self._row.cpus)
+        return await super().execute(stmt, params)
+
+
+def _make_client_with_template(captured: dict, tpl: _FakeTplRow) -> TestClient:
+    fake_session = _FakeSessionWithTemplate(tpl)
+
+    async def _fake_session_dep() -> AsyncIterator[_FakeSessionWithTemplate]:
+        yield fake_session
+
+    async def fake_provision_container(**kwargs):
+        captured.update(kwargs)
+        return ProvisionResult(docker_name="agent-x", volume_name="vol-x", shim_token="tok")
+
+    _APP.dependency_overrides[resolve_principal] = lambda: _PRINCIPAL
+    _APP.dependency_overrides[containers_mod._session] = _fake_session_dep  # type: ignore[attr-defined]
+    containers_mod.provision_container = fake_provision_container  # type: ignore[assignment]
+    return TestClient(_APP, raise_server_exceptions=False)
+
+
+def test_template_runtime_is_inherited() -> None:
+    captured: dict = {}
+    client = _make_client_with_template(
+        captured, _FakeTplRow(image_variant="slim", mem_limit="512m", cpus=0.5)
+    )
+    r = client.post("/v1/containers", json={"name": "x", "template_id": "tpl_1"})
+    assert r.status_code == 201, r.text
+    assert captured["mem_limit"] == "512m"
+    assert captured["cpus"] == 0.5
+    assert r.json()["image_variant"] == "slim"
+
+
+def test_request_overrides_template_runtime() -> None:
+    captured: dict = {}
+    client = _make_client_with_template(
+        captured, _FakeTplRow(image_variant="slim", mem_limit="512m", cpus=0.5)
+    )
+    r = client.post("/v1/containers", json={
+        "name": "x", "template_id": "tpl_1",
+        "image_variant": "full", "resource_limits": {"mem_limit": "1g"},
+    })
+    assert r.status_code == 201, r.text
+    assert captured["mem_limit"] == "1g"        # request wins
+    assert captured["cpus"] == 0.5              # template wins (request silent)
+    assert r.json()["image_variant"] == "full"  # request wins
+
+
+def test_null_template_runtime_falls_through_to_variant_default() -> None:
+    captured: dict = {}
+    client = _make_client_with_template(captured, _FakeTplRow())
+    r = client.post("/v1/containers", json={
+        "name": "x", "template_id": "tpl_1", "image_variant": "slim",
+    })
+    assert r.status_code == 201, r.text
+    assert captured["mem_limit"] == "2g"   # slim tier default
+    assert captured["cpus"] == 1.0
+
+
+def test_template_variant_used_when_request_omits_it() -> None:
+    captured: dict = {}
+    client = _make_client_with_template(captured, _FakeTplRow(image_variant="slim"))
+    r = client.post("/v1/containers", json={"name": "x", "template_id": "tpl_1"})
+    assert r.status_code == 201, r.text
+    assert r.json()["image_variant"] == "slim"
+    assert captured["mem_limit"] == "2g"   # slim defaults follow the variant
+    assert captured["cpus"] == 1.0
+
+
+def test_out_of_bounds_template_mem_is_rejected_at_create() -> None:
+    # Bounds may tighten after a template was saved — create re-checks.
+    captured: dict = {}
+    client = _make_client_with_template(captured, _FakeTplRow(mem_limit="64g"))
+    r = client.post("/v1/containers", json={"name": "x", "template_id": "tpl_1"})
+    assert r.status_code == 400

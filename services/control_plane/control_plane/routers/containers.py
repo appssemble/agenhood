@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from typing import Annotated, Any, NamedTuple
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Body, Depends, Path, Query, Request
@@ -106,6 +106,14 @@ class ResourceUpdateResponse(BaseModel):
             "only persisted for a later rehydrate (archived container)."
         ),
     )
+
+
+class TemplateRuntime(NamedTuple):
+    """A template's stored runtime triple; Nones fall through at create."""
+
+    image_variant: str | None = None
+    mem_limit: str | None = None
+    cpus: float | None = None
 
 
 router = APIRouter(tags=["Containers"])
@@ -220,8 +228,8 @@ def _row_to_container_out(row: Any) -> ContainerOut:
 
 async def _resolve_create_config(
     session: AsyncSession, req: CreateContainerRequest
-) -> tuple[AgentConfig, str | None]:
-    """Return the active config and the seed template_id (if any).
+) -> tuple[AgentConfig, str | None, TemplateRuntime]:
+    """Return the active config, the seed template_id (if any), and its runtime.
 
     Precedence: an inline ``config`` wins; else the named template's config;
     else the driver default's built-in template.  An inline ``config`` may
@@ -230,6 +238,7 @@ async def _resolve_create_config(
     """
     template_id: str | None = None
     base: dict[str, Any] | None = None
+    tpl_runtime = TemplateRuntime()
 
     if req.template_id is not None:
         trow = (
@@ -250,6 +259,11 @@ async def _resolve_create_config(
             "skills": list(trow.skills or []),
             "mcp_servers": list(trow.mcp_servers or []),
         }
+        tpl_runtime = TemplateRuntime(
+            image_variant=trow.image_variant,
+            mem_limit=trow.mem_limit,
+            cpus=trow.cpus,
+        )
 
     if req.config is not None:
         # Inline config: it is the complete active config (overrides template).
@@ -263,7 +277,7 @@ async def _resolve_create_config(
     else:
         raise validation_error("provide either template_id or config", field="config")
 
-    return cfg, template_id
+    return cfg, template_id, tpl_runtime
 
 
 async def _load_owned_container(
@@ -314,13 +328,13 @@ async def create_container(
     tid = _tid(principal)
     limits = await load_tenant_limits(session, tid)
 
-    config, template_id = await _resolve_create_config(session, body)
+    config, template_id, tpl_runtime = await _resolve_create_config(session, body)
     # Raises validation_error before any Docker work.
     validate_config(config, limits)
 
     # Image-variant feature gate (spec §9.1): refuse driver/tool whose
     # requires_image_feature the chosen variant does not provide.
-    variant = body.image_variant or "full"
+    variant = body.image_variant or tpl_runtime.image_variant or "full"
     assert_config_runnable_on_variant(
         variant=variant,
         driver_name=config.driver,
@@ -329,10 +343,12 @@ async def create_container(
         tools=TOOLS,
     )
 
+    req_mem = body.resource_limits.mem_limit if body.resource_limits else None
+    req_cpus = body.resource_limits.cpus if body.resource_limits else None
     mem_limit, cpus = resolve_resource_limits(
         variant=variant,
-        requested_mem_limit=body.resource_limits.mem_limit if body.resource_limits else None,
-        requested_cpus=body.resource_limits.cpus if body.resource_limits else None,
+        requested_mem_limit=req_mem if req_mem is not None else tpl_runtime.mem_limit,
+        requested_cpus=req_cpus if req_cpus is not None else tpl_runtime.cpus,
         settings=settings,
     )
 
@@ -413,7 +429,7 @@ async def create_container(
                 volume_name=result.volume_name,
                 shim_token=result.shim_token,
                 image_tag=image_tag,
-                image_variant=body.image_variant,
+                image_variant=variant,
                 template_id=template_id,
                 config=config.model_dump(),
                 status="running",

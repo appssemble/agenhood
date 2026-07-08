@@ -59,11 +59,12 @@ class CreateContainerRequest(BaseModel):
         None,
         description="Agent image tag to run. Defaults to the platform's configured agent image.",
     )
-    image_variant: Literal["full", "slim"] = Field(
-        "full",
+    image_variant: Literal["full", "slim"] | None = Field(
+        None,
         description=(
             "Image variant. `full` includes headless Chromium (for JS-rendered web "
-            "fetch); `slim` is smaller but rejects configs that need Chromium."
+            "fetch); `slim` is smaller but rejects configs that need Chromium. "
+            "Omitted: inherits the template's image_variant, else `full`."
         ),
     )
     volume_id: str | None = Field(
