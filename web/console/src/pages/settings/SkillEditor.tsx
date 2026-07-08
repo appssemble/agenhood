@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  useSaveSkill, useRefreshSkill, fetchSkill, useSkillGitRefs, useRecommendedSkills,
-  useDeployKeys, useCreateDeployKey,
+  useSaveSkill, useRefreshSkill, fetchSkill, useSkillGitRefs, useSkillGitDiscover,
+  useRecommendedSkills, useDeployKeys, useCreateDeployKey,
 } from "../../api/queries";
 import { useToast } from "../../components/Toast";
 import { CopyButton } from "../../components/CopyButton";
@@ -17,7 +17,7 @@ import { slugNameError } from "../../lib/validation";
 import { formatOptionalBytes } from "../../lib/format";
 import { groupByCategory, type RecommendedSkill, type RecommendedRepo } from "../../lib/recommendedSkills";
 import type { Skill } from "../../api/types";
-import type { DeployKey } from "../../api/queries";
+import type { DeployKey, DiscoveredSkill } from "../../api/queries";
 
 // On create the user picks a source: a curated recommendation (installed via
 // git), an inline-authored skill, or an arbitrary git repo. On edit the mode is
@@ -87,6 +87,36 @@ export default function SkillEditor() {
   // this flips it back to a free-text input for tags/commit SHAs.
   const [customRef, setCustomRef] = useState(false);
   const refsSeq = useRef(0);
+
+  // Repo scan for the create form: every SKILL.md dir at the chosen ref.
+  // Same stale-response guard as loadBranches (URL/ref/key can change mid-scan).
+  const gitDiscover = useSkillGitDiscover();
+  const [discovered, setDiscovered] = useState<DiscoveredSkill[] | null>(null);
+  const [discoverState, setDiscoverState] =
+    useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [discoverTruncated, setDiscoverTruncated] = useState(false);
+  // Subpaths the user checked for install (auto-filled for single-skill repos).
+  const [pickedSubpaths, setPickedSubpaths] = useState<string[]>([]);
+  // Escape hatch: type the subpath by hand (scan failed, capped, odd repo).
+  const [manualSubpath, setManualSubpath] = useState(false);
+  const discoverSeq = useRef(0);
+
+  const togglePicked = (subpath: string) =>
+    setPickedSubpaths((prev) =>
+      prev.includes(subpath) ? prev.filter((s) => s !== subpath) : [...prev, subpath],
+    );
+
+  // Re-scan whenever the inputs that define "which repo at which ref" change.
+  // Guards use draft fields directly: isEdit/isGit are declared after the
+  // component's early returns, and a hook must run unconditionally before
+  // them. gitDiscover is intentionally not a dependency (mutation identity
+  // churns); loadDiscovery is an `async function` declaration, so it hoists.
+  useEffect(() => {
+    if (!draft || draft.id || draft.source_type !== "git" || manualSubpath) return;
+    void loadDiscovery();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.source_url, draft?.source_ref, draft?.deploy_key_id, draft?.source_type, manualSubpath]);
 
   // Repository access: the deploy-key picker only appears for private repos
   // (progressive disclosure — most installs are public).
@@ -172,6 +202,7 @@ export default function SkillEditor() {
     : isGit
       ? !!draft.source_url && !invalidUrl && !!draft.source_ref
         && (isEdit || accessMode === "public" || !!draft.deploy_key_id)
+        && (isEdit || manualSubpath || pickedSubpaths.length > 0)
       : !!draft.name && !!draft.description && !invalidName;
 
   // Load the repo's branches when the URL field blurs (after normalizing the
@@ -203,6 +234,42 @@ export default function SkillEditor() {
       setRefsState("error");
       setBranches([]);
       setRefsError(err instanceof ApiError ? err.message : "Couldn't list branches");
+    }
+  }
+
+  // Scan the repo (at the current URL/ref/key) for every SKILL.md dir. Same
+  // stale-response guard as loadBranches: a sequence counter drops responses
+  // superseded by a newer scan triggered while this one was in flight.
+  async function loadDiscovery() {
+    if (!draft || draft.id) return;
+    const url = normalizeSourceUrl(draft.source_url, !!draft.deploy_key_id);
+    if (!url || sourceUrlError(url, !!draft.deploy_key_id) || !draft.source_ref) {
+      setDiscoverState("idle"); setDiscovered(null); setPickedSubpaths([]);
+      return;
+    }
+    const seq = ++discoverSeq.current;
+    setDiscoverState("loading");
+    setDiscoverError(null);
+    try {
+      const res = await gitDiscover.mutateAsync({
+        source_url: url, source_ref: draft.source_ref,
+        deploy_key_id: draft.deploy_key_id || undefined,
+      });
+      if (seq !== discoverSeq.current) return;
+      setDiscovered(res.skills);
+      setDiscoverTruncated(res.truncated);
+      setDiscoverState("ok");
+      const usable = res.skills.filter((s) => s.valid && !s.installed);
+      // Single-skill repo: pick it automatically — Save behaves as before.
+      setPickedSubpaths(
+        res.skills.length === 1 && usable.length === 1 ? [usable[0].subpath] : [],
+      );
+    } catch (err) {
+      if (seq !== discoverSeq.current) return;
+      setDiscoverState("error");
+      setDiscovered(null);
+      setPickedSubpaths([]);
+      setDiscoverError(err instanceof ApiError ? err.message : "Couldn't scan the repository");
     }
   }
 
@@ -273,6 +340,43 @@ export default function SkillEditor() {
         }
         navigate("/settings/skills");
         return;
+      } else if (isGit && !draft.id && !manualSubpath) {
+        const picks = (discovered ?? []).filter((s) => pickedSubpaths.includes(s.subpath));
+        if (picks.length === 0) return;
+        // Same sequential batch as the recommended flow: report partial
+        // failures (e.g. a name clash) rather than aborting the whole batch.
+        setInstalling(true);
+        const failed: { subpath: string; label: string; msg: string }[] = [];
+        let ok = 0;
+        for (const s of picks) {
+          try {
+            await save.mutateAsync({
+              source_type: "git",
+              source_url: normalizeSourceUrl(draft.source_url, !!draft.deploy_key_id),
+              source_subpath: s.subpath, source_ref: draft.source_ref,
+              enabled: draft.enabled, deploy_key_id: draft.deploy_key_id || null,
+            });
+            ok++;
+          } catch (err) {
+            failed.push({
+              subpath: s.subpath, label: s.name || s.subpath,
+              msg: err instanceof ApiError ? err.message : "install failed",
+            });
+          }
+        }
+        setInstalling(false);
+        if (ok > 0) toast.success(`${ok} skill${ok === 1 ? "" : "s"} installed`);
+        if (failed.length) {
+          toast.error(
+            `${failed.length} skill${failed.length === 1 ? "" : "s"} couldn't be installed`,
+            failed.map((f) => `${f.label}: ${f.msg}`).join("\n"),
+          );
+          // Keep only the failures picked so the user can adjust or retry.
+          setPickedSubpaths(failed.map((f) => f.subpath));
+          return;
+        }
+        navigate("/settings/skills");
+        return;
       } else if (isGit) {
         await save.mutateAsync({
           id: draft.id, source_type: "git",
@@ -314,11 +418,14 @@ export default function SkillEditor() {
     (draft.body || "");
 
   const installs = isRecommended || (isGit && !draft.id);
+  const gitPickCount = isGit && !draft.id && !manualSubpath ? pickedSubpaths.length : 0;
   const saveLabel = busy
     ? (installs ? "Installing…" : "Saving…")
     : isRecommended
       ? (selected.length > 1 ? `Install ${selected.length} skills` : "Install skill")
-      : (installs ? "Install skill" : "Save skill");
+      : gitPickCount > 1
+        ? `Install ${gitPickCount} skills`
+        : (installs ? "Install skill" : "Save skill");
   const bundleSize = formatOptionalBytes(loaded?.bundle_size);
 
   return (
@@ -532,11 +639,102 @@ export default function SkillEditor() {
                   </div>
                 )}
               </Field>
-              <Field label="Subpath" hint="Directory containing SKILL.md. Leave blank for the repo root." htmlFor="git-subpath">
-                <Input id="git-subpath" className="fluid-w" aria-label="Subpath" value={draft.source_subpath}
-                  onChange={(e) => setDraft({ ...draft, source_subpath: e.target.value })}
-                  placeholder="skills/pdf" />
-              </Field>
+              {manualSubpath ? (
+                <Field label="Subpath" hint="Directory containing SKILL.md. Leave blank for the repo root." htmlFor="git-subpath">
+                  <Input id="git-subpath" className="fluid-w" aria-label="Subpath" value={draft.source_subpath}
+                    onChange={(e) => setDraft({ ...draft, source_subpath: e.target.value })}
+                    placeholder="skills/pdf" />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ gap: 6, padding: "4px 6px", marginTop: 6, alignSelf: "start" }}
+                    onClick={() => setManualSubpath(false)}
+                  >
+                    Discover skills automatically instead
+                  </button>
+                </Field>
+              ) : (
+                <Field label="Skills in this repository">
+                  {discoverState === "idle" && (
+                    <span className="hint">Enter the repository URL and pick a ref to list its skills.</span>
+                  )}
+                  {discoverState === "loading" && (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div className="skel" style={{ width: "70%", height: 12 }} />
+                      <div className="skel" style={{ width: "50%", height: 12 }} />
+                    </div>
+                  )}
+                  {discoverState === "error" && (
+                    <Note tone="amber" role="alert" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span>Couldn't scan the repository{discoverError ? ` (${discoverError})` : ""}.</span>
+                      <Button variant="secondary" size="sm" onClick={() => void loadDiscovery()} style={{ gap: 6 }}>
+                        <Icons.Refresh w={13} /> Retry
+                      </Button>
+                    </Note>
+                  )}
+                  {discoverState === "ok" && discovered && discovered.length === 0 && (
+                    <Note tone="amber">No skills found at this ref — the repository has no SKILL.md.</Note>
+                  )}
+                  {discoverState === "ok" && discovered && discovered.length > 0 && (
+                    <div
+                      style={{
+                        display: "grid", gap: 2, padding: "6px 8px",
+                        background: "var(--surface-2)", border: "1px solid var(--border)",
+                        borderRadius: "var(--r-3)",
+                      }}
+                    >
+                      {discovered.map((s) => {
+                        const disabled = !s.valid || s.installed;
+                        return (
+                          <label
+                            key={s.subpath || "(root)"}
+                            style={{
+                              display: "flex", gap: 10, alignItems: "flex-start",
+                              padding: "8px 6px", borderRadius: "var(--r-2)",
+                              cursor: disabled ? "default" : "pointer",
+                              opacity: disabled ? 0.55 : 1,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={pickedSubpaths.includes(s.subpath)}
+                              disabled={disabled}
+                              onChange={() => togglePicked(s.subpath)}
+                              style={{ marginTop: 3 }}
+                            />
+                            <span style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                              <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                                  {s.name || <span className="mono">{s.subpath || "(repo root)"}</span>}
+                                </span>
+                                {s.installed && <span className="tag">installed</span>}
+                                {!s.valid && <span className="tag" style={{ color: "var(--err-700)" }}>invalid</span>}
+                              </span>
+                              <span className="hint" style={{ margin: 0 }}>
+                                {s.valid ? s.description : s.error}
+                              </span>
+                              {s.subpath && <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>{s.subpath}</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {discoverState === "ok" && discoverTruncated && (
+                    <span className="hint" style={{ color: "var(--warn-700)" }}>
+                      Listing capped at 50 skills — use the manual subpath for anything beyond.
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ gap: 6, padding: "4px 6px", marginTop: 6, alignSelf: "start" }}
+                    onClick={() => setManualSubpath(true)}
+                  >
+                    Enter a subpath manually instead
+                  </button>
+                </Field>
+              )}
               <Field label="Ref" hint="Branch, tag, or commit SHA. Resolved and pinned at install." htmlFor="git-ref">
                 {refsState === "ok" && !customRef ? (
                   <>

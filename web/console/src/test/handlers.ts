@@ -15,4 +15,12 @@ export const handlers: RequestHandler[] = [
   // on mount (all tabs); default to none so tests that don't care about deploy keys
   // don't need their own stub. Override with server.use() to exercise the picker.
   http.get("/v1/deploy-keys", () => HttpResponse.json({ deploy_keys: [] })),
+  // The git create-form's discovered-skills picker scans the repo as soon as
+  // the URL and ref resolve; default to an empty, non-erroring scan so tests
+  // that only care about the URL/ref/deploy-key flow don't need their own
+  // stub. Tests exercising the picker itself override this with server.use().
+  http.post(
+    "/v1/skills/git-discover",
+    () => HttpResponse.json({ ok: true, pinned_sha: "", truncated: false, skills: [] }),
+  ),
 ];
