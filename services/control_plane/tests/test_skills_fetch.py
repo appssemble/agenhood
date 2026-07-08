@@ -173,6 +173,49 @@ def test_fetch_git_skill_missing_skill_md(tmp_path) -> None:
 
 
 @pytest.mark.unit
+def test_fetch_blank_subpath_auto_descends_to_single_skill(tmp_path) -> None:
+    """No subpath + exactly one SKILL.md in the repo → find and use it."""
+    url, sha = _make_repo(tmp_path)
+    out = fetch_git_skill(url=url, subpath="", ref="main")
+    assert out.name == "pdf"
+    assert out.pinned_sha == sha
+
+
+@pytest.mark.unit
+def test_fetch_blank_subpath_multiple_skills_names_candidates(tmp_path) -> None:
+    repo = tmp_path / "multi"
+    repo.mkdir()
+    _git(["init", "-q", "-b", "main"], repo)
+    for name in ("alpha", "beta"):
+        d = repo / name
+        d.mkdir()
+        (d / "SKILL.md").write_text(f'---\nname: {name}\ndescription: "d"\n---\nbody\n')
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "init"], repo)
+    with pytest.raises(ValueError, match=r"alpha.*beta"):
+        fetch_git_skill(url=f"file://{repo}", subpath="", ref="main")
+
+
+@pytest.mark.unit
+def test_fetch_wrong_subpath_names_candidates(tmp_path) -> None:
+    url, _ = _make_repo(tmp_path)
+    with pytest.raises(ValueError, match=r"skills/pdf"):
+        fetch_git_skill(url=url, subpath="skills/nope", ref="main")
+
+
+@pytest.mark.unit
+def test_fetch_no_skill_md_anywhere(tmp_path) -> None:
+    repo = tmp_path / "bare"
+    repo.mkdir()
+    _git(["init", "-q", "-b", "main"], repo)
+    (repo / "README.md").write_text("nothing here\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "init"], repo)
+    with pytest.raises(ValueError, match=r"no SKILL\.md anywhere"):
+        fetch_git_skill(url=f"file://{repo}", subpath="", ref="main")
+
+
+@pytest.mark.unit
 def test_fetch_git_skill_rejects_non_https_non_file(tmp_path) -> None:
     with pytest.raises(ValueError):
         fetch_git_skill(url="git@github.com:x/y.git", subpath="", ref="main")

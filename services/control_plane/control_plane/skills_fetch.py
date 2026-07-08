@@ -236,7 +236,29 @@ def fetch_git_skill(
             skill_root = Path(tmp) / sub if sub else Path(tmp)
             skill_md = skill_root / "SKILL.md"
             if not skill_md.is_file():
-                raise ValueError(f"no SKILL.md at subpath {subpath!r}")
+                # Zero-friction fallback: find where the skill actually lives.
+                # With no explicit subpath and exactly one SKILL.md in the repo,
+                # descend into it; otherwise name the candidates in the error.
+                candidates = sorted(
+                    p.parent.relative_to(tmp).as_posix()
+                    for p in Path(tmp).glob("**/SKILL.md")
+                    if ".git" not in p.parts
+                )[:10]
+                if not sub and len(candidates) == 1:
+                    sub = candidates[0]
+                    skill_root = Path(tmp) / sub
+                    skill_md = skill_root / "SKILL.md"
+                elif candidates:
+                    raise ValueError(
+                        f"no SKILL.md at subpath {subpath!r} — found SKILL.md in: "
+                        + ", ".join(candidates)
+                        + ". Set the subpath to one of these."
+                    )
+                else:
+                    raise ValueError(
+                        f"no SKILL.md at subpath {subpath!r} (no SKILL.md anywhere "
+                        "in the repository at this ref)"
+                    )
             name, description, body = parse_skill_frontmatter(skill_md.read_text())
             if not valid_skill_name(name):
                 raise ValueError(
