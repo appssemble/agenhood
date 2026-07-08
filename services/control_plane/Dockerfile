@@ -3,8 +3,9 @@
 FROM python:3.12-slim
 
 # curl is used by the dev health-wait and bootstrap scripts (run via exec).
+# git + openssh-client power the skills-from-git fetch (ssh for deploy keys).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl git \
+    && apt-get install -y --no-install-recommends curl git openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
