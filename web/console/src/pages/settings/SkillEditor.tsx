@@ -138,6 +138,7 @@ export default function SkillEditor() {
     setAccessMode(v);
     setDraft((d) => (d ? { ...d, deploy_key_id: nextKey } : d));
     setRefsState("idle"); setBranches([]); setRefsError(null);
+    resetDiscovery();
     setJustCreatedKey(null); setShowGenerateKey(false); setNewKeyName("");
     // The auth context changed, so re-list branches without waiting for
     // another URL blur (skip private-with-no-key: nothing to fetch with yet).
@@ -241,6 +242,19 @@ export default function SkillEditor() {
       setBranches([]);
       setRefsError(err instanceof ApiError ? err.message : "Couldn't list branches");
     }
+  }
+
+  // Drop the current scan results and picks. Called wherever the source
+  // inputs (URL / access mode / deploy key) change: the scan effect only
+  // re-fires once branches list again (refsState "ok"), so without this a
+  // failed re-listing would leave the previous repo's skills rendered — and
+  // installable against the new URL.
+  function resetDiscovery() {
+    discoverSeq.current++; // invalidate any in-flight scan
+    setDiscovered(null);
+    setDiscoverState("idle");
+    setDiscoverError(null);
+    setPickedSubpaths([]);
   }
 
   // Scan the repo (at the current URL/ref/key) for every SKILL.md dir. Same
@@ -524,7 +538,7 @@ export default function SkillEditor() {
               <Field label="Repository URL" htmlFor="git-url" hint="Paste the repository URL — https or ssh both work.">
                 <Input id="git-url" className="fluid-w" aria-label="Repository URL" value={draft.source_url}
                   aria-invalid={!!invalidUrl}
-                  onChange={(e) => { setDraft({ ...draft, source_url: e.target.value }); setRefsState("idle"); setBranches([]); }}
+                  onChange={(e) => { setDraft({ ...draft, source_url: e.target.value }); setRefsState("idle"); setBranches([]); resetDiscovery(); }}
                   onBlur={() => loadBranches()}
                   placeholder="https://github.com/org/repo" />
                 {invalidUrl && <span className="hint" role="alert" style={{ color: "var(--err-700)" }}>{invalidUrl}</span>}
@@ -593,6 +607,7 @@ export default function SkillEditor() {
                           onChange={(v) => {
                             setDraft({ ...draft, deploy_key_id: v });
                             setRefsState("idle"); setBranches([]); setRefsError(null); setJustCreatedKey(null);
+                            resetDiscovery();
                             if (v) void loadBranches(v);
                           }}
                           options={[
