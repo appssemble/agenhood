@@ -10,7 +10,7 @@ import { ConfigFields } from "../../components/ConfigFields";
 import { DriverPicker } from "../../components/DriverPicker";
 import { assemblePrompt } from "../assemblePrompt";
 import { driverLabel } from "../../lib/drivers";
-import { MEM_OPTIONS, CPU_OPTIONS } from "../../lib/resourceOptions";
+import { MEM_OPTIONS, CPU_OPTIONS, withCurrentValue } from "../../lib/resourceOptions";
 import type { TemplateDraft, TemplateSavePayload, Template, AgentConfig, ToolSpec } from "../../api/types";
 
 const EMPTY: TemplateDraft = {
@@ -174,7 +174,7 @@ export default function TemplateForm() {
                 aria-label="Memory"
                 value={draft.mem_limit}
                 onChange={(v) => patch({ mem_limit: v })}
-                options={[{ value: "", label: "Default memory" }, ...MEM_OPTIONS]}
+                options={withCurrentValue([{ value: "", label: "Default memory" }, ...MEM_OPTIONS], draft.mem_limit)}
               />
             </div>
             <div style={{ flex: "1 1 160px", maxWidth: 220 }}>
@@ -183,7 +183,7 @@ export default function TemplateForm() {
                 aria-label="CPUs"
                 value={draft.cpus}
                 onChange={(v) => patch({ cpus: v })}
-                options={[{ value: "", label: "Default CPUs" }, ...CPU_OPTIONS]}
+                options={withCurrentValue([{ value: "", label: "Default CPUs" }, ...CPU_OPTIONS], draft.cpus)}
               />
             </div>
           </div>

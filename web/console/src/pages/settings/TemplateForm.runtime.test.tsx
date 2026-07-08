@@ -55,4 +55,11 @@ describe("TemplateForm runtime section", () => {
       image_variant: "slim", mem_limit: "512m", cpus: 1,
     }));
   });
+
+  it("shows a non-preset stored mem_limit as the current dropdown value", async () => {
+    setup();
+    server.use(http.get("/v1/templates/tpl_1", () => HttpResponse.json({ ...TPL, mem_limit: "768m" })));
+    renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
+    expect(await screen.findByLabelText(/^memory/i)).toHaveTextContent("768m (current)");
+  });
 });
