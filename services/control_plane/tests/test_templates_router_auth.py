@@ -366,3 +366,112 @@ def test_clone_normalizes_sparse_source_context() -> None:
         r = c.post("/v1/templates/tpl_1/clone", json={"name": "T-clone"})
     assert r.status_code == 200
     assert r.json()["context"] == _FULL_CTX
+
+
+# --- template runtime resources (image_variant / mem_limit / cpus) ------------
+
+def _rt_row(**over: Any) -> Any:
+    class _R:
+        _mapping: dict[str, Any] = {
+            "id": "tpl_1", "tenant_id": "ten_1", "name": "T", "driver": "vanilla",
+            "model": None, "system_prompt": "", "system_prompt_mode": "augment",
+            "tools": [], "context": {}, "skills": [], "mcp_servers": [],
+            "limits": {}, "is_builtin": False, "created_by": "u",
+            "image_variant": None, "mem_limit": None, "cpus": None,
+            **over,
+        }
+    return _R()
+
+
+def test_create_accepts_and_returns_runtime_fields() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={
+            **_BODY, "image_variant": "slim", "mem_limit": "512m", "cpus": 1,
+        })
+    assert r.status_code == 200
+    j = r.json()
+    assert j["image_variant"] == "slim"
+    assert j["mem_limit"] == "512m"
+    assert j["cpus"] == 1.0
+
+
+def test_create_without_runtime_fields_returns_nulls() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json=_BODY)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["image_variant"] is None
+    assert j["mem_limit"] is None
+    assert j["cpus"] is None
+
+
+def test_create_unknown_variant_is_400() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={**_BODY, "image_variant": "mega"})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "image_variant"
+
+
+def test_create_out_of_bounds_mem_is_400() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={**_BODY, "mem_limit": "64g"})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "mem_limit"
+
+
+def test_create_out_of_bounds_cpus_is_400() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={**_BODY, "cpus": 64})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "cpus"
+
+
+def test_create_non_numeric_cpus_is_400() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={**_BODY, "cpus": True})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "cpus"
+
+
+def test_create_slim_with_chromium_tool_is_409() -> None:
+    # web_fetch requires the chromium feature, which slim does not provide.
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={
+            **_BODY, "image_variant": "slim", "tools": ["web_fetch"],
+        })
+    assert r.status_code == 409
+
+
+def test_patch_tools_regates_against_stored_slim_variant() -> None:
+    # Template already pinned to slim; adding a chromium tool must 409.
+    _use(ADMIN, rows=[_rt_row(image_variant="slim")])
+    with TestClient(app) as c:
+        r = c.patch("/v1/templates/tpl_1", json={"tools": ["web_fetch"]})
+    assert r.status_code == 409
+
+
+def test_patch_sets_and_clears_runtime_fields() -> None:
+    _use(ADMIN, rows=[_rt_row(mem_limit="1g")])
+    with TestClient(app) as c:
+        r = c.patch("/v1/templates/tpl_1", json={"mem_limit": None, "cpus": 2})
+    assert r.status_code == 200
+    assert r.json()["mem_limit"] is None
+    assert r.json()["cpus"] == 2.0
+
+
+def test_clone_copies_runtime_fields() -> None:
+    _use(ADMIN, rows=[_rt_row(image_variant="slim", mem_limit="512m", cpus=0.5)])
+    with TestClient(app) as c:
+        r = c.post("/v1/templates/tpl_1/clone", json={"name": "T-clone"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["image_variant"] == "slim"
+    assert j["mem_limit"] == "512m"
+    assert j["cpus"] == 0.5

@@ -14,9 +14,12 @@ from agentcore.drivers.base import DRIVERS
 from agentcore.models import ContextSpec
 from agentcore.tools.base import TOOLS
 from control_plane.auth.principal import Principal, require_admin, resolve_principal
+from control_plane.config import Settings
 from control_plane.errors import APIError, api_error, not_found, validation_error
 from control_plane.ids import new_template_id
 from control_plane.models_db import templates
+from control_plane.resource_limits import resolve_resource_limits
+from control_plane.variants import assert_config_runnable_on_variant, known_variants
 
 router = APIRouter(tags=["Templates"])
 
@@ -72,6 +75,46 @@ def context_from_body(raw: Any) -> dict[str, Any]:
         raise validation_error(
             f"invalid context: {first['msg']}", field="context"
         ) from exc
+
+
+def validate_template_runtime(
+    *, image_variant: Any, mem_limit: Any, cpus: Any,
+    driver: str, tool_names: list[str], settings: Settings,
+) -> dict[str, Any]:
+    """Validate a template's runtime triple with the same rules container
+    create applies. NULLs mean "unset" and skip their check. Returns the
+    normalized triple. Raises 400 validation_error (bad value / out of
+    bounds) or 409 (slim image with chromium-requiring tools)."""
+    if image_variant is not None and (
+        not isinstance(image_variant, str) or image_variant not in known_variants()
+    ):
+        raise validation_error(
+            f"image_variant must be one of {sorted(known_variants())}",
+            field="image_variant",
+        )
+    if mem_limit is not None and not isinstance(mem_limit, str):
+        raise validation_error("mem_limit must be a string like '512m'", field="mem_limit")
+    if cpus is not None and (isinstance(cpus, bool) or not isinstance(cpus, (int, float))):
+        raise validation_error("cpus must be a number", field="cpus")
+    # Bounds-check explicit values; field_prefix="" puts errors on the bare
+    # field names, matching this endpoint's wire shape.
+    resolve_resource_limits(
+        variant=image_variant or "full",
+        requested_mem_limit=mem_limit,
+        requested_cpus=float(cpus) if cpus is not None else None,
+        settings=settings,
+        field_prefix="",
+    )
+    if image_variant is not None:
+        assert_config_runnable_on_variant(
+            variant=image_variant, driver_name=driver, tool_names=tool_names,
+            drivers=DRIVERS, tools=TOOLS,
+        )
+    return {
+        "image_variant": image_variant,
+        "mem_limit": mem_limit,
+        "cpus": float(cpus) if cpus is not None else None,
+    }
 
 
 def template_public_view(row: dict[str, Any]) -> dict[str, Any]:
@@ -194,11 +237,14 @@ async def create_template(
 
     Admin-only. Body requires ``name`` and ``driver``; optional ``model``,
     ``system_prompt``, ``system_prompt_mode`` (default ``augment``), ``tools``,
-    ``context``, ``skills``, ``mcp_servers`` and ``limits``. The new template is
-    always non-built-in and owned by the caller's tenant. Errors: ``403
+    ``context``, ``skills``, ``mcp_servers``, ``limits``, ``image_variant``,
+    ``mem_limit``, and ``cpus`` (the latter three are nullable). The new template
+    is always non-built-in and owned by the caller's tenant. Errors: ``403
     forbidden`` for a staff principal with no tenant (built-ins are global and
-    cannot be created this way); ``422 validation_error`` if the ``driver`` is
-    unknown.
+    cannot be created this way); ``400 validation_error`` if the ``driver`` is
+    unknown, ``image_variant`` is not recognized, or ``mem_limit``/``cpus`` are
+    out of bounds; ``409 validation_error`` if a slim variant is combined with
+    chromium-requiring tools.
     """
     # Templates are tenant-scoped (DB CHECK: is_builtin ⟺ tenant_id IS NULL).
     # A staff principal has tenant_id=None; let them fail cleanly here rather
@@ -230,6 +276,15 @@ async def create_template(
     if new_row["driver"] not in DRIVERS:
         raise validation_error(f"unknown driver: {new_row['driver']!r}", field="driver")
 
+    new_row.update(validate_template_runtime(
+        image_variant=body.get("image_variant"),
+        mem_limit=body.get("mem_limit"),
+        cpus=body.get("cpus"),
+        driver=new_row["driver"],
+        tool_names=list(new_row["tools"] or []),
+        settings=request.app.state.settings,
+    ))
+
     async with request.app.state.session_factory() as session:
         await session.execute(templates.insert().values(**new_row))
         await session.commit()
@@ -251,9 +306,12 @@ async def patch_template(
     Admin-only. Only these fields are honoured; any others in the body are
     ignored: ``name``, ``driver``, ``model``, ``system_prompt``,
     ``system_prompt_mode``, ``tools``, ``context``, ``skills``, ``mcp_servers``,
-    ``limits``. Errors: ``404 not_found`` if the template is not visible to the
-    tenant; ``409 validation_error`` if it is a read-only built-in (clone it
-    first).
+    ``limits``, ``image_variant``, ``mem_limit``, ``cpus`` (the latter three are
+    nullable). Errors: ``404 not_found`` if the template is not visible to the
+    tenant; ``400 validation_error`` if ``image_variant`` is not recognized or
+    ``mem_limit``/``cpus`` are out of bounds; ``409 validation_error`` if it is a
+    read-only built-in (clone it first) or a slim variant is combined with
+    chromium-requiring tools.
     """
     body: dict[str, Any] = await request.json()
 
@@ -277,10 +335,26 @@ async def patch_template(
         allowed_fields = {
             "name", "driver", "model", "system_prompt",
             "system_prompt_mode", "tools", "context", "skills", "mcp_servers", "limits",
+            "image_variant", "mem_limit", "cpus",
         }
         updates = {k: v for k, v in body.items() if k in allowed_fields}
         if "context" in updates:
             updates["context"] = context_from_body(updates["context"])
+        # Re-validate the runtime triple whenever any input to it changes —
+        # including tools/driver patches against a stored slim variant.
+        if {"image_variant", "mem_limit", "cpus", "tools", "driver"} & updates.keys():
+            merged = {**row_dict, **updates}
+            validated = validate_template_runtime(
+                image_variant=merged.get("image_variant"),
+                mem_limit=merged.get("mem_limit"),
+                cpus=merged.get("cpus"),
+                driver=merged["driver"],
+                tool_names=list(merged["tools"] or []),
+                settings=request.app.state.settings,
+            )
+            for key in ("image_variant", "mem_limit", "cpus"):
+                if key in updates:
+                    updates[key] = validated[key]
         if updates:
             await session.execute(
                 templates.update()
@@ -357,6 +431,9 @@ async def clone_template(
             "skills": source.get("skills", []),
             "mcp_servers": source.get("mcp_servers", []),
             "limits": source["limits"],
+            "image_variant": source.get("image_variant"),
+            "mem_limit": source.get("mem_limit"),
+            "cpus": source.get("cpus"),
             "is_builtin": False,
             "created_by": principal.user_id,
         }

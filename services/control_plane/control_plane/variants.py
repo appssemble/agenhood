@@ -15,6 +15,11 @@ def image_variant_features(variant: str) -> frozenset[str]:
     return _VARIANT_FEATURES.get(variant, frozenset())
 
 
+def known_variants() -> frozenset[str]:
+    """The image variants that exist (spec §9.1)."""
+    return frozenset(_VARIANT_FEATURES)
+
+
 def assert_config_runnable_on_variant(
     *,
     variant: str,
