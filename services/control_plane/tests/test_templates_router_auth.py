@@ -278,3 +278,91 @@ def test_clone_copies_mcp_servers() -> None:
         r = c.post("/v1/templates/tpl_1/clone", json={"name": "T-clone"})
     assert r.status_code == 200
     assert r.json()["mcp_servers"] == ["mcp_1"]
+
+
+# --- context normalization ----------------------------------------------------
+# Rows written before normalization (built-ins seeded with {}, old clones, raw
+# API creates) may hold a sparse or malformed context. The API must always
+# return the full ContextSpec shape and never 500 on legacy data.
+
+_FULL_CTX: dict[str, Any] = {"variables": {}, "text": None, "files": []}
+
+
+def _ctx_row(context: Any) -> Any:
+    class _R:
+        _mapping: dict[str, Any] = {
+            "id": "tpl_1", "tenant_id": "ten_1", "name": "T", "driver": "vanilla",
+            "model": None, "system_prompt": "", "system_prompt_mode": "augment",
+            "tools": [], "context": context, "skills": [], "mcp_servers": [],
+            "limits": {}, "is_builtin": False, "created_by": "u",
+        }
+    return _R()
+
+
+def test_create_without_context_returns_full_shape() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json=_BODY)
+    assert r.status_code == 200
+    assert r.json()["context"] == _FULL_CTX
+
+
+def test_create_with_partial_context_fills_shape() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={**_BODY, "context": {"variables": {"a": "b"}}})
+    assert r.status_code == 200
+    assert r.json()["context"] == {"variables": {"a": "b"}, "text": None, "files": []}
+
+
+def test_create_with_malformed_context_is_400() -> None:
+    # Non-string variable values would fail container creation later — reject
+    # them at the door instead of storing unusable data.
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={**_BODY, "context": {"variables": {"n": 5}}})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "context"
+
+
+def test_get_returns_full_context_for_sparse_row() -> None:
+    _use(MEMBER, rows=[_ctx_row({})])
+    with TestClient(app) as c:
+        r = c.get("/v1/templates/tpl_1")
+    assert r.status_code == 200
+    assert r.json()["context"] == _FULL_CTX
+
+
+def test_list_survives_a_malformed_legacy_context_row() -> None:
+    # One bad legacy row must degrade to defaults, not 500 the whole listing.
+    _use(MEMBER, rows=[_ctx_row({"variables": {"n": 5}})])
+    with TestClient(app) as c:
+        r = c.get("/v1/templates")
+    assert r.status_code == 200
+    assert r.json()["templates"][0]["context"] == _FULL_CTX
+
+
+def test_patch_normalizes_partial_context() -> None:
+    _use(ADMIN, rows=[_ctx_row({})])
+    with TestClient(app) as c:
+        r = c.patch("/v1/templates/tpl_1", json={"context": {"text": "Be terse."}})
+    assert r.status_code == 200
+    assert r.json()["context"] == {"variables": {}, "text": "Be terse.", "files": []}
+
+
+def test_patch_with_malformed_context_is_400() -> None:
+    _use(ADMIN, rows=[_ctx_row({})])
+    with TestClient(app) as c:
+        r = c.patch("/v1/templates/tpl_1", json={"context": {"files": "not-a-list"}})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "context"
+
+
+def test_clone_normalizes_sparse_source_context() -> None:
+    # Cloning a built-in (context {}) must produce a full-shape clone, leniently
+    # (legacy junk in the source degrades to defaults rather than failing).
+    _use(ADMIN, rows=[_ctx_row({})])
+    with TestClient(app) as c:
+        r = c.post("/v1/templates/tpl_1/clone", json={"name": "T-clone"})
+    assert r.status_code == 200
+    assert r.json()["context"] == _FULL_CTX

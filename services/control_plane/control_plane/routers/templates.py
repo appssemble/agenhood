@@ -4,13 +4,14 @@ from dataclasses import asdict
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import or_, select
 
 # Trigger driver + tool registration
 import agentcore.drivers.vanilla  # noqa: F401
 import agentcore.tools  # noqa: F401
 from agentcore.drivers.base import DRIVERS
+from agentcore.models import ContextSpec
 from agentcore.tools.base import TOOLS
 from control_plane.auth.principal import Principal, require_admin, resolve_principal
 from control_plane.errors import APIError, api_error, not_found, validation_error
@@ -40,6 +41,39 @@ class TemplateListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def normalize_context(raw: Any) -> dict[str, Any]:
+    """Parse a submitted context into the full ContextSpec shape.
+
+    Raises pydantic ValidationError on malformed input (e.g. non-string
+    variable values) — the write paths map that to a 400 so unusable data is
+    rejected at the door instead of failing later at container creation."""
+    return ContextSpec.model_validate(raw if raw is not None else {}).model_dump()
+
+
+def context_view(raw: Any) -> dict[str, Any]:
+    """Lenient read-side context normalization.
+
+    Rows written before normalization (built-ins seeded with {}, old clones,
+    raw API creates) hold a sparse dict; return the full shape the console
+    expects. A malformed legacy row degrades to defaults rather than failing
+    the whole request."""
+    try:
+        return normalize_context(raw)
+    except ValidationError:
+        return ContextSpec().model_dump()
+
+
+def context_from_body(raw: Any) -> dict[str, Any]:
+    """Normalize a client-submitted context, mapping bad input to a 400."""
+    try:
+        return normalize_context(raw)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        raise validation_error(
+            f"invalid context: {first['msg']}", field="context"
+        ) from exc
+
+
 def template_public_view(row: dict[str, Any]) -> dict[str, Any]:
     """Enrich a raw DB row with driver metadata for the frontend editor."""
     driver_name = row["driver"]
@@ -60,6 +94,7 @@ def template_public_view(row: dict[str, Any]) -> dict[str, Any]:
 
     return {
         **row,
+        "context": context_view(row.get("context")),
         "capabilities": capabilities,
         "driver_template": driver_template,
         "available_tool_specs": available_tool_specs,
@@ -184,7 +219,7 @@ async def create_template(
         "system_prompt": body.get("system_prompt", ""),
         "system_prompt_mode": body.get("system_prompt_mode", "augment"),
         "tools": body.get("tools", []),
-        "context": body.get("context", {}),
+        "context": context_from_body(body.get("context")),
         "skills": body.get("skills", []),
         "mcp_servers": body.get("mcp_servers", []),
         "limits": body.get("limits", {}),
@@ -244,6 +279,8 @@ async def patch_template(
             "system_prompt_mode", "tools", "context", "skills", "mcp_servers", "limits",
         }
         updates = {k: v for k, v in body.items() if k in allowed_fields}
+        if "context" in updates:
+            updates["context"] = context_from_body(updates["context"])
         if updates:
             await session.execute(
                 templates.update()
@@ -314,7 +351,9 @@ async def clone_template(
             "system_prompt": source["system_prompt"],
             "system_prompt_mode": source["system_prompt_mode"],
             "tools": source["tools"],
-            "context": source["context"],
+            # Lenient: cloning a legacy sparse/malformed source still succeeds,
+            # and the clone is stored full-shape.
+            "context": context_view(source["context"]),
             "skills": source.get("skills", []),
             "mcp_servers": source.get("mcp_servers", []),
             "limits": source["limits"],
