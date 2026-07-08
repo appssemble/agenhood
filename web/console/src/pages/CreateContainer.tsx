@@ -10,8 +10,6 @@ import { MEM_OPTIONS, CPU_OPTIONS } from "../lib/resourceOptions";
 import type { Template } from "../api/types";
 
 const DEFAULT_OPTION = { value: "", label: "Default (by image variant)" };
-const MEM_OPTIONS_WITH_DEFAULT = [DEFAULT_OPTION, ...MEM_OPTIONS];
-const CPU_OPTIONS_WITH_DEFAULT = [DEFAULT_OPTION, ...CPU_OPTIONS];
 
 function templateTags(t: Template): string[] {
   const tags: string[] = [];
@@ -93,11 +91,30 @@ export default function CreateContainer() {
   const chosen = templates.find((t) => t.id === templateId) ?? templates[0];
   const effectiveTemplateId = templateId ?? chosen?.id ?? "";
 
-  // Default model when the chosen template changes
+  // Defaults that follow the chosen template: model, image variant, and a
+  // clean slate for memory/CPU (the backend layers the template's values;
+  // the form only sends explicit picks).
   useEffect(() => {
-    if (chosen?.model) setModel(chosen.model);
-    else setModel("");
+    setModel(chosen?.model ?? "");
+    setVariant((chosen?.image_variant as "full" | "slim") ?? "full");
+    setMemLimit("");
+    setCpus("");
   }, [chosen?.id]);
+
+  const tplCpuLabel =
+    chosen?.cpus != null
+      ? CPU_OPTIONS.find((o) => Number(o.value) === chosen.cpus)?.label ?? `${chosen.cpus} CPU`
+      : null;
+  const memOptions = [
+    chosen?.mem_limit
+      ? { value: "", label: `Template default (${chosen.mem_limit})` }
+      : DEFAULT_OPTION,
+    ...MEM_OPTIONS,
+  ];
+  const cpuOptions = [
+    tplCpuLabel ? { value: "", label: `Template default (${tplCpuLabel})` } : DEFAULT_OPTION,
+    ...CPU_OPTIONS,
+  ];
 
   const missing: string[] = [];
   if (!chosen) missing.push("Select a template");
@@ -229,7 +246,7 @@ export default function CreateContainer() {
                       id="mem-limit"
                       value={memLimit}
                       onChange={setMemLimit}
-                      options={MEM_OPTIONS_WITH_DEFAULT}
+                      options={memOptions}
                     />
                   </Field>
                 </div>
@@ -239,7 +256,7 @@ export default function CreateContainer() {
                       id="cpus"
                       value={cpus}
                       onChange={setCpus}
-                      options={CPU_OPTIONS_WITH_DEFAULT}
+                      options={cpuOptions}
                     />
                   </Field>
                 </div>
@@ -266,9 +283,15 @@ export default function CreateContainer() {
               <ReviewRow label="Name" value={name.trim() || null} mono />
               <ReviewRow label="Model" value={model || null} mono />
               <ReviewRow label="Driver" value={chosen?.driver ?? null} mono />
-              <ReviewRow label="Image" value={variant === "full" ? "Full" : "Slim"} />
-              <ReviewRow label="Memory" value={MEM_OPTIONS.find((o) => o.value === memLimit)?.label ?? null} />
-              <ReviewRow label="CPUs" value={CPU_OPTIONS.find((o) => o.value === cpus)?.label ?? null} />
+              <ReviewRow label="Image" value={`${variant === "full" ? "Full" : "Slim"}${chosen?.image_variant === variant ? " (template)" : ""}`} />
+              <ReviewRow label="Memory" value={
+                MEM_OPTIONS.find((o) => o.value === memLimit)?.label
+                  ?? (chosen?.mem_limit ? `${chosen.mem_limit} (template)` : null)
+              } />
+              <ReviewRow label="CPUs" value={
+                CPU_OPTIONS.find((o) => o.value === cpus)?.label
+                  ?? (tplCpuLabel ? `${tplCpuLabel} (template)` : null)
+              } />
             </div>
             <div className="nc-rev-foot">
               <Button

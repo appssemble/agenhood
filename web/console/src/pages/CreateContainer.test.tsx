@@ -92,4 +92,50 @@ describe("CreateContainer", () => {
     await waitFor(() => expect(posted).not.toBeNull());
     expect(posted).not.toHaveProperty("resource_limits");
   });
+
+  it("prefills the variant from the template and leaves memory/cpu to the backend", async () => {
+    const user = userEvent.setup();
+    setupAuth();
+    server.use(http.get("/v1/templates", () => HttpResponse.json({
+      templates: [tpl({ image_variant: "slim", mem_limit: "512m", cpus: 1 })],
+    })));
+    let posted: any = null;
+    server.use(http.post("/v1/containers", async ({ request }) => {
+      posted = await request.json();
+      return HttpResponse.json({ id: "con_new", name: "x", status: "provisioning" });
+    }));
+    renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+    expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+    // Memory/CPU default options relabel from the template's values
+    expect(screen.getByText(/Template default \(512m\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Template default \(1 CPU\)/i)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/name/i), "research-prod");
+    await user.click(screen.getByRole("button", { name: /Create container/i }));
+    await waitFor(() => expect(posted).toMatchObject({ image_variant: "slim" }));
+    expect(posted.resource_limits).toBeUndefined();   // backend layers the template values
+  });
+
+  it("explicit picks still override the template defaults", async () => {
+    const user = userEvent.setup();
+    setupAuth();
+    server.use(http.get("/v1/templates", () => HttpResponse.json({
+      templates: [tpl({ image_variant: "slim", mem_limit: "512m", cpus: 1 })],
+    })));
+    let posted: any = null;
+    server.use(http.post("/v1/containers", async ({ request }) => {
+      posted = await request.json();
+      return HttpResponse.json({ id: "con_new", name: "x", status: "provisioning" });
+    }));
+    renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+    expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/name/i), "research-prod");
+    await user.click(screen.getByRole("button", { name: /full/i }));    // override variant
+    await user.click(screen.getByLabelText(/^memory/i));                 // open memory dropdown
+    await user.click(screen.getByRole("option", { name: /^2 GB$/i }));
+    await user.click(screen.getByRole("button", { name: /Create container/i }));
+    await waitFor(() => expect(posted).toMatchObject({
+      image_variant: "full",
+      resource_limits: { mem_limit: "2g" },
+    }));
+  });
 });
