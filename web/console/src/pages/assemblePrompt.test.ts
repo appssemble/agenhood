@@ -37,4 +37,17 @@ describe("assemblePrompt", () => {
     expect(out).toContain("read_file");
     expect(out).not.toContain("web_fetch");
   });
+
+  it("tolerates a sparse context from the templates API", () => {
+    // Built-in and duplicated templates store context as {} (no variables/
+    // text/files keys) — the edit page must render, not crash.
+    const out = assemblePrompt(cfg({ context: {} as AgentConfig["context"] }), toolSpecs);
+    expect(out).toContain("## STANDING CONTEXT");
+    expect(out).toContain("(none)");
+  });
+
+  it("tolerates a missing context entirely", () => {
+    const out = assemblePrompt(cfg({ context: undefined as unknown as AgentConfig["context"] }), toolSpecs);
+    expect(out).toContain("(none)");
+  });
 });

@@ -20,7 +20,14 @@ function fromTemplate(t: Template): TemplateDraft {
   return {
     name: t.name, driver: t.driver, model: t.model ?? "", system_prompt: t.system_prompt,
     system_prompt_mode: t.system_prompt_mode, tools: t.tools,
-    context: t.context, skills: t.skills ?? [], mcp_servers: t.mcp_servers ?? [], limits: t.limits ?? {},
+    // Built-in and duplicated templates store a sparse context ({}) — fill the
+    // shape the form and assemblePrompt expect.
+    context: {
+      variables: t.context?.variables ?? {},
+      text: t.context?.text ?? null,
+      files: t.context?.files ?? [],
+    },
+    skills: t.skills ?? [], mcp_servers: t.mcp_servers ?? [], limits: t.limits ?? {},
   };
 }
 

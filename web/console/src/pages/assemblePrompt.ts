@@ -1,4 +1,4 @@
-import type { AgentConfig, ToolSpec } from "../api/types";
+import type { AgentConfig, ContextSpec, ToolSpec } from "../api/types";
 
 // Mirrors spec §3.7 prompt assembly. augment = scaffolding + user prompt;
 // replace = exactly config.system_prompt (verbatim, nothing injected).
@@ -13,9 +13,11 @@ export function assemblePrompt(config: AgentConfig, toolSpecs: ToolSpec[]): stri
     .map((t) => `  • ${t.name}${t.requires_image_feature ? ` (requires \`full\` image variant)` : ""}`)
     .join("\n");
 
-  const ctx = config.context;
-  const vars = Object.entries(ctx.variables).map(([k, v]) => `  $${k} = ${v}`).join("\n");
-  const files = ctx.files.length ? `  attached: ${ctx.files.join(", ")}` : "";
+  // Templates from the API can carry a sparse context ({} for built-ins and
+  // duplicates) — only container configs are pydantic-normalized upstream.
+  const ctx: Partial<ContextSpec> = config.context ?? {};
+  const vars = Object.entries(ctx.variables ?? {}).map(([k, v]) => `  $${k} = ${v}`).join("\n");
+  const files = ctx.files?.length ? `  attached: ${ctx.files.join(", ")}` : "";
   const text = ctx.text ? `  ${ctx.text}` : "";
   const contextBlock = [vars, text, files].filter(Boolean).join("\n");
 
