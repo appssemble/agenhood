@@ -440,3 +440,32 @@ def test_discover_pins_by_sha_and_rejects_bad_scheme(tmp_path) -> None:
     assert out.pinned_sha == sha
     with pytest.raises(ValueError):
         discover_git_skills(url="git@github.com:x/y.git", ref="main")
+
+
+@pytest.mark.unit
+def test_discover_non_utf8_skill_md_is_invalid_but_scan_continues(tmp_path) -> None:
+    url, _ = _make_multi_skill_repo(tmp_path, [("good", _md("good"))])
+    repo = tmp_path / "multi"
+    bad_dir = repo / "bad"
+    bad_dir.mkdir()
+    (bad_dir / "SKILL.md").write_bytes(b"\xff\xfe invalid")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "add bad skill"], repo)
+    out = discover_git_skills(url=url, ref="main")
+    bad = next(s for s in out.skills if s.subpath == "bad")
+    good = next(s for s in out.skills if s.subpath == "good")
+    assert bad.valid is False and bad.error
+    assert good.valid is True and good.error is None
+
+
+@pytest.mark.unit
+def test_discover_directory_named_skill_md_is_skipped(tmp_path) -> None:
+    url, _ = _make_multi_skill_repo(tmp_path, [("good", _md("good"))])
+    repo = tmp_path / "multi"
+    weird_dir = repo / "weird" / "SKILL.md"
+    weird_dir.mkdir(parents=True)
+    (weird_dir / "not-a-skill.txt").write_text("just a file inside a dir named SKILL.md\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "add weird dir"], repo)
+    out = discover_git_skills(url=url, ref="main")
+    assert [s.subpath for s in out.skills] == ["good"]

@@ -322,17 +322,17 @@ def discover_git_skills(
         candidates = sorted(
             p.parent.relative_to(root).as_posix()
             for p in root.glob("**/SKILL.md")
-            if ".git" not in p.parts
+            if p.is_file() and ".git" not in p.parts
         )
         truncated = len(candidates) > _MAX_DISCOVERED
         seen_names: set[str] = set()
         found: list[DiscoveredSkill] = []
         for candidate in candidates[:_MAX_DISCOVERED]:
             sub = "" if candidate == "." else candidate
-            md = (root / candidate / "SKILL.md").read_text()
             name = description = ""
             valid, error = True, None
             try:
+                md = (root / candidate / "SKILL.md").read_text()
                 name, description, _body = parse_skill_frontmatter(md)
                 if not valid_skill_name(name):
                     raise ValueError(
@@ -343,7 +343,7 @@ def discover_git_skills(
                     raise ValueError(
                         f"description exceeds {MAX_DESCRIPTION} chars"
                     )
-            except ValueError as exc:
+            except (ValueError, OSError) as exc:
                 valid, error = False, str(exc)
             if valid and name in seen_names:
                 valid, error = False, "duplicate name in repo"
