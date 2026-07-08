@@ -112,11 +112,17 @@ export default function SkillEditor() {
   // component's early returns, and a hook must run unconditionally before
   // them. gitDiscover is intentionally not a dependency (mutation identity
   // churns); loadDiscovery is an `async function` declaration, so it hoists.
+  // While the free-text ref editor is showing (customRef, or refs not listed
+  // yet/failed) every keystroke updates source_ref and each scan is a
+  // server-side clone — skip here and let the field's onBlur run the scan
+  // once (same idiom as the URL field's onBlur -> loadBranches). Refs loading
+  // ("ok") or switching back to the dropdown re-fires the scan.
   useEffect(() => {
     if (!draft || draft.id || draft.source_type !== "git" || manualSubpath) return;
+    if (customRef || refsState !== "ok") return; // free-text ref editor active: scan on its blur
     void loadDiscovery();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.source_url, draft?.source_ref, draft?.deploy_key_id, draft?.source_type, manualSubpath]);
+  }, [draft?.source_url, draft?.source_ref, draft?.deploy_key_id, draft?.source_type, manualSubpath, customRef, refsState]);
 
   // Repository access: the deploy-key picker only appears for private repos
   // (progressive disclosure — most installs are public).
@@ -756,6 +762,7 @@ export default function SkillEditor() {
                   <>
                     <Input id="git-ref" className="fluid-w" aria-label="Ref" value={draft.source_ref}
                       onChange={(e) => setDraft({ ...draft, source_ref: e.target.value })}
+                      onBlur={() => { if (!manualSubpath) void loadDiscovery(); }}
                       placeholder={refsState === "loading" ? "Loading branches…" : "main"} />
                     {refsState === "ok" && customRef && (
                       <button
