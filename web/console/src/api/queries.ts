@@ -517,6 +517,26 @@ export function useSkillGitRefs() {
   });
 }
 
+// Scan a git repo at a ref for every skill it contains (read-only) — feeds the
+// create form's multi-skill picker. `installed` flags names already in the
+// tenant's library so the picker can disable them.
+export type DiscoveredSkill = {
+  subpath: string; name: string; description: string;
+  valid: boolean; error: string | null; installed: boolean;
+};
+export type SkillGitDiscoverResponse = {
+  ok: boolean; pinned_sha: string; truncated: boolean; skills: DiscoveredSkill[];
+};
+
+export function useSkillGitDiscover() {
+  return useMutation({
+    mutationFn: ({ source_url, source_ref, deploy_key_id }:
+      { source_url: string; source_ref: string; deploy_key_id?: string }) =>
+      api.post<SkillGitDiscoverResponse>(
+        "/v1/skills/git-discover", { source_url, source_ref, deploy_key_id }),
+  });
+}
+
 export function useRefreshSkill() {
   const qc = useQueryClient();
   return useMutation({
