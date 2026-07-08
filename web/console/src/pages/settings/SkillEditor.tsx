@@ -209,7 +209,7 @@ export default function SkillEditor() {
     : isGit
       ? !!draft.source_url && !invalidUrl && !!draft.source_ref
         && (isEdit || accessMode === "public" || !!draft.deploy_key_id)
-        && (isEdit || manualSubpath || pickedSubpaths.length > 0)
+        && (isEdit || manualSubpath || (discoverState === "ok" && pickedSubpaths.length > 0))
       : !!draft.name && !!draft.description && !invalidName;
 
   // Load the repo's branches when the URL field blurs (after normalizing the
@@ -264,12 +264,14 @@ export default function SkillEditor() {
     if (!draft || draft.id) return;
     const url = normalizeSourceUrl(draft.source_url, !!draft.deploy_key_id);
     if (!url || sourceUrlError(url, !!draft.deploy_key_id) || !draft.source_ref) {
-      setDiscoverState("idle"); setDiscovered(null); setPickedSubpaths([]);
+      resetDiscovery();
       return;
     }
     const seq = ++discoverSeq.current;
     setDiscoverState("loading");
     setDiscoverError(null);
+    setDiscovered(null);
+    setPickedSubpaths([]);
     try {
       const res = await gitDiscover.mutateAsync({
         source_url: url, source_ref: draft.source_ref,
@@ -313,6 +315,7 @@ export default function SkillEditor() {
       setRefsState("idle");
       setBranches([]);
       setRefsError(null);
+      resetDiscovery();
       // Probe right away: until the public key is installed on the repo this
       // surfaces the "not installed yet" hint with the key and a Retry.
       void loadBranches(key.id);
