@@ -5,15 +5,18 @@ import { useAuth } from "../../auth/useAuth";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../api/client";
 import { Field, Button, Note } from "../../ui";
+import { Dropdown } from "../../ui/Dropdown";
 import { ConfigFields } from "../../components/ConfigFields";
 import { DriverPicker } from "../../components/DriverPicker";
 import { assemblePrompt } from "../assemblePrompt";
 import { driverLabel } from "../../lib/drivers";
+import { MEM_OPTIONS, CPU_OPTIONS } from "../../lib/resourceOptions";
 import type { TemplateDraft, TemplateSavePayload, Template, AgentConfig, ToolSpec } from "../../api/types";
 
 const EMPTY: TemplateDraft = {
   name: "", driver: "vanilla", model: "", system_prompt: "", system_prompt_mode: "augment",
   tools: [], context: { variables: {}, text: null, files: [] }, skills: [], mcp_servers: [], limits: {},
+  image_variant: "", mem_limit: "", cpus: "",
 };
 
 function fromTemplate(t: Template): TemplateDraft {
@@ -28,6 +31,9 @@ function fromTemplate(t: Template): TemplateDraft {
       files: t.context?.files ?? [],
     },
     skills: t.skills ?? [], mcp_servers: t.mcp_servers ?? [], limits: t.limits ?? {},
+    image_variant: (t.image_variant ?? "") as TemplateDraft["image_variant"],
+    mem_limit: t.mem_limit ?? "",
+    cpus: t.cpus != null ? String(t.cpus) : "",
   };
 }
 
@@ -85,7 +91,13 @@ export default function TemplateForm() {
   async function onSave() {
     if (!draft) return;
     if (!draft.name.trim()) { toast.error("Name is required"); return; }
-    const body: TemplateSavePayload = { ...draft, model: draft.model || null };
+    const body: TemplateSavePayload = {
+      ...draft,
+      model: draft.model || null,
+      image_variant: draft.image_variant || null,
+      mem_limit: draft.mem_limit || null,
+      cpus: draft.cpus ? Number(draft.cpus) : null,
+    };
     try {
       await save.mutateAsync(id ? { id, body } : { body });
       toast.success(id ? "Template updated" : "Template created");
@@ -136,6 +148,46 @@ export default function TemplateForm() {
 
         {/* Shared driver-conditional fields */}
         <ConfigFields value={draft} driverMeta={driverMeta} enabledSkills={enabledSkills} enabledMcpServers={enabledMcpServers} onPatch={patch} />
+
+        {/* Runtime — image + resources for containers created from this template */}
+        <Field
+          label="Runtime"
+          hint="Image and resources for containers created from this template. Leave unset to use the platform defaults."
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ flex: "1 1 160px", maxWidth: 220 }}>
+              <Dropdown
+                id="tpl-variant"
+                aria-label="Image variant"
+                value={draft.image_variant}
+                onChange={(v) => patch({ image_variant: v as TemplateDraft["image_variant"] })}
+                options={[
+                  { value: "", label: "Default image" },
+                  { value: "full", label: "Full" },
+                  { value: "slim", label: "Slim" },
+                ]}
+              />
+            </div>
+            <div style={{ flex: "1 1 160px", maxWidth: 220 }}>
+              <Dropdown
+                id="tpl-mem"
+                aria-label="Memory"
+                value={draft.mem_limit}
+                onChange={(v) => patch({ mem_limit: v })}
+                options={[{ value: "", label: "Default memory" }, ...MEM_OPTIONS]}
+              />
+            </div>
+            <div style={{ flex: "1 1 160px", maxWidth: 220 }}>
+              <Dropdown
+                id="tpl-cpus"
+                aria-label="CPUs"
+                value={draft.cpus}
+                onChange={(v) => patch({ cpus: v })}
+                options={[{ value: "", label: "Default CPUs" }, ...CPU_OPTIONS]}
+              />
+            </div>
+          </div>
+        </Field>
       </div>
 
       {/* RIGHT — live preview + summary + actions */}
@@ -150,6 +202,9 @@ export default function TemplateForm() {
           <dl className="kv" style={{ margin: 0 }}>
             <dt>Driver</dt><dd className="mono">{driverLabel(draft.driver)}</dd>
             <dt>Model</dt><dd className="mono">{draft.model || "tenant default"}</dd>
+            {draft.image_variant && (<><dt>Image</dt><dd>{draft.image_variant === "full" ? "Full" : "Slim"}</dd></>)}
+            {draft.mem_limit && (<><dt>Memory</dt><dd className="mono">{MEM_OPTIONS.find((o) => o.value === draft.mem_limit)?.label ?? draft.mem_limit}</dd></>)}
+            {draft.cpus && (<><dt>CPUs</dt><dd className="mono">{CPU_OPTIONS.find((o) => o.value === draft.cpus)?.label ?? draft.cpus}</dd></>)}
             {editableTools && (<><dt>Tools</dt><dd>{draft.tools.length} enabled</dd></>)}
             {isSkillDriver && (<><dt>Skills</dt><dd>{(draft.skills ?? []).length} attached</dd></>)}
             {isSkillDriver && (<><dt>MCP servers</dt><dd>{(draft.mcp_servers ?? []).length} attached</dd></>)}

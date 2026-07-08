@@ -58,6 +58,7 @@ export interface Template {
   id: string; tenant_id: string | null; name: string; driver: string; model: string | null;
   system_prompt: string; system_prompt_mode: SystemPromptMode; tools: string[];
   context: ContextSpec; skills: string[]; mcp_servers: string[]; limits: TaskLimits; is_builtin: boolean;
+  image_variant?: "full" | "slim" | null; mem_limit?: string | null; cpus?: number | null;
   capabilities: DriverCapabilities; driver_template: DriverTemplate; available_tool_specs: ToolSpec[];
 }
 
@@ -67,10 +68,14 @@ export interface TemplateDraft {
   name: string; driver: string; model: string;
   system_prompt: string; system_prompt_mode: SystemPromptMode;
   tools: string[]; context: ContextSpec; skills: string[]; mcp_servers: string[]; limits: TaskLimits;
+  image_variant: "" | "full" | "slim"; mem_limit: string; cpus: string;
 }
 
 // Wire payload for saving a template: like the draft, but `model` is null when unset.
-export type TemplateSavePayload = Omit<TemplateDraft, "model"> & { model: string | null };
+export type TemplateSavePayload = Omit<TemplateDraft, "model" | "image_variant" | "mem_limit" | "cpus"> & {
+  model: string | null;
+  image_variant: "full" | "slim" | null; mem_limit: string | null; cpus: number | null;
+};
 
 export type Role = "owner" | "admin" | "member";
 export interface TenantLimits {
