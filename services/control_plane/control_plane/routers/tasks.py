@@ -30,9 +30,10 @@ from control_plane.auth import Principal
 from control_plane.auth.crypto import decrypt_secret, load_key_from_env
 from control_plane.config import Settings
 from control_plane.credentials_service import (
+    credential_provider_for,
     decrypt_row,
+    model_is_keyless,
     provider_for_model,
-    provider_is_keyless,
 )
 from control_plane.errors import (
     APIError,
@@ -433,6 +434,92 @@ async def _session_precheck(
     return True
 
 
+async def resolve_task_credential(
+    session: AsyncSession,
+    *,
+    settings: Settings,
+    tenant_id: str,
+    config: AgentConfig,
+    timeout_seconds: float,
+) -> tuple[str, str, dict[str, Any], str]:
+    """Resolve the LLM credential for a task (spec §4.5). Never persisted.
+
+    Per-model keyless rule: only free Zen models (``opencode/*-free``) may run
+    without a credential — and even then a stored opencode key is injected when
+    present (lifts free-tier rate limits). opencode-go models resolve to the
+    ``opencode`` credential row (one key for Zen + Go). Returns
+    ``(credential, credential_kind, credential_meta, credential_used)``.
+    """
+    provider = provider_for_model(config.model)
+    lookup_provider = credential_provider_for(provider)
+    keyless_ok = model_is_keyless(config.model)
+    credential = ""
+    credential_kind = "api_key"
+    credential_meta: dict[str, Any] = {}
+    credential_used = "keyless"
+
+    now = datetime.now(UTC)
+    cred_rows = [
+        dict(r)
+        for r in (
+            await session.execute(
+                sa.select(t.credentials).where(
+                    t.credentials.c.tenant_id == tenant_id,
+                    t.credentials.c.provider == lookup_provider,
+                )
+            )
+        ).mappings().all()
+    ]
+    chosen = pick_provider_credential(
+        cred_rows,
+        kill_switch=settings.oauth_subscription_kill_switch,
+        subscription_usable=driver_can_use_subscription(config.driver, lookup_provider),
+    )
+    if chosen == "oauth_subscription":
+        from control_plane.oauth_service import OAuthReauthRequired, ensure_fresh_oauth
+
+        master = load_key_from_env()
+        oauth_row = next(
+            r for r in cred_rows if r["auth_method"] == "oauth_subscription"
+        )
+        has_api_key = any(r["auth_method"] == "api_key" for r in cred_rows)
+        try:
+            fresh = await ensure_fresh_oauth(
+                session, oauth_row, settings=settings, master_key=master, now=now
+            )
+            await session.commit()
+        except OAuthReauthRequired:
+            await session.commit()
+            chosen = "api_key" if has_api_key else None
+        else:
+            # Long-task rule (spec §6.5): enforce on the FRESH token — it must
+            # outlast the task timeout, else fall back rather than risk it
+            # expiring mid-task.
+            if (fresh["expires_at"] - now).total_seconds() < timeout_seconds:
+                chosen = "api_key" if has_api_key else None
+            else:
+                credential = fresh["access_token"]
+                credential_kind = "oauth_subscription"
+                credential_meta = {
+                    "account_id": fresh["account_id"],
+                    "expires_ms": int(fresh["expires_at"].timestamp() * 1000),
+                    "refresh_token": fresh["refresh_token"],
+                    "id_token": fresh.get("id_token"),
+                }
+                credential_used = "oauth_subscription"
+    if chosen == "api_key":
+        api_row = next(r for r in cred_rows if r["auth_method"] == "api_key")
+        credential = decrypt_row(api_row, load_key_from_env())
+        credential_kind = "api_key"
+        credential_used = "api_key"
+    elif chosen is None and not keyless_ok:
+        raise api_error(
+            400, "no_credential",
+            f"No usable {lookup_provider} credential for this tenant",
+        )
+    return credential, credential_kind, credential_meta, credential_used
+
+
 async def submit_task_core(
     session: AsyncSession,
     *,
@@ -493,71 +580,12 @@ async def submit_task_core(
         raise too_many_tasks()
 
     # Credential lookup + decrypt (spec §4.5). Never persisted.
-    provider = provider_for_model(config.model)
-    credential = ""
-    credential_kind = "api_key"
-    credential_meta: dict[str, Any] = {}
-    credential_used = "keyless"
-    if not provider_is_keyless(provider):
-        master = load_key_from_env()
-        now = datetime.now(UTC)
-        cred_rows = [
-            dict(r)
-            for r in (
-                await session.execute(
-                    sa.select(t.credentials).where(
-                        t.credentials.c.tenant_id == tenant_id,
-                        t.credentials.c.provider == provider,
-                    )
-                )
-            ).mappings().all()
-        ]
-        chosen = pick_provider_credential(
-            cred_rows,
-            kill_switch=settings.oauth_subscription_kill_switch,
-            subscription_usable=driver_can_use_subscription(config.driver, provider),
+    credential, credential_kind, credential_meta, credential_used = (
+        await resolve_task_credential(
+            session, settings=settings, tenant_id=tenant_id, config=config,
+            timeout_seconds=resolved.timeout_seconds,
         )
-        if chosen == "oauth_subscription":
-            from control_plane.oauth_service import OAuthReauthRequired, ensure_fresh_oauth
-
-            oauth_row = next(
-                r for r in cred_rows if r["auth_method"] == "oauth_subscription"
-            )
-            has_api_key = any(r["auth_method"] == "api_key" for r in cred_rows)
-            try:
-                fresh = await ensure_fresh_oauth(
-                    session, oauth_row, settings=settings, master_key=master, now=now
-                )
-                await session.commit()
-            except OAuthReauthRequired:
-                await session.commit()
-                chosen = "api_key" if has_api_key else None
-            else:
-                # Long-task rule (spec §6.5): enforce on the FRESH token — it must
-                # outlast the task timeout, else fall back rather than risk it
-                # expiring mid-task.
-                if (fresh["expires_at"] - now).total_seconds() < resolved.timeout_seconds:
-                    chosen = "api_key" if has_api_key else None
-                else:
-                    credential = fresh["access_token"]
-                    credential_kind = "oauth_subscription"
-                    credential_meta = {
-                        "account_id": fresh["account_id"],
-                        "expires_ms": int(fresh["expires_at"].timestamp() * 1000),
-                        "refresh_token": fresh["refresh_token"],
-                        "id_token": fresh.get("id_token"),
-                    }
-                    credential_used = "oauth_subscription"
-        if chosen == "api_key":
-            api_row = next(r for r in cred_rows if r["auth_method"] == "api_key")
-            credential = decrypt_row(api_row, master)
-            credential_kind = "api_key"
-            credential_used = "api_key"
-        elif chosen is None:
-            raise api_error(
-                400, "no_credential",
-                f"No usable {provider} credential for this tenant",
-            )
+    )
 
     task_id = new_task_id()
     task_row = build_task_row(

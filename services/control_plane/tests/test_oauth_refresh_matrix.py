@@ -34,9 +34,9 @@ from control_plane.credentials_service import (
     build_oauth_credential_row,
     decrypt_oauth_row,
     decrypt_row,
+    model_is_keyless,
     oauth_metadata_blob,
     provider_for_model,
-    provider_is_keyless,
 )
 from control_plane.openai_oauth import DeviceFlowError
 from tests.api_contract.contracts import P_ADMIN, make_app
@@ -222,10 +222,14 @@ def test_provider_for_model_unknown_raises():
         provider_for_model("mystery-model-9000")
 
 
-def test_provider_is_keyless_true_and_false():
-    assert provider_is_keyless("opencode") is True
-    assert provider_is_keyless("anthropic") is False
-    assert provider_is_keyless("openai") is False
+def test_model_is_keyless_true_and_false():
+    # Per-model rule (submit path Task 4): only free Zen models are keyless —
+    # opencode-go and paid Zen models require the tenant's opencode key.
+    assert model_is_keyless("opencode/deepseek-v4-flash-free") is True
+    assert model_is_keyless("opencode/kimi-k2") is False
+    assert model_is_keyless("opencode-go/glm-5.2") is False
+    assert model_is_keyless("claude-opus-4-7") is False
+    assert model_is_keyless("openai/gpt-4o") is False
 
 
 def test_build_and_decrypt_api_key_row():
@@ -451,20 +455,24 @@ async def test_ensure_fresh_oauth_early_exit_skips_refresh(monkeypatch: pytest.M
 
 # ── 8. Per-provider meta-gate ────────────────────────────────────────────────
 #
-# A new provider MUST appear in either _MODEL_PREFIX_PROVIDER (keyed) or
-# _KEYLESS_PROVIDERS (keyless). Adding a provider without classification
-# will cause routing/credential-selection bugs; this gate catches it.
+# A new prefix-mapped provider MUST appear in _MODEL_PREFIX_PROVIDER (keyed).
+# Adding a provider without classification will cause routing/credential-
+# selection bugs; this gate catches it. Keyless-ness is no longer a per-
+# provider property (Task 4): it is decided per-model by model_is_keyless
+# (only opencode's free Zen models, ``opencode/*-free``, run without a
+# credential) — a single provider like "opencode" can be both keyed (paid Zen,
+# opencode-go) and keyless (free Zen) depending on the model.
 
-def test_every_known_provider_has_a_keyless_or_keyed_classification():
+def test_every_known_provider_has_a_keyed_classification():
     """Meta-gate: the real provider registry must classify anthropic and openai."""
-    # Keyed providers (need a stored API key or OAuth credential)
     keyed = {p for _, p in credentials_service._MODEL_PREFIX_PROVIDER}
-    # Keyless providers (container runs without a stored credential)
-    keyless = set(credentials_service._KEYLESS_PROVIDERS)
-    known = keyed | keyless
-    assert {"anthropic", "openai"} <= known, (
-        f"Provider registry is missing a classification. known={known!r}"
+    assert {"anthropic", "openai"} <= keyed, (
+        f"Provider registry is missing a classification. known={keyed!r}"
     )
-    # Invariant: no provider can be both keyed and keyless simultaneously.
-    overlap = keyed & keyless
-    assert not overlap, f"Provider classified as both keyed and keyless: {overlap!r}"
+
+
+def test_opencode_keyless_classification_is_per_model_not_per_provider():
+    """opencode is keyed for paid Zen/Go models, keyless only for free Zen."""
+    assert credentials_service.model_is_keyless("opencode/deepseek-v4-flash-free") is True
+    assert credentials_service.model_is_keyless("opencode/kimi-k2") is False
+    assert credentials_service.model_is_keyless("opencode-go/glm-5.2") is False

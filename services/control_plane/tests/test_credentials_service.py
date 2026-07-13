@@ -11,7 +11,6 @@ from control_plane.credentials_service import (
     last4,
     model_is_keyless,
     provider_for_model,
-    provider_is_keyless,
 )
 
 
@@ -50,12 +49,6 @@ def test_provider_for_model_qualified_id_uses_prefix() -> None:
     assert provider_for_model("opencode/deepseek-v4-flash-free") == "opencode"
     assert provider_for_model("anthropic/claude-sonnet-4-6") == "anthropic"
     assert provider_for_model("openai/gpt-4o") == "openai"
-
-
-def test_provider_is_keyless() -> None:
-    assert provider_is_keyless("opencode") is True
-    assert provider_is_keyless("anthropic") is False
-    assert provider_is_keyless("openai") is False
 
 
 def test_last4() -> None:

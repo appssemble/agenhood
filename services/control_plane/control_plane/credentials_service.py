@@ -17,11 +17,6 @@ _MODEL_PREFIX_PROVIDER = (
     ("o4", "openai"),
 )
 
-# Providers whose models need NO stored credential. opencode's built-in "Zen"
-# models (ids like ``opencode/deepseek-v4-flash-free``) run keyless, which lets
-# an opencode container run a real task without any LLM credential configured.
-_KEYLESS_PROVIDERS = frozenset({"opencode"})
-
 # Model-catalog providers whose credential is stored under a different provider
 # id. The single "opencode" API key (from the Zen console) unlocks both paid
 # opencode Zen models and the opencode-go plan's models.
@@ -68,11 +63,6 @@ def provider_for_model(model: str) -> str:
         if m.startswith(prefix):
             return provider
     raise ValueError(f"No known provider for model {model!r}")
-
-
-def provider_is_keyless(provider: str) -> bool:
-    """True if tasks for this provider may be submitted without a stored key."""
-    return provider in _KEYLESS_PROVIDERS
 
 
 def last4(api_key: str) -> str:
