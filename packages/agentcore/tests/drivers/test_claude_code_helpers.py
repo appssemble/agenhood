@@ -156,3 +156,18 @@ def test_event_session_id_missing_returns_none():
     assert event_session_id({"type": "assistant"}) is None
     assert event_session_id({"session_id": ""}) is None
     assert event_session_id({"session_id": 123}) is None
+
+
+def test_build_command_appends_effort_flag():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(workspace="/ws", model="opus", effort="low")
+    i = cmd.index("--effort")
+    assert cmd[i + 1] == "low"
+
+
+def test_build_command_no_effort_flag_when_unset():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(workspace="/ws", model="opus")
+    assert "--effort" not in cmd

@@ -71,6 +71,7 @@ def build_command(
     model: str,
     mcp_config: str | None = None,
     resume_session_id: str | None = None,
+    effort: str | None = None,
 ) -> list[str]:
     """Build the ``claude -p`` invocation (prompt is fed on stdin)."""
     cmd = [
@@ -83,6 +84,8 @@ def build_command(
         model,
         "--dangerously-skip-permissions",
     ]
+    if effort:
+        cmd += ["--effort", effort]
     if resume_session_id:
         cmd += ["-r", resume_session_id]
     if mcp_config:
@@ -306,7 +309,7 @@ class ClaudeCodeDriver:
 
         cmd = build_command(
             workspace=workspace, model=model_arg(config.model), mcp_config=mcp_path,
-            resume_session_id=resume_session_id,
+            resume_session_id=resume_session_id, effort=config.effort,
         )
         env = build_env(
             sandbox.build_child_env(),
