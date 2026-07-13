@@ -23,6 +23,10 @@ def _catalog() -> list:  # type: ignore[type-arg]
 
 _LEGAL_PROMPT_MODES = {"augment", "replace"}
 
+# Drivers whose CLI accepts the unified reasoning-effort parameter
+# (AgentConfig.effort). vanilla calls the raw API and has no effort flag.
+EFFORT_DRIVERS = {"opencode", "claude-code", "codex"}
+
 
 # ---------------------------------------------------------------------------
 # Unit 3: tenant-scoped exception + gating function
@@ -60,6 +64,13 @@ def validate_config(config: AgentConfig, tenant_limits: dict[str, Any]) -> None:
         raise validation_error(
             f"model '{config.model}' is not available for driver '{config.driver}'",
             field="model",
+        )
+
+    # 3b. Effort only for CLI drivers that support it (value legality is
+    # enforced by the AgentConfig Literal).
+    if config.effort is not None and config.driver not in EFFORT_DRIVERS:
+        raise validation_error(
+            f"driver '{config.driver}' does not support effort", field="effort"
         )
 
     # 4. Prompt mode legal.
