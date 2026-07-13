@@ -236,7 +236,7 @@ async def create_template(
     """Create a tenant-scoped template (spec §4.9, §7).
 
     Admin-only. Body requires ``name`` and ``driver``; optional ``model``,
-    ``system_prompt``, ``system_prompt_mode`` (default ``augment``), ``tools``,
+    ``effort``, ``system_prompt``, ``system_prompt_mode`` (default ``augment``), ``tools``,
     ``context``, ``skills``, ``mcp_servers``, ``limits``, ``image_variant``,
     ``mem_limit``, and ``cpus`` (the latter three are nullable). The new template
     is always non-built-in and owned by the caller's tenant. Errors: ``403
@@ -262,6 +262,7 @@ async def create_template(
         "name": body["name"],
         "driver": body["driver"],
         "model": body.get("model"),
+        "effort": body.get("effort"),
         "system_prompt": body.get("system_prompt", ""),
         "system_prompt_mode": body.get("system_prompt_mode", "augment"),
         "tools": body.get("tools", []),
@@ -304,7 +305,7 @@ async def patch_template(
     """Update a tenant-owned template (partial patch).
 
     Admin-only. Only these fields are honoured; any others in the body are
-    ignored: ``name``, ``driver``, ``model``, ``system_prompt``,
+    ignored: ``name``, ``driver``, ``model``, ``effort``, ``system_prompt``,
     ``system_prompt_mode``, ``tools``, ``context``, ``skills``, ``mcp_servers``,
     ``limits``, ``image_variant``, ``mem_limit``, ``cpus`` (the latter three are
     nullable). Errors: ``404 not_found`` if the template is not visible to the
@@ -333,7 +334,7 @@ async def patch_template(
         ensure_mutable_template(row_dict)
 
         allowed_fields = {
-            "name", "driver", "model", "system_prompt",
+            "name", "driver", "model", "effort", "system_prompt",
             "system_prompt_mode", "tools", "context", "skills", "mcp_servers", "limits",
             "image_variant", "mem_limit", "cpus",
         }
@@ -422,6 +423,7 @@ async def clone_template(
             "name": clone_name,
             "driver": source["driver"],
             "model": source.get("model"),
+            "effort": source.get("effort"),
             "system_prompt": source["system_prompt"],
             "system_prompt_mode": source["system_prompt_mode"],
             "tools": source["tools"],

@@ -252,6 +252,7 @@ async def _resolve_create_config(
         base = {
             "driver": trow.driver,
             "model": trow.model,
+            "effort": trow.effort,
             "system_prompt": trow.system_prompt,
             "system_prompt_mode": trow.system_prompt_mode,
             "tools": trow.tools,

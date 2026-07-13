@@ -36,7 +36,7 @@ class _Session:
 
 def test_template_skills_flow_into_config() -> None:
     row = _Row(
-        id="tpl_1", driver="opencode", model="claude-sonnet-4-6",
+        id="tpl_1", driver="opencode", model="claude-sonnet-4-6", effort=None,
         system_prompt="", system_prompt_mode="augment",
         tools=[], context={}, skills=["skl_1", "skl_2"], mcp_servers=[],
         image_variant=None, mem_limit=None, cpus=None,
@@ -50,7 +50,7 @@ def test_template_skills_flow_into_config() -> None:
 def test_template_mcp_servers_flow_into_config() -> None:
     """Template mcp_servers propagate into the resolved AgentConfig (Fix A4)."""
     row = _Row(
-        id="tpl_1", driver="opencode", model="claude-sonnet-4-6",
+        id="tpl_1", driver="opencode", model="claude-sonnet-4-6", effort=None,
         system_prompt="", system_prompt_mode="augment",
         tools=[], context={}, skills=[], mcp_servers=["mcp_1"],
         image_variant=None, mem_limit=None, cpus=None,
@@ -59,3 +59,27 @@ def test_template_mcp_servers_flow_into_config() -> None:
     cfg, tid, _tpl_runtime = asyncio.run(_resolve_create_config(_Session(row), req))
     assert tid == "tpl_1"
     assert cfg.mcp_servers == ["mcp_1"]
+
+
+def test_template_effort_flows_into_config() -> None:
+    row = _Row(
+        id="tpl_1", driver="codex", model="gpt-5.4", effort="high",
+        system_prompt="", system_prompt_mode="augment",
+        tools=[], context={}, skills=[], mcp_servers=[],
+        image_variant=None, mem_limit=None, cpus=None,
+    )
+    req = CreateContainerRequest(name="c", template_id="tpl_1")
+    cfg, _tid, _tpl_runtime = asyncio.run(_resolve_create_config(_Session(row), req))
+    assert cfg.effort == "high"
+
+
+def test_template_without_effort_is_valid() -> None:
+    row = _Row(
+        id="tpl_1", driver="codex", model="gpt-5.4", effort=None,
+        system_prompt="", system_prompt_mode="augment",
+        tools=[], context={}, skills=[], mcp_servers=[],
+        image_variant=None, mem_limit=None, cpus=None,
+    )
+    req = CreateContainerRequest(name="c", template_id="tpl_1")
+    cfg, _tid, _tpl_runtime = asyncio.run(_resolve_create_config(_Session(row), req))
+    assert cfg.effort is None

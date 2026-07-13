@@ -38,6 +38,7 @@ templates = Table(
     Column("name", Text, nullable=False),
     Column("driver", Text, nullable=False),
     Column("model", Text, nullable=True),
+    Column("effort", Text, nullable=True),
     Column("system_prompt", Text, nullable=False, server_default=text("''")),
     Column("system_prompt_mode", Text, nullable=False, server_default=text("'augment'")),
     Column("tools", JSONB, nullable=False, server_default=text("'[]'::jsonb")),

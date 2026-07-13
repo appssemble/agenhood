@@ -246,6 +246,26 @@ def test_admin_create_defaults_mcp_servers_to_empty() -> None:
     assert r.json()["mcp_servers"] == []
 
 
+# --- effort round-trip ---------------------------------------------------------
+
+def test_admin_create_includes_effort() -> None:
+    # effort persists and round-trips in the create response.
+    _use(ADMIN)
+    body = {"name": "T", "driver": "codex", "effort": "high"}
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json=body)
+    assert r.status_code == 200
+    assert r.json()["effort"] == "high"
+
+
+def test_admin_create_defaults_effort_to_null() -> None:
+    _use(ADMIN)
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json={"name": "T", "driver": "vanilla"})
+    assert r.status_code == 200
+    assert r.json()["effort"] is None
+
+
 def test_admin_patch_updates_mcp_servers() -> None:
     # PATCH with mcp_servers updates the template and returns the new value.
     class _R:

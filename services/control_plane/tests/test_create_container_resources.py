@@ -168,6 +168,7 @@ class _FakeTplRow:
         self.id = "tpl_1"
         self.driver = "vanilla"
         self.model = "claude-opus-4-7"
+        self.effort = None
         self.system_prompt = ""
         self.system_prompt_mode = "augment"
         self.tools: list[str] = []
