@@ -11,6 +11,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from control_plane.credentials_service import model_is_keyless
+
 log = logging.getLogger("model_catalog")
 
 # Non-conversational model classes that opencode lists but the platform can't run
@@ -27,14 +29,19 @@ def _is_chat_model(model_id: str) -> bool:
 
 
 # Providers the platform supports, mapped to the api-key credential method.
-_API_KEY_METHOD = {"anthropic": "anthropic_api_key", "openai": "openai_api_key"}
+_API_KEY_METHOD = {
+    "anthropic": "anthropic_api_key",
+    "openai": "openai_api_key",
+    "opencode": "opencode_api_key",
+}
 # Drivers that can run a given provider's models. claude-code is intentionally
 # absent here: the bundled `claude` CLI only honors family aliases (it silently
 # falls back to its default model for any full/dated id it doesn't serve), so we
 # offer claude-code exclusively through the alias entries below, never the
 # full-name anthropic models.
 _PROVIDER_DRIVERS = {
-    "opencode": ["opencode"],          # Zen keyless
+    "opencode": ["opencode"],          # Zen: free (-free suffix) or keyed
+    "opencode-go": ["opencode"],       # Go plan: keyed (same key as Zen)
     "anthropic": ["opencode", "vanilla"],
     "openai": ["opencode", "codex"],
 }
@@ -103,6 +110,7 @@ def build_catalog_entries(
     base_ids: list[str],
     sub_ids: list[str],
     codex_ids: list[str] | None = None,
+    go_ids: list[str] | None = None,
 ) -> list[dict]:  # type: ignore[type-arg]
     """Classify `opencode models` ids into catalog entries (pure).
 
@@ -111,13 +119,15 @@ def build_catalog_entries(
     codex_ids: authoritative Codex-runnable model slugs from ``codex debug models``
                (visibility == "list"). When ``None``, codex-driver membership falls
                back to the ``*codex*`` substring heuristic.
+    go_ids:    from a query with an opencode (Zen/Go) key configured — adds the
+               opencode-go/* plan models. Duplicates of base ids are deduped.
     """
     sub_set = {m for m in sub_ids if m.startswith("openai/")}
     codex_set = None if codex_ids is None else set(codex_ids)
     out: list[dict] = []  # type: ignore[type-arg]
     seen: set[str] = set()
 
-    for model_id in [*base_ids, *sub_ids]:
+    for model_id in [*base_ids, *sub_ids, *(go_ids or [])]:
         if "/" not in model_id:
             continue
         if not _is_chat_model(model_id):
@@ -127,13 +137,22 @@ def build_catalog_entries(
         if drivers is None:
             continue  # unsupported provider
 
-        entry_id = model_id if provider == "opencode" else model_id.split("/", 1)[1]
+        entry_id = (
+            model_id
+            if provider in ("opencode", "opencode-go")
+            else model_id.split("/", 1)[1]
+        )
         if entry_id in seen:
             continue
         seen.add(entry_id)
 
-        if provider == "opencode":
-            category, creds = "free", ["keyless"]
+        if provider in ("opencode", "opencode-go"):
+            # Free Zen models (-free suffix) run keyless; paid Zen and all Go
+            # models need the tenant's opencode API key (one key for both).
+            if model_is_keyless(model_id):
+                category, creds = "free", ["keyless"]
+            else:
+                category, creds = "api_key", ["opencode_api_key"]
         elif provider == "anthropic":
             category, creds = "api_key", ["anthropic_api_key", "anthropic_subscription"]
         else:  # openai

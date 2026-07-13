@@ -89,3 +89,15 @@ def test_anthropic_api_key_still_usable_on_opencode() -> None:
     out = {m["id"]: m for m in annotate(_cat_anthropic_dual(), "opencode",
                                         {"keyless", "anthropic_api_key"})}
     assert out["claude-opus-4-8"]["available"] is True
+
+
+def test_go_model_available_only_with_opencode_key() -> None:
+    entry = ModelEntry(
+        id="opencode-go/glm-5.2", provider="opencode-go", label="glm-5.2",
+        category="api_key", credentials=("opencode_api_key",), drivers=("opencode",),
+    )
+    without = annotate([entry], "opencode", {"keyless"})
+    assert without[0]["available"] is False
+    assert without[0]["requires"] == ["opencode_api_key"]
+    with_key = annotate([entry], "opencode", {"keyless", "opencode_api_key"})
+    assert with_key[0]["available"] is True

@@ -4,7 +4,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from control_plane.model_catalog import build_catalog_entries
+from control_plane.model_catalog import build_catalog_entries, methods_from_credential_rows
 
 
 def test_classifies_free_anthropic_openai_subscription() -> None:
@@ -99,3 +99,46 @@ def test_methods_excludes_inactive_anthropic_subscription():
     from control_plane.model_catalog import methods_from_credential_rows
     rows = [{"provider": "anthropic", "auth_method": "oauth_subscription", "status": "inactive"}]
     assert "anthropic_subscription" not in methods_from_credential_rows(rows)
+
+
+def test_go_ids_classified_as_opencode_api_key() -> None:
+    entries = build_catalog_entries(
+        [], [], go_ids=["opencode-go/glm-5.2", "opencode-go/kimi-k2.7-code"]
+    )
+    go = [e for e in entries if e["provider"] == "opencode-go"]
+    assert {e["id"] for e in go} == {"opencode-go/glm-5.2", "opencode-go/kimi-k2.7-code"}
+    for e in go:
+        assert e["category"] == "api_key"
+        assert e["credentials"] == ["opencode_api_key"]
+        assert e["drivers"] == ["opencode"]
+
+
+def test_paid_zen_requires_opencode_key_free_zen_stays_keyless() -> None:
+    entries = build_catalog_entries(
+        ["opencode/deepseek-v4-flash-free", "opencode/kimi-k2"], []
+    )
+    by_id = {e["id"]: e for e in entries}
+    free = by_id["opencode/deepseek-v4-flash-free"]
+    assert free["category"] == "free"
+    assert free["credentials"] == ["keyless"]
+    paid = by_id["opencode/kimi-k2"]
+    assert paid["category"] == "api_key"
+    assert paid["credentials"] == ["opencode_api_key"]
+    assert paid["drivers"] == ["opencode"]
+
+
+def test_go_ids_duplicated_in_base_are_not_double_counted() -> None:
+    # The go run re-lists everything the base run lists; dedupe by entry id.
+    entries = build_catalog_entries(
+        ["opencode/deepseek-v4-flash-free"],
+        [],
+        go_ids=["opencode/deepseek-v4-flash-free", "opencode-go/glm-5.2"],
+    )
+    ids = [e["id"] for e in entries if e["provider"] in ("opencode", "opencode-go")]
+    assert ids.count("opencode/deepseek-v4-flash-free") == 1
+    assert "opencode-go/glm-5.2" in ids
+
+
+def test_methods_includes_opencode_api_key() -> None:
+    rows = [{"provider": "opencode", "auth_method": "api_key"}]
+    assert "opencode_api_key" in methods_from_credential_rows(rows)
