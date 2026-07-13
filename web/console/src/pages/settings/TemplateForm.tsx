@@ -16,7 +16,7 @@ import type { TemplateDraft, TemplateSavePayload, Template, AgentConfig, ToolSpe
 const EMPTY: TemplateDraft = {
   name: "", driver: "vanilla", model: "", system_prompt: "", system_prompt_mode: "augment",
   tools: [], context: { variables: {}, text: null, files: [] }, skills: [], mcp_servers: [], limits: {},
-  image_variant: "", mem_limit: "", cpus: "",
+  image_variant: "", mem_limit: "", cpus: "", effort: null,
 };
 
 function fromTemplate(t: Template): TemplateDraft {
@@ -34,6 +34,7 @@ function fromTemplate(t: Template): TemplateDraft {
     image_variant: (t.image_variant ?? "") as TemplateDraft["image_variant"],
     mem_limit: t.mem_limit ?? "",
     cpus: t.cpus != null ? String(t.cpus) : "",
+    effort: t.effort ?? null,
   };
 }
 
@@ -202,6 +203,7 @@ export default function TemplateForm() {
           <dl className="kv" style={{ margin: 0 }}>
             <dt>Driver</dt><dd className="mono">{driverLabel(draft.driver)}</dd>
             <dt>Model</dt><dd className="mono">{draft.model || "tenant default"}</dd>
+            {draft.effort && (<><dt>Effort</dt><dd className="mono">{draft.effort}</dd></>)}
             {draft.image_variant && (<><dt>Image</dt><dd>{draft.image_variant === "full" ? "Full" : "Slim"}</dd></>)}
             {draft.mem_limit && (<><dt>Memory</dt><dd className="mono">{MEM_OPTIONS.find((o) => o.value === draft.mem_limit)?.label ?? draft.mem_limit}</dd></>)}
             {draft.cpus && (<><dt>CPUs</dt><dd className="mono">{CPU_OPTIONS.find((o) => o.value === draft.cpus)?.label ?? draft.cpus}</dd></>)}

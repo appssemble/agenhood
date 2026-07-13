@@ -1,12 +1,21 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Button, Tag, Textarea } from "../ui";
+import { Button, Tag, Textarea, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
 import { PromptPicker } from "../ui/PromptPicker";
 import { appendPrompt } from "../lib/prompt";
-import type { AgentConfig, OutputType, TaskSummary, TenantLimits } from "../api/types";
+import { EFFORT_DRIVERS } from "../api/types";
+import type { AgentConfig, Effort, OutputType, TaskSummary, TenantLimits } from "../api/types";
+
+const EFFORT_OPTIONS = [
+  { value: "", label: "container default" },
+  { value: "low", label: "low" },
+  { value: "medium", label: "medium" },
+  { value: "high", label: "high" },
+  { value: "max", label: "max" },
+];
 
 // Classic form layout for submitting a task. Extracted unchanged from the
 // original SubmitTask screen; the parent owns all state and submission.
@@ -28,6 +37,8 @@ export function SubmitTaskForm({
   schemaBlocksSubmit,
   onSubmit,
   submitting,
+  effort,
+  onEffortChange,
   supportsMaxIterations,
   iterDefault,
   tokensDefault,
@@ -57,6 +68,8 @@ export function SubmitTaskForm({
   schemaBlocksSubmit: boolean;
   onSubmit: () => void;
   submitting: boolean;
+  effort: Effort | null;
+  onEffortChange: (v: Effort | null) => void;
   supportsMaxIterations: boolean;
   iterDefault?: number | null;
   tokensDefault?: number | null;
@@ -158,6 +171,20 @@ export function SubmitTaskForm({
             <dd className="mono">{config.driver}</dd>
             <dt>Model</dt>
             <dd className="mono">{config.model}</dd>
+            {EFFORT_DRIVERS.includes(config.driver) && (
+              <>
+                <dt>Effort</dt>
+                <dd>
+                  <Dropdown
+                    aria-label="Effort override"
+                    value={effort ?? ""}
+                    onChange={(v) => onEffortChange((v || null) as Effort | null)}
+                    options={EFFORT_OPTIONS}
+                    width={160}
+                  />
+                </dd>
+              </>
+            )}
             <dt>Tools</dt>
             <dd style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {config.tools.slice(0, 6).map((t) => (

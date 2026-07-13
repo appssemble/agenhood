@@ -132,6 +132,7 @@ export default function CreateContainer() {
             system_prompt_mode: chosen.system_prompt_mode,
             tools: chosen.tools,
             context: chosen.context,
+            effort: chosen.effort ?? null,
           }
         : undefined;
       // Both dropdowns default to "" (use the image-variant default) — only

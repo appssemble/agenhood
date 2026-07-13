@@ -204,6 +204,7 @@ export default function TaskHistory() {
                 {sel.config_snapshot && (
                   <span className="chip">
                     {sel.config_snapshot.driver} · {sel.config_snapshot.model}
+                    {sel.config_snapshot.effort ? ` · ${sel.config_snapshot.effort}` : ""}
                   </span>
                 )}
               </div>

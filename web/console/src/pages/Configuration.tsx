@@ -62,6 +62,7 @@ export default function Configuration() {
     let n = 0;
     if (orig.driver !== draft.driver) n++;
     if (orig.model !== draft.model) n++;
+    if ((orig.effort ?? null) !== (draft.effort ?? null)) n++;
     if (orig.system_prompt !== draft.system_prompt) n++;
     if (orig.system_prompt_mode !== draft.system_prompt_mode) n++;
     if (JSON.stringify(orig.tools) !== JSON.stringify(draft.tools)) n++;

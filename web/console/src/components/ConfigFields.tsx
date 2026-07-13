@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { Field, Textarea, Checkbox, Tag, Note, SegControl } from "../ui";
 import { Icons } from "../ui/Icon";
 import { ModelPicker } from "./ModelPicker";
-import type { ContextSpec, SystemPromptMode, Template, ToolSpec, Skill, McpServer } from "../api/types";
+import { EFFORT_DRIVERS } from "../api/types";
+import type { ContextSpec, SystemPromptMode, Template, ToolSpec, Skill, McpServer, Effort } from "../api/types";
 
 export interface ConfigFieldsValue {
   driver: string;
@@ -13,6 +14,7 @@ export interface ConfigFieldsValue {
   context: ContextSpec;
   skills?: string[];
   mcp_servers?: string[];
+  effort?: Effort | null;
 }
 
 // A bordered area with an icon + title header and a padded body. Used for every
@@ -76,6 +78,21 @@ export function ConfigFields({
       {/* Model */}
       <SectionCard icon={Icons.Cpu} title="Model">
         <ModelPicker driver={value.driver} value={value.model} onChange={(m) => onPatch({ model: m })} />
+        {EFFORT_DRIVERS.includes(value.driver) && (
+          <Field label="Effort" hint="Reasoning effort passed to the CLI. Default keeps the model's own.">
+            <SegControl<"default" | Effort>
+              value={value.effort ?? "default"}
+              onChange={(v) => onPatch({ effort: v === "default" ? null : v })}
+              options={[
+                { value: "default", label: "Default" },
+                { value: "low", label: "Low" },
+                { value: "medium", label: "Medium" },
+                { value: "high", label: "High" },
+                { value: "max", label: "Max" },
+              ]}
+            />
+          </Field>
+        )}
       </SectionCard>
 
       {/* System prompt — prompt-mode control lives in the header */}

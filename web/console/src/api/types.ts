@@ -7,11 +7,18 @@ export interface TaskLimits { max_iterations?: number | null; max_tokens?: numbe
 
 export type SystemPromptMode = "augment" | "replace";
 export interface ContextSpec { variables: Record<string, string>; text: string | null; files: string[]; }
+
+export type Effort = "low" | "medium" | "high" | "max";
+// Drivers whose CLI accepts the unified effort param (mirror of the backend gate).
+export const EFFORT_DRIVERS: string[] = ["opencode", "claude-code", "codex"];
+
 export interface AgentConfig {
   driver: string; model: string; system_prompt: string;
   system_prompt_mode: SystemPromptMode; tools: string[]; context: ContextSpec;
   skills?: string[];
   mcp_servers?: string[];
+  // Reasoning effort passed to the CLI, for drivers in EFFORT_DRIVERS. null/undefined ⇒ the model's own default.
+  effort?: Effort | null;
   // Per-container task-limit overrides (null/undefined ⇒ use the tenant default).
   max_iterations?: number | null;
   max_tokens?: number | null;
@@ -59,16 +66,21 @@ export interface Template {
   system_prompt: string; system_prompt_mode: SystemPromptMode; tools: string[];
   context: ContextSpec; skills: string[]; mcp_servers: string[]; limits: TaskLimits; is_builtin: boolean;
   image_variant?: "full" | "slim" | null; mem_limit?: string | null; cpus?: number | null;
+  effort?: Effort | null;
   capabilities: DriverCapabilities; driver_template: DriverTemplate; available_tool_specs: ToolSpec[];
 }
 
 // Form-state shape for creating/editing a template. `model` is a string in the
-// form ("" = none) and is serialized to null on save.
+// form ("" = none) and is serialized to null on save. `effort` mirrors
+// AgentConfig's own null-is-unset convention (unlike model/image_variant/etc,
+// which use "" for the form binding) so the draft can be handed straight to
+// ConfigFields, which is shared with AgentConfig-backed callers.
 export interface TemplateDraft {
   name: string; driver: string; model: string;
   system_prompt: string; system_prompt_mode: SystemPromptMode;
   tools: string[]; context: ContextSpec; skills: string[]; mcp_servers: string[]; limits: TaskLimits;
   image_variant: "" | "full" | "slim"; mem_limit: string; cpus: string;
+  effort: Effort | null;
 }
 
 // Wire payload for saving a template: like the draft, but `model` is null when unset.

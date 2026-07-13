@@ -1,14 +1,23 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Button, Textarea } from "../ui";
+import { Button, Textarea, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { PromptPicker } from "../ui/PromptPicker";
 import { appendPrompt } from "../lib/prompt";
 import { ChatTurn } from "../components/ChatTurn";
 import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
-import type { AgentConfig, OutputType, TaskStatus, TaskSummary, TenantLimits } from "../api/types";
+import { EFFORT_DRIVERS } from "../api/types";
+import type { AgentConfig, Effort, OutputType, TaskStatus, TaskSummary, TenantLimits } from "../api/types";
 
 type Turn = { taskId: string; prompt: string; status: TaskStatus; sessionId: string | null };
+
+const EFFORT_OPTIONS = [
+  { value: "", label: "container default" },
+  { value: "low", label: "low" },
+  { value: "medium", label: "medium" },
+  { value: "high", label: "high" },
+  { value: "max", label: "max" },
+];
 
 // Inline chat layout for submitting tasks: a scrolling thread of this session's
 // turns plus a sticky composer. Shares prompt/output/limit state with the form
@@ -29,6 +38,8 @@ export function SubmitTaskChat({
   structuredSupported,
   schemaBlocksSubmit,
   onError,
+  effort,
+  onEffortChange,
   // limits
   supportsMaxIterations,
   iterDefault,
@@ -60,6 +71,8 @@ export function SubmitTaskChat({
   structuredSupported: boolean;
   schemaBlocksSubmit: boolean;
   onError: (err: unknown) => void;
+  effort: Effort | null;
+  onEffortChange: (v: Effort | null) => void;
   supportsMaxIterations: boolean;
   iterDefault?: number | null;
   tokensDefault?: number | null;
@@ -220,6 +233,15 @@ export function SubmitTaskChat({
           <span className="chat-hint">
             <Icons.Cube w={12} /> inherits {config.driver} · {config.model}
           </span>
+          {EFFORT_DRIVERS.includes(config.driver) && (
+            <Dropdown
+              aria-label="Effort override"
+              value={effort ?? ""}
+              onChange={(v) => onEffortChange((v || null) as Effort | null)}
+              options={EFFORT_OPTIONS}
+              width={150}
+            />
+          )}
         </div>
       </div>
 

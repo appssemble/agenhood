@@ -4,7 +4,7 @@ import { useContainer, useTemplates, useSubmitTask, useTasks } from "../api/quer
 import { useAuth } from "../auth/useAuth";
 import { useToast } from "../components/Toast";
 import { ApiError } from "../api/client";
-import type { OutputType } from "../api/types";
+import type { Effort, OutputType } from "../api/types";
 import { Icons } from "../ui/Icon";
 import { parseSchema } from "../components/OutputContractField";
 import { SubmitTaskForm } from "./SubmitTaskForm";
@@ -41,6 +41,8 @@ export default function SubmitTask() {
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
   const [timeoutS, setTimeoutS] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Per-task effort override. null ⇒ inherit the container's configured effort (or the model's own default).
+  const [effort, setEffort] = useState<Effort | null>(null);
 
   const tasksQ = useTasks(cid!, sessionId ?? undefined);
   const recentTask = tasksQ.data?.tasks?.[0] ?? null;
@@ -83,6 +85,7 @@ export default function SubmitTask() {
       output,
       limits: { max_iterations: maxIter, max_tokens: maxTokens, timeout_seconds: timeoutS },
       metadata: {},
+      ...(effort ? { effort } : {}),
       ...(sessionId ? { session_id: sessionId } : {}),
     };
   }
@@ -168,6 +171,8 @@ export default function SubmitTask() {
               schemaBlocksSubmit={schemaBlocksSubmit}
               onSubmit={onSubmitForm}
               submitting={submit.isPending}
+              effort={effort}
+              onEffortChange={setEffort}
               {...limitProps}
             />
           </div>
@@ -189,6 +194,8 @@ export default function SubmitTask() {
           structuredSupported={structuredSupported}
           schemaBlocksSubmit={schemaBlocksSubmit}
           onError={onSubmitError}
+          effort={effort}
+          onEffortChange={setEffort}
           {...limitProps}
         />
       )}
