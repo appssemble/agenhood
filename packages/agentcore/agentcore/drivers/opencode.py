@@ -271,6 +271,49 @@ def workspace_xdg(workspace: str) -> dict[str, str]:
     }
 
 
+def opencode_log_path(workspace: str) -> str:
+    """Path to opencode's own structured log under the driver's XDG layout.
+
+    opencode writes ``$XDG_DATA_HOME/opencode/log/opencode.log``. This is the
+    ONLY place opencode reports a model-stream failure (e.g. a free-plan rate
+    limit): in ``run --format json`` mode such a failure is written here but NOT
+    emitted on stdout, and the ``opencode run`` process neither exits nor closes
+    stdout — it hangs. The driver tails this file to detect that and fail fast
+    instead of waiting out the whole wall-clock timeout.
+    """
+    data_home = workspace_xdg(workspace)["XDG_DATA_HOME"]
+    return str(Path(data_home) / "opencode" / "log" / "opencode.log")
+
+
+def scan_opencode_log_for_fatal(text: str) -> str | None:
+    """Return a terminal-failure reason if ``text`` (freshly-appended opencode
+    log lines) shows an unrecoverable model-stream failure, else None.
+
+    Detects the free-plan / provider rate-limit hang: opencode logs a
+    ``level=ERROR message="stream error" ... error.error="...Rate limit
+    exceeded..."`` line and then stalls without exiting or emitting stdout.
+    Matching only freshly-appended text (the caller tracks a byte offset) keeps
+    a stale error from a previous task in the same container from mis-firing.
+    """
+    for line in text.splitlines():
+        if 'message="stream error"' in line and "Rate limit exceeded" in line:
+            return "rate_limited"
+    return None
+
+
+def _read_appended_log(path: str, offset: int) -> tuple[str, int]:
+    """Read the bytes appended to ``path`` since ``offset``; return (text, new
+    offset). Missing/unreadable file → ("", offset). Byte offsets keep this
+    correct even when the log holds partial multi-byte writes."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            data = f.read()
+        return data.decode("utf-8", "replace"), offset + len(data)
+    except OSError:
+        return "", offset
+
+
 def skills_dir(workspace: str) -> str:
     """opencode's global skills discovery dir under the driver's XDG layout."""
     cfg = workspace_xdg(workspace)["XDG_CONFIG_HOME"]
@@ -519,6 +562,15 @@ class OpencodeDriver:
         error_msg: str | None = None  # last error event message (enriches failures)
         tokens_in = 0  # cumulative across step_finish events (parity w/ vanilla)
         tokens_out = 0
+        # opencode reports a fatal model-stream failure (e.g. a free-plan rate
+        # limit) ONLY in its log file, then hangs without exiting or emitting
+        # stdout. Tail the log from its current end so we can fail fast; scanning
+        # only newly-appended bytes ignores a stale error from a prior task.
+        log_path = opencode_log_path(workspace)
+        try:
+            log_offset = os.path.getsize(log_path)
+        except OSError:
+            log_offset = 0
         try:
             assert proc.stdout is not None
             while True:
@@ -560,6 +612,28 @@ class OpencodeDriver:
                 except TimeoutError:
                     if proc.returncode is not None:
                         break
+                    # stdout idle for 1s — the moment a rate-limit hang shows up.
+                    # Check opencode's log for a fatal stream error and bail fast.
+                    appended, log_offset = _read_appended_log(log_path, log_offset)
+                    fatal = scan_opencode_log_for_fatal(appended) if appended else None
+                    if fatal:
+                        sandbox.terminate(proc)
+                        await emit(
+                            "status_change",
+                            {
+                                "from": "running",
+                                "to": "failed",
+                                "result": None,
+                                "error": {
+                                    "code": fatal,
+                                    "message": (
+                                        "opencode model stream failed: rate limit "
+                                        "exceeded (free-plan limit reached?)"
+                                    ),
+                                },
+                            },
+                        )
+                        return TaskResult(success=False, reason=fatal)
                     continue
 
                 if not raw:
