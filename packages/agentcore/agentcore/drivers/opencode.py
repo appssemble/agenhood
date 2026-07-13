@@ -180,7 +180,12 @@ def event_session_id(event: dict[str, object]) -> str | None:
 
 
 def build_command(
-    *, workspace: str, model_ref: str, prompt: str, resume_session_id: str | None = None
+    *,
+    workspace: str,
+    model_ref: str,
+    prompt: str,
+    resume_session_id: str | None = None,
+    effort: str | None = None,
 ) -> list[str]:
     """Build the opencode 1.x CLI invocation (verified against opencode-ai@1.15.13)."""
     cmd = [
@@ -194,6 +199,8 @@ def build_command(
         model_ref,
         "--dangerously-skip-permissions",
     ]
+    if effort:
+        cmd += ["--variant", effort]
     if resume_session_id:
         cmd += ["-s", resume_session_id]
     cmd += ["--", prompt]
@@ -458,7 +465,7 @@ class OpencodeDriver:
         provider = provider_for_model(config.model)
         cmd = build_command(
             workspace=workspace, model_ref=model_ref(config.model), prompt=task.prompt,
-            resume_session_id=resume_session_id,
+            resume_session_id=resume_session_id, effort=config.effort,
         )
         env = build_env(
             sandbox.build_child_env(),

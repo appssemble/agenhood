@@ -40,3 +40,20 @@ def test_event_session_id_missing_returns_none():
     assert event_session_id({"type": "text"}) is None
     assert event_session_id({"sessionID": ""}) is None
     assert event_session_id({"sessionID": 5}) is None
+
+
+def test_build_command_appends_variant_before_prompt_separator():
+    from agentcore.drivers.opencode import build_command
+
+    cmd = build_command(
+        workspace="/ws", model_ref="openai/gpt-5.6", prompt="hi", effort="medium"
+    )
+    assert cmd.index("--variant") < cmd.index("--")
+    assert cmd[cmd.index("--variant") + 1] == "medium"
+
+
+def test_build_command_no_variant_when_unset():
+    from agentcore.drivers.opencode import build_command
+
+    cmd = build_command(workspace="/ws", model_ref="openai/gpt-5.6", prompt="hi")
+    assert "--variant" not in cmd
