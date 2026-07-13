@@ -22,7 +22,7 @@ from control_plane.auth.principal import (
     require_session_admin,
 )
 from control_plane.config import Settings
-from control_plane.credentials_service import build_credential_row
+from control_plane.credentials_service import build_credential_row, credential_provider_for
 from control_plane.errors import api_error
 from control_plane.oauth_service import (
     _finish_connection,
@@ -35,7 +35,7 @@ from control_plane.sse import format_sse
 
 router = APIRouter(prefix="/v1/credentials", tags=["Credentials"])
 
-_KNOWN_PROVIDERS = {"anthropic", "openai"}
+_KNOWN_PROVIDERS = {"anthropic", "openai", "opencode"}
 
 
 async def _session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -47,7 +47,12 @@ async def _session(request: Request) -> AsyncIterator[AsyncSession]:
 class SetCredential(BaseModel):
     provider: Annotated[
         str,
-        Field(description="LLM provider id; must be a known provider (`anthropic` or `openai`)."),
+        Field(
+            description=(
+                "LLM provider id; must be a known provider "
+                "(`anthropic`, `openai`, or `opencode`)."
+            )
+        ),
     ]
     api_key: Annotated[
         str,
@@ -390,7 +395,11 @@ async def delete_credential(
     return {"id": cid, "deleted": True}
 
 
-_PROVIDER_LABELS = {"anthropic": "Anthropic", "openai": "OpenAI"}
+_PROVIDER_LABELS = {
+    "anthropic": "Anthropic",
+    "openai": "OpenAI",
+    "opencode": "OpenCode (Zen / Go)",
+}
 
 
 @router.get(
@@ -409,13 +418,17 @@ async def list_api_key_providers(
     Drives the Credentials UI's provider dropdown so it tracks the catalog
     automatically instead of a hardcoded list (an unknown provider falls back to
     a title-cased id). Providers offered only via subscription/OAuth are excluded
-    — there is no API key to paste for them.
+    — there is no API key to paste for them. Aliased catalog providers (e.g. ``opencode-go``) are folded into the provider id the key is stored under.
 
     Errors: 403 `forbidden` if the caller is not a tenant admin/owner or uses an
     API key instead of a session.
     """
     catalog = request.app.state.model_catalog
-    providers = sorted({e.provider for e in catalog if e.category == "api_key"})
+    # Fold aliased catalog providers (opencode-go) into the provider id the
+    # credential is actually stored under, so the dropdown offers it once.
+    providers = sorted({
+        credential_provider_for(e.provider) for e in catalog if e.category == "api_key"
+    })
     return {
         "providers": [
             {"id": pr, "label": _PROVIDER_LABELS.get(pr, pr.title())} for pr in providers
