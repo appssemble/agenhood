@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentcore.models import AgentConfig, ContextSpec, SystemPromptMode
+from agentcore.models import AgentConfig, ContextSpec, Effort, SystemPromptMode
 
 
 class ResourceLimitsIn(BaseModel):
@@ -134,6 +134,14 @@ class ConfigPatch(BaseModel):
         default_factory=list,
         description="MCP server ids to attach. Ids not owned by the tenant are silently dropped.",
     )
+    effort: Effort | None = Field(
+        None,
+        description=(
+            "Reasoning effort forwarded to the driver CLI (low/medium/high/max). "
+            "Null keeps the CLI/model default. Only valid for opencode, "
+            "claude-code and codex."
+        ),
+    )
     # Per-container task-limit overrides (None ⇒ use the tenant default).
     max_iterations: int | None = Field(
         None,
@@ -157,6 +165,7 @@ class ConfigPatch(BaseModel):
             context=self.context,
             skills=self.skills,
             mcp_servers=self.mcp_servers,
+            effort=self.effort,
             max_iterations=self.max_iterations,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,
