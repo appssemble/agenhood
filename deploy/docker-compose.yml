@@ -34,6 +34,12 @@ services:
     restart: unless-stopped
     environment:
       EGRESS_DENYLIST: ${EGRESS_DENYLIST}
+      # Chain agent egress through a rotating proxy (e.g. Webshare). Empty => direct.
+      EGRESS_UPSTREAM_PROXY: ${EGRESS_UPSTREAM_PROXY:-}
+      EGRESS_UPSTREAM_EXCLUDE: ${EGRESS_UPSTREAM_EXCLUDE:-}
+      EGRESS_UPSTREAM_INCLUDE: ${EGRESS_UPSTREAM_INCLUDE:-}
+      # If the upstream is down, fall back to a direct dial (leaks the VM IP). Off by default.
+      EGRESS_UPSTREAM_FALLBACK_DIRECT: ${EGRESS_UPSTREAM_FALLBACK_DIRECT:-}
     # On internal so agents can use it as HTTP(S)_PROXY (port 8888),
     # and on egress so it alone can reach the public internet (spec §8.1).
     networks: ["agent-runtime-internal", "agent-runtime-egress"]

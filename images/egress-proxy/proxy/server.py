@@ -5,9 +5,14 @@ Handles two request shapes:
   * HTTPS tunnel:      `CONNECT host:443 HTTP/1.1`       -> we splice raw bytes.
 
 Every destination host is classified by proxy.policy.classify before any
-upstream connection is made. Blocked hosts get a 403; allowed hosts are
+outbound connection is made. Blocked hosts get a 403; allowed hosts are
 relayed and logged. Threaded one-thread-per-connection; this proxy serves a
 single host's handful of agent containers, not internet-scale traffic.
+
+An allowed request is then *routed*: straight to the origin, or chained through
+a configured upstream proxy (a rotating service such as Webshare) per
+``UpstreamPolicy``. Routing never overrides the allow/block decision — a blocked
+host is blocked whether or not an upstream is configured.
 """
 from __future__ import annotations
 
@@ -20,7 +25,14 @@ import sys
 import urllib.parse
 
 from proxy.logfmt import log_line
-from proxy.policy import Decision, EgressPolicy, Resolver, _system_resolve, classify
+from proxy.policy import (
+    Decision,
+    EgressPolicy,
+    Resolver,
+    UpstreamPolicy,
+    _system_resolve,
+    classify,
+)
 
 _HEADER_LINE_LIMIT_BYTES = 64 * 1024
 _TUNNEL_BUFFER_BYTES = 64 * 1024
@@ -96,7 +108,8 @@ class _Handler(socketserver.StreamRequestHandler):
         decision = classify(host, self.server.policy, resolve=lambda _host: ips)
         return (decision, ips[0]) if decision.allowed else (decision, None)
 
-    def _emit(self, decision: Decision, method: str, host: str, port: int) -> None:
+    def _emit(self, decision: Decision, method: str, host: str, port: int,
+              route: str) -> None:
         sys.stdout.write(log_line(
             level="info" if decision.allowed else "warn",
             msg="egress",
@@ -105,23 +118,89 @@ class _Handler(socketserver.StreamRequestHandler):
             method=method,
             host=host,
             port=port,
+            route=route,
         ) + "\n")
         sys.stdout.flush()
+
+    def _route(self, host: str) -> str:
+        """"upstream" if this host chains through the configured proxy, else "direct"."""
+        up = self.server.upstream
+        return "upstream" if up is not None and up.route(host) else "direct"
+
+    def _emit_fallback(self, method: str, host: str, port: int) -> None:
+        # A security-relevant downgrade: the upstream failed and, because the
+        # operator opted in, this request is going direct — leaking the VM's IP.
+        # Always log it so the fallback is visible, not silent.
+        sys.stdout.write(log_line(
+            level="warn", msg="egress_upstream_fallback",
+            method=method, host=host, port=port, route="direct",
+        ) + "\n")
+        sys.stdout.flush()
+
+    def _connect_target(self, host: str, port: int, origin_ip: str, route: str) -> socket.socket:
+        """Open the outbound socket for a CONNECT tunnel: via the upstream when
+        routed there, else straight to the origin. If the upstream dial fails and
+        fallback-direct is enabled, dial the origin instead (and log the downgrade)."""
+        if route != "upstream":
+            return socket.create_connection((origin_ip, port), timeout=_CONNECT_TIMEOUT_SECONDS)
+        try:
+            return self._dial_upstream(host, port)
+        except OSError:
+            if not self.server.upstream.fallback_direct:
+                raise  # fail closed: 502, never a silent direct dial
+            self._emit_fallback("CONNECT", host, port)
+            return socket.create_connection((origin_ip, port), timeout=_CONNECT_TIMEOUT_SECONDS)
+
+    def _dial_upstream(self, host: str, port: int) -> socket.socket:
+        """Open a tunnel to host:port *through* the configured upstream proxy.
+
+        A fresh connection per request is what gives us IP rotation for free:
+        rotating services hand out a new exit IP per upstream connection.
+
+        Note: DNS for `host` is resolved by the upstream's exit node, so the local
+        classify() above is a best-effort pre-check rather than a guarantee that
+        the IP we classified is the IP that gets connected. That is acceptable —
+        the exit nodes are on the public internet and cannot reach this VM's
+        private ranges or metadata endpoint, which is what the IP checks defend.
+        Denylisted hostnames are still enforced locally, before we get here.
+        """
+        up: UpstreamPolicy = self.server.upstream
+        sock = socket.create_connection((up.host, up.port), timeout=_CONNECT_TIMEOUT_SECONDS)
+        try:
+            req = [f"CONNECT {host}:{port} HTTP/1.1", f"Host: {host}:{port}"]
+            auth = up.proxy_authorization()
+            if auth:
+                req.append(f"Proxy-Authorization: {auth}")
+            sock.sendall(("\r\n".join(req) + "\r\n\r\n").encode("latin-1"))
+
+            reader = sock.makefile("rb")
+            status_line = reader.readline(_HEADER_LINE_LIMIT_BYTES).decode("latin-1")
+            parts = status_line.split(" ", 2)
+            if len(parts) < 2 or parts[1] != "200":
+                raise OSError(f"upstream refused CONNECT: {status_line.strip()!r}")
+            # Drain the upstream's response headers so only tunnelled bytes remain.
+            while True:
+                line = reader.readline(_HEADER_LINE_LIMIT_BYTES).decode("latin-1")
+                if line in ("\r\n", "\n", ""):
+                    break
+            reader.close()  # detach the buffered wrapper; we splice the raw socket
+        except OSError:
+            sock.close()
+            raise
+        return sock
 
     # ---- HTTPS tunnelling -------------------------------------------------
     def _handle_connect(self, authority: str) -> None:
         host, _, port_s = authority.partition(":")
         port = int(port_s) if port_s else 443
-        decision, upstream_ip = self._resolve_upstream_ip(host)
-        self._emit(decision, "CONNECT", host, port)
-        if not decision.allowed or upstream_ip is None:
+        decision, origin_ip = self._resolve_upstream_ip(host)
+        route = self._route(host)
+        self._emit(decision, "CONNECT", host, port, route)
+        if not decision.allowed or origin_ip is None:
             self._respond(403, decision.reason.encode())
             return
         try:
-            upstream = socket.create_connection(
-                (upstream_ip, port),
-                timeout=_CONNECT_TIMEOUT_SECONDS,
-            )
+            upstream = self._connect_target(host, port, origin_ip, route)
         except OSError:
             self._respond(502, b"upstream connect failed")
             return
@@ -177,32 +256,68 @@ class _Handler(socketserver.StreamRequestHandler):
         parsed = urllib.parse.urlsplit(target)
         host = parsed.hostname or ""
         port = parsed.port or 80
-        decision, upstream_ip = self._resolve_upstream_ip(host)
-        self._emit(decision, method, host, port)
-        if not decision.allowed or upstream_ip is None:
+        decision, origin_ip = self._resolve_upstream_ip(host)
+        route = self._route(host)
+        self._emit(decision, method, host, port, route)
+        if not decision.allowed or origin_ip is None:
             self._respond(403, decision.reason.encode())
             return
-        # Re-issue a clean HTTP request to the resolved IP while preserving Host.
-        # We intentionally do not auto-follow redirects; if a client follows one,
-        # it comes back through this proxy and is classified again.
+        # Re-issue a clean HTTP request while preserving Host. We intentionally do
+        # not auto-follow redirects; if a client follows one, it comes back through
+        # this proxy and is classified again. Incoming header keys are lowercased,
+        # so "host" is dropped here and re-added as the canonical "Host" — otherwise
+        # both would be forwarded and strict upstreams reject the duplicate with 400.
         fwd_headers = {k: v for k, v in headers.items()
-                       if k not in ("proxy-connection", "connection")}
+                       if k not in ("proxy-connection", "connection", "host")}
         fwd_headers["Host"] = host if port == 80 else f"{host}:{port}"
-        path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+        origin_path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+
+        # Buffer the full upstream response before writing anything to the client,
+        # so a transport failure can still fall back to a direct dial (nothing has
+        # been sent to the client yet).
         try:
-            conn = http.client.HTTPConnection(upstream_ip, port, timeout=_HTTP_TIMEOUT_SECONDS)
-            conn.request(method, path, headers=fwd_headers)
-            up = conn.getresponse()
-            payload = up.read()
-            self.wfile.write(f"HTTP/1.1 {up.status} {up.reason}\r\n".encode())
-            for k, v in up.getheaders():
-                if k.lower() not in ("connection", "transfer-encoding"):
-                    self.wfile.write(f"{k}: {v}\r\n".encode())
-            self.wfile.write(f"Content-Length: {len(payload)}\r\n".encode())
-            self.wfile.write(b"Connection: close\r\n\r\n")
-            self.wfile.write(payload)
-        except Exception:  # noqa: BLE001 — any upstream failure -> 502
+            if route == "upstream":
+                try:
+                    resp = self._fetch_via_upstream(method, target, fwd_headers)
+                except Exception:  # noqa: BLE001 — any upstream transport failure
+                    if not self.server.upstream.fallback_direct:
+                        raise  # fail closed
+                    self._emit_fallback(method, host, port)
+                    resp = self._fetch_direct(method, origin_ip, port, origin_path, fwd_headers)
+            else:
+                resp = self._fetch_direct(method, origin_ip, port, origin_path, fwd_headers)
+        except Exception:  # noqa: BLE001 — nothing reachable -> 502
             self._respond(502, b"upstream error")
+            return
+        self._write_plain_response(*resp)
+
+    def _fetch_via_upstream(self, method: str, absolute_uri: str,
+                            fwd_headers: dict[str, str]) -> tuple:
+        # Proxy request form: dial the upstream and ask for the absolute URI.
+        up_policy: UpstreamPolicy = self.server.upstream
+        headers = dict(fwd_headers)
+        auth = up_policy.proxy_authorization()
+        if auth:
+            headers["Proxy-Authorization"] = auth
+        return self._fetch_direct(method, up_policy.host, up_policy.port, absolute_uri, headers)
+
+    def _fetch_direct(self, method: str, conn_host: str, conn_port: int,
+                      path: str, fwd_headers: dict[str, str]) -> tuple:
+        conn = http.client.HTTPConnection(conn_host, conn_port, timeout=_HTTP_TIMEOUT_SECONDS)
+        conn.request(method, path, headers=fwd_headers)
+        up = conn.getresponse()
+        payload = up.read()
+        return up.status, up.reason, up.getheaders(), payload
+
+    def _write_plain_response(self, status: int, reason: str,
+                              headers: list, payload: bytes) -> None:
+        self.wfile.write(f"HTTP/1.1 {status} {reason}\r\n".encode())
+        for k, v in headers:
+            if k.lower() not in ("connection", "transfer-encoding"):
+                self.wfile.write(f"{k}: {v}\r\n".encode())
+        self.wfile.write(f"Content-Length: {len(payload)}\r\n".encode())
+        self.wfile.write(b"Connection: close\r\n\r\n")
+        self.wfile.write(payload)
 
 
 class ProxyServer(socketserver.ThreadingTCPServer):
@@ -210,7 +325,9 @@ class ProxyServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], policy: EgressPolicy, *,
-                 resolve: Resolver = _system_resolve):
+                 resolve: Resolver = _system_resolve,
+                 upstream: UpstreamPolicy | None = None):
         self.policy = policy
         self.resolve = resolve
+        self.upstream = upstream  # None => every allowed request dials the origin directly
         super().__init__(address, _Handler)
