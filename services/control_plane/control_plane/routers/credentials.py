@@ -418,7 +418,8 @@ async def list_api_key_providers(
     Drives the Credentials UI's provider dropdown so it tracks the catalog
     automatically instead of a hardcoded list (an unknown provider falls back to
     a title-cased id). Providers offered only via subscription/OAuth are excluded
-    — there is no API key to paste for them. Aliased catalog providers (e.g. ``opencode-go``) are folded into the provider id the key is stored under.
+    — there is no API key to paste for them. Aliased catalog providers (e.g.
+    ``opencode-go``) are folded into the provider id the key is stored under.
 
     Errors: 403 `forbidden` if the caller is not a tenant admin/owner or uses an
     API key instead of a session.
