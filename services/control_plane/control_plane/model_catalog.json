@@ -970,12 +970,288 @@
       ]
     },
     {
+      "id": "opencode-go/deepseek-v4-flash",
+      "provider": "opencode-go",
+      "label": "deepseek-v4-flash",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/deepseek-v4-pro",
+      "provider": "opencode-go",
+      "label": "deepseek-v4-pro",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/glm-5.1",
+      "provider": "opencode-go",
+      "label": "glm-5.1",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/glm-5.2",
+      "provider": "opencode-go",
+      "label": "glm-5.2",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/kimi-k2.6",
+      "provider": "opencode-go",
+      "label": "kimi-k2.6",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/kimi-k2.7-code",
+      "provider": "opencode-go",
+      "label": "kimi-k2.7-code",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/mimo-v2.5",
+      "provider": "opencode-go",
+      "label": "mimo-v2.5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/mimo-v2.5-pro",
+      "provider": "opencode-go",
+      "label": "mimo-v2.5-pro",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/minimax-m2.7",
+      "provider": "opencode-go",
+      "label": "minimax-m2.7",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/minimax-m3",
+      "provider": "opencode-go",
+      "label": "minimax-m3",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/qwen3.6-plus",
+      "provider": "opencode-go",
+      "label": "qwen3.6-plus",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/qwen3.7-max",
+      "provider": "opencode-go",
+      "label": "qwen3.7-max",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode-go/qwen3.7-plus",
+      "provider": "opencode-go",
+      "label": "qwen3.7-plus",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
       "id": "opencode/big-pickle",
       "provider": "opencode",
       "label": "big-pickle",
-      "category": "free",
+      "category": "api_key",
       "credentials": [
-        "keyless"
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-haiku-4-5",
+      "provider": "opencode",
+      "label": "claude-haiku-4-5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-opus-4-1",
+      "provider": "opencode",
+      "label": "claude-opus-4-1",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-opus-4-5",
+      "provider": "opencode",
+      "label": "claude-opus-4-5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-opus-4-6",
+      "provider": "opencode",
+      "label": "claude-opus-4-6",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-opus-4-7",
+      "provider": "opencode",
+      "label": "claude-opus-4-7",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-opus-4-8",
+      "provider": "opencode",
+      "label": "claude-opus-4-8",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-sonnet-4",
+      "provider": "opencode",
+      "label": "claude-sonnet-4",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-sonnet-4-5",
+      "provider": "opencode",
+      "label": "claude-sonnet-4-5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-sonnet-4-6",
+      "provider": "opencode",
+      "label": "claude-sonnet-4-6",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/deepseek-v4-flash",
+      "provider": "opencode",
+      "label": "deepseek-v4-flash",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
       ],
       "drivers": [
         "opencode"
@@ -994,6 +1270,330 @@
       ]
     },
     {
+      "id": "opencode/deepseek-v4-pro",
+      "provider": "opencode",
+      "label": "deepseek-v4-pro",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gemini-3-flash",
+      "provider": "opencode",
+      "label": "gemini-3-flash",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gemini-3.1-pro",
+      "provider": "opencode",
+      "label": "gemini-3.1-pro",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gemini-3.5-flash",
+      "provider": "opencode",
+      "label": "gemini-3.5-flash",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/glm-5",
+      "provider": "opencode",
+      "label": "glm-5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/glm-5.1",
+      "provider": "opencode",
+      "label": "glm-5.1",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/glm-5.2",
+      "provider": "opencode",
+      "label": "glm-5.2",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5",
+      "provider": "opencode",
+      "label": "gpt-5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5-codex",
+      "provider": "opencode",
+      "label": "gpt-5-codex",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5-nano",
+      "provider": "opencode",
+      "label": "gpt-5-nano",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.1",
+      "provider": "opencode",
+      "label": "gpt-5.1",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.1-codex",
+      "provider": "opencode",
+      "label": "gpt-5.1-codex",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.1-codex-max",
+      "provider": "opencode",
+      "label": "gpt-5.1-codex-max",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.1-codex-mini",
+      "provider": "opencode",
+      "label": "gpt-5.1-codex-mini",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.2",
+      "provider": "opencode",
+      "label": "gpt-5.2",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.2-codex",
+      "provider": "opencode",
+      "label": "gpt-5.2-codex",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.3-codex",
+      "provider": "opencode",
+      "label": "gpt-5.3-codex",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.3-codex-spark",
+      "provider": "opencode",
+      "label": "gpt-5.3-codex-spark",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.4",
+      "provider": "opencode",
+      "label": "gpt-5.4",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.4-mini",
+      "provider": "opencode",
+      "label": "gpt-5.4-mini",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.4-nano",
+      "provider": "opencode",
+      "label": "gpt-5.4-nano",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.4-pro",
+      "provider": "opencode",
+      "label": "gpt-5.4-pro",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.5",
+      "provider": "opencode",
+      "label": "gpt-5.5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/gpt-5.5-pro",
+      "provider": "opencode",
+      "label": "gpt-5.5-pro",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/grok-build-0.1",
+      "provider": "opencode",
+      "label": "grok-build-0.1",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/kimi-k2.5",
+      "provider": "opencode",
+      "label": "kimi-k2.5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/kimi-k2.6",
+      "provider": "opencode",
+      "label": "kimi-k2.6",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
       "id": "opencode/mimo-v2.5-free",
       "provider": "opencode",
       "label": "mimo-v2.5-free",
@@ -1006,12 +1606,72 @@
       ]
     },
     {
-      "id": "opencode/nemotron-3-super-free",
+      "id": "opencode/minimax-m2.5",
       "provider": "opencode",
-      "label": "nemotron-3-super-free",
+      "label": "minimax-m2.5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/minimax-m2.7",
+      "provider": "opencode",
+      "label": "minimax-m2.7",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/nemotron-3-ultra-free",
+      "provider": "opencode",
+      "label": "nemotron-3-ultra-free",
       "category": "free",
       "credentials": [
         "keyless"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/north-mini-code-free",
+      "provider": "opencode",
+      "label": "north-mini-code-free",
+      "category": "free",
+      "credentials": [
+        "keyless"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/qwen3.5-plus",
+      "provider": "opencode",
+      "label": "qwen3.5-plus",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/qwen3.6-plus",
+      "provider": "opencode",
+      "label": "qwen3.6-plus",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
       ],
       "drivers": [
         "opencode"

@@ -82,7 +82,7 @@ The vanilla driver ships a tool palette: read/write/edit/list files, run **bash*
 Multi-tenant from day one. Every resource is scoped to a workspace; a user can belong to several and switch via a header picker. Per-workspace roles: **owner / admin / member**.
 
 ### 🔐 Credentials & security
-LLM provider keys are stored server-side, **encrypted (AES-GCM), and never sent to the browser** — the UI shows only provider + last-4. OAuth connect flows for Claude / ChatGPT subscriptions (paste-code PKCE). Named, revocable **API keys** with a one-time secret reveal.
+LLM provider keys are stored server-side, **encrypted (AES-GCM), and never sent to the browser** — the UI shows only provider + last-4. OAuth connect flows for Claude / ChatGPT subscriptions (paste-code PKCE). Named, revocable **API keys** with a one-time secret reveal. Paid opencode Zen models and the OpenCode Go plan (`opencode-go/*` models) use a single OpenCode API key (from the Zen console at opencode.ai), stored as an `opencode` provider credential; free `opencode/*-free` Zen models still run keyless.
 
 ### 📊 Dashboard, in-browser shell & command palette
 A usage dashboard (tokens, tasks, success rate, trends), an **in-browser terminal** into any running agent (xterm over WebSocket), a **⌘K command palette**, and a live API activity panel for debugging.
