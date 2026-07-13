@@ -5,7 +5,9 @@ import pytest
 
 from agentcore.models import AgentConfig
 from control_plane.errors import APIError
-from control_plane.routers.tasks import apply_effort_override, build_task_row
+from control_plane.routers.tasks import PromptTaskBody, apply_effort_override, build_task_row
+
+pytestmark = pytest.mark.unit
 
 
 def _cfg(driver: str = "codex", effort: str | None = None) -> AgentConfig:
@@ -38,3 +40,11 @@ def test_snapshot_carries_effective_effort():
         scheduled_task_id=None, session_id=None,
     )
     assert row["config_snapshot"]["effort"] == "max"
+
+
+def test_prompt_task_body_carries_effort():
+    assert PromptTaskBody(prompt_id="p1", effort="low").effort == "low"
+
+
+def test_prompt_task_body_defaults_effort_to_none():
+    assert PromptTaskBody(prompt_id="p1").effort is None

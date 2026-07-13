@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import control_plane.tables as t
 from agentcore.models import (
     AgentConfig,
+    Effort,
     GitPushConfig,
     OutputContract,
     ResolvedLimits,
@@ -120,6 +121,11 @@ class PromptTaskBody(BaseModel):
         default=None,
         description="Optional session id to continue a multi-task session. "
         "Must match the driver of the session's first task.",
+    )
+    effort: Effort | None = Field(
+        default=None,
+        description="Optional per-task reasoning-effort override "
+        "(low/medium/high/max). Only valid for opencode, claude-code and codex.",
     )
 
 
@@ -755,6 +761,7 @@ async def submit_task_from_prompt(
             limits=body.limits,
             metadata={**body.metadata, "prompt_id": body.prompt_id},
             session_id=body.session_id,
+            effort=body.effort,
         ),
     )
 

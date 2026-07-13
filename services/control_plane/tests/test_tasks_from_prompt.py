@@ -61,8 +61,35 @@ async def test_from_prompt_resolves_and_submits(monkeypatch):
         body = captured["body"]
         assert body.prompt == "Hi Ada"
         assert body.metadata["prompt_id"] == "prm_abc"
+        assert body.effort is None
         assert captured["cid"] == "con_1"
         assert captured["tenant_id"] == TENANT
+    finally:
+        _APP.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_from_prompt_carries_effort_override(monkeypatch):
+    captured: dict = {}
+
+    async def fake_load_prompt(session, tenant_id, pid):
+        return {"body": "Hi {{name}}", "variables": [{"name": "name", "default": "there"}]}
+
+    async def fake_core(session, **kw):
+        captured.update(kw)
+        return {"task_id": "tsk_1", "status": "running"}
+
+    monkeypatch.setattr(tasks_mod, "_load_prompt", fake_load_prompt)
+    monkeypatch.setattr(tasks_mod, "submit_task_core", fake_core)
+    _override_auth()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=_APP), base_url="http://t") as c:
+            r = await c.post(
+                "/v1/containers/con_1/tasks/from-prompt",
+                json={"prompt_id": "prm_abc", "variables": {"name": "Ada"}, "effort": "low"},
+            )
+        assert r.status_code == 200
+        assert captured["body"].effort == "low"
     finally:
         _APP.dependency_overrides.clear()
 
