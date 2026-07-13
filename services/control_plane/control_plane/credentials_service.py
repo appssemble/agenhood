@@ -22,6 +22,28 @@ _MODEL_PREFIX_PROVIDER = (
 # an opencode container run a real task without any LLM credential configured.
 _KEYLESS_PROVIDERS = frozenset({"opencode"})
 
+# Model-catalog providers whose credential is stored under a different provider
+# id. The single "opencode" API key (from the Zen console) unlocks both paid
+# opencode Zen models and the opencode-go plan's models.
+_CREDENTIAL_PROVIDER_ALIASES = {"opencode-go": "opencode"}
+
+
+def credential_provider_for(provider: str) -> str:
+    """The provider id credential rows are stored under for ``provider``."""
+    return _CREDENTIAL_PROVIDER_ALIASES.get(provider, provider)
+
+
+def model_is_keyless(model: str) -> bool:
+    """True if this model may run with no stored credential.
+
+    Only opencode's built-in free Zen models (``opencode/*-free``) are keyless.
+    Paid Zen models and opencode-go models require the tenant's opencode API
+    key. This is the same rule model_catalog's classification uses, so the
+    submit path and the catalog cannot drift.
+    """
+    return model.startswith("opencode/") and model.endswith("-free")
+
+
 # claude-code's model catalog offers only these three bare family aliases (see
 # model_catalog._CLAUDE_CODE_ALIASES) — none start with "claude", so they need
 # an explicit exact-match entry alongside the prefix table above.

@@ -6,8 +6,10 @@ import pytest
 
 from control_plane.credentials_service import (
     build_credential_row,
+    credential_provider_for,
     decrypt_row,
     last4,
+    model_is_keyless,
     provider_for_model,
     provider_is_keyless,
 )
@@ -83,3 +85,25 @@ def test_decrypt_row_round_trip(key: bytes) -> None:
         master_key=key,
     )
     assert decrypt_row(row, key) == "sk-ant-xyz"
+
+
+def test_provider_for_model_opencode_go_prefix() -> None:
+    assert provider_for_model("opencode-go/glm-5.2") == "opencode-go"
+    assert provider_for_model("opencode-go/kimi-k2.7-code") == "opencode-go"
+
+
+def test_credential_provider_for_aliases_opencode_go() -> None:
+    # opencode-go models are unlocked by the single "opencode" credential row.
+    assert credential_provider_for("opencode-go") == "opencode"
+    assert credential_provider_for("opencode") == "opencode"
+    assert credential_provider_for("anthropic") == "anthropic"
+
+
+def test_model_is_keyless_only_for_free_zen() -> None:
+    assert model_is_keyless("opencode/deepseek-v4-flash-free") is True
+    # Paid Zen and Go models need the opencode key.
+    assert model_is_keyless("opencode/kimi-k2") is False
+    assert model_is_keyless("opencode-go/glm-5.2") is False
+    # Other providers are never keyless.
+    assert model_is_keyless("claude-opus-4-7") is False
+    assert model_is_keyless("openai/gpt-4o") is False
