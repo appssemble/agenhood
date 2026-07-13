@@ -4,7 +4,7 @@ import stat
 from pathlib import Path
 
 from agentcore import sandbox
-from agentcore.drivers.opencode import build_env, workspace_xdg, write_auth_json
+from agentcore.drivers.opencode import build_env, provider_for_model, workspace_xdg, write_auth_json
 
 
 def test_build_env_skips_api_key_for_oauth() -> None:
@@ -96,3 +96,25 @@ def test_opencode_oauth_dir_chowned_when_root(tmp_path, monkeypatch) -> None:
 
     assert auth_dir in calls
     assert auth_path in calls
+
+
+def test_build_env_sets_opencode_api_key_for_go_and_paid_zen() -> None:
+    for model in ("opencode-go/glm-5.2", "opencode/kimi-k2"):
+        env = build_env(
+            {"PATH": "/usr/bin"},
+            provider=provider_for_model(model),
+            credential="oc-live-1234",
+            credential_kind="api_key",
+        )
+        assert env["OPENCODE_API_KEY"] == "oc-live-1234"
+        assert "ANTHROPIC_API_KEY" not in env
+
+
+def test_build_env_keyless_free_zen_sets_no_var() -> None:
+    env = build_env(
+        {"PATH": "/usr/bin"},
+        provider=provider_for_model("opencode/deepseek-v4-flash-free"),
+        credential="",
+        credential_kind="api_key",
+    )
+    assert "OPENCODE_API_KEY" not in env

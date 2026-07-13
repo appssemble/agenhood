@@ -59,8 +59,14 @@ _OPENCODE_PROMPT = (
     "workspace and report concisely when finished."
 )
 
-# Provider key env var opencode reads natively, per provider id.
-_PROVIDER_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+# Provider key env var opencode reads natively, per provider id. Both opencode
+# (Zen) and opencode-go (Go plan) read the same OPENCODE_API_KEY.
+_PROVIDER_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "opencode": "OPENCODE_API_KEY",
+    "opencode-go": "OPENCODE_API_KEY",
+}
 
 
 def provider_for_model(model: str) -> str:
