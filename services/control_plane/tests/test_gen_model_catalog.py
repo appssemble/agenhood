@@ -41,3 +41,15 @@ INFO something
         "anthropic/claude-opus-4-8",
         "openai/gpt-5.4",
     ]
+
+
+def test_placeholder_go_auth_configures_opencode_providers() -> None:
+    from gen_model_catalog import _PLACEHOLDER_AUTH, _PLACEHOLDER_GO_AUTH
+
+    # The go run must keep the base placeholders AND configure both opencode
+    # provider ids so `opencode models` lists opencode-go/* (and paid Zen).
+    for provider, entry in _PLACEHOLDER_AUTH.items():
+        assert _PLACEHOLDER_GO_AUTH[provider] == entry
+    for provider in ("opencode", "opencode-go"):
+        assert _PLACEHOLDER_GO_AUTH[provider]["type"] == "api"
+        assert _PLACEHOLDER_GO_AUTH[provider]["key"]

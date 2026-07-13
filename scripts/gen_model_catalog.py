@@ -2,9 +2,11 @@
 """Generate services/control_plane/control_plane/model_catalog.json.
 
 Runs `opencode models` inside the agent image with placeholder API keys (to list
-the full Anthropic + OpenAI + Zen catalogs) and, if MODELS_CATALOG_CODEX_AUTH is
-set to a path of a real ChatGPT oauth auth.json (opencode format), again with that
-credential to list the OpenAI Codex subscription models.
+the full Anthropic + OpenAI + Zen catalogs), again with placeholder opencode
+Zen/Go keys (to list the opencode-go plan models), and, if
+MODELS_CATALOG_CODEX_AUTH is set to a path of a real ChatGPT oauth auth.json
+(opencode format), again with that credential to list the OpenAI Codex
+subscription models.
 
 Codex-driver membership comes from Codex itself: if MODELS_CATALOG_CODEX_DEBUG_AUTH
 points to a real ChatGPT auth.json (codex format — auth_mode/tokens), runs
@@ -40,6 +42,17 @@ _FALLBACK_CODEX = ["openai/gpt-5.4", "openai/gpt-5.3-codex-spark", "openai/gpt-5
 _PLACEHOLDER_AUTH = {
     "openai": {"type": "api", "key": "sk-placeholder-not-real"},
     "anthropic": {"type": "api", "key": "sk-ant-placeholder-not-real"},
+}
+
+# The base run must NOT configure opencode: free-vs-keyed Zen listings are only
+# distinguishable by which run a model id appears in. The go run adds the
+# opencode key placeholders so `opencode models` lists opencode-go/* and any
+# key-gated Zen models (opencode lists a configured provider's models without
+# calling the API).
+_PLACEHOLDER_GO_AUTH = {
+    **_PLACEHOLDER_AUTH,
+    "opencode": {"type": "api", "key": "oc-placeholder-not-real"},
+    "opencode-go": {"type": "api", "key": "oc-placeholder-not-real"},
 }
 
 
@@ -95,6 +108,9 @@ def _run_codex_debug_models(auth_path: str) -> list[str]:
 
 def main() -> None:
     base = _run_opencode_models(_PLACEHOLDER_AUTH)
+    go = _run_opencode_models(_PLACEHOLDER_GO_AUTH)
+    go_only = [m for m in go if m not in base]
+    print(f"opencode go run: {len(go_only)} additional model ids", file=sys.stderr)
     codex_auth_path = os.environ.get("MODELS_CATALOG_CODEX_AUTH")
     if codex_auth_path:
         sub = _run_opencode_models(json.loads(Path(codex_auth_path).read_text()))
@@ -112,7 +128,7 @@ def main() -> None:
             file=sys.stderr,
         )
         codex_ids = None
-    entries = build_catalog_entries(base, sub, codex_ids=codex_ids)
+    entries = build_catalog_entries(base, sub, codex_ids=codex_ids, go_ids=go)
     entries.sort(key=lambda m: m["id"])
     _OUT.write_text(json.dumps({"models": entries}, indent=2) + "\n")
     print(f"wrote {_OUT} ({len(entries)} models)")
