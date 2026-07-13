@@ -33,6 +33,9 @@ class TaskBody(BaseModel):
     limits: TaskLimits = TaskLimits()
     metadata: dict[str, Any] = Field(default_factory=dict)
     session_id: str | None = None
+    # Optional per-task override of the container's AgentConfig.effort. Folded
+    # into the config snapshot by the tasks router before dispatch.
+    effort: Effort | None = None
 
 
 class ResolvedLimits(BaseModel):
@@ -45,6 +48,9 @@ class ResolvedLimits(BaseModel):
 
 # ---- Agent config (container config / snapshot — spec §4.9) ----------------
 SystemPromptMode = Literal["augment", "replace"]
+# Unified reasoning-effort scale (drivers map it to their CLI flag; None ⇒ no
+# flag, the CLI/model default applies).
+Effort = Literal["low", "medium", "high", "max"]
 
 
 class ContextSpec(BaseModel):
@@ -62,6 +68,9 @@ class AgentConfig(BaseModel):
     context: ContextSpec = ContextSpec()
     skills: list[str] = Field(default_factory=list)  # opencode skill ids (spec: opencode skills)
     mcp_servers: list[str] = Field(default_factory=list)  # tenant mcp_server ids (opencode/codex)
+    # Reasoning effort forwarded to the driver CLI (codex: model_reasoning_effort,
+    # claude-code: --effort, opencode: --variant). None ⇒ omit the flag.
+    effort: Effort | None = None
     # Per-container task-limit overrides. None ⇒ fall back to the tenant default;
     # when set they become this container's default (still capped at the tenant
     # ceiling) for tasks that don't request their own bound. See limits.resolve_limits.
