@@ -5,7 +5,8 @@ Runs `opencode models` inside the agent image with placeholder API keys (to list
 the full Anthropic + OpenAI + Zen catalogs), again with placeholder opencode
 Zen/Go keys (to list the opencode-go plan models), and, if
 MODELS_CATALOG_CODEX_AUTH is set to a path of a real ChatGPT oauth auth.json
-(opencode format), again with that credential to list the OpenAI Codex
+(opencode format, or codex format e.g. ~/.codex/auth.json — converted
+automatically), again with that credential to list the OpenAI Codex
 subscription models.
 
 Codex-driver membership comes from Codex itself: if MODELS_CATALOG_CODEX_DEBUG_AUTH
@@ -22,6 +23,7 @@ Run on agent-image / opencode / codex bumps:  make models-catalog
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -106,6 +108,32 @@ def _run_codex_debug_models(auth_path: str) -> list[str]:
     return parse_codex_models(res.stdout)
 
 
+def _opencode_auth_from(auth: dict) -> dict:  # type: ignore[type-arg]
+    """Accept MODELS_CATALOG_CODEX_AUTH in either opencode or codex format.
+
+    A codex-format auth.json (``auth_mode``/``tokens``, e.g. ``~/.codex/auth.json``
+    from a local `codex login`) is converted to the opencode oauth entry shape
+    (see agentcore.drivers.opencode.write_auth_json). ``expires`` comes from the
+    access-token JWT ``exp`` claim so opencode does not rotate the refresh token
+    while it is still valid. Opencode-format input is passed through unchanged.
+    """
+    if "tokens" not in auth:
+        return auth
+    tokens = auth["tokens"]
+    payload = tokens["access_token"].split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    exp_ms = json.loads(base64.urlsafe_b64decode(payload))["exp"] * 1000
+    entry = {
+        "type": "oauth",
+        "access": tokens["access_token"],
+        "refresh": tokens["refresh_token"],
+        "expires": exp_ms,
+    }
+    if tokens.get("account_id"):
+        entry["accountId"] = tokens["account_id"]
+    return {"openai": entry}
+
+
 def main() -> None:
     base = _run_opencode_models(_PLACEHOLDER_AUTH)
     go = _run_opencode_models(_PLACEHOLDER_GO_AUTH)
@@ -113,7 +141,9 @@ def main() -> None:
     print(f"opencode go run: {len(go_only)} additional model ids", file=sys.stderr)
     codex_auth_path = os.environ.get("MODELS_CATALOG_CODEX_AUTH")
     if codex_auth_path:
-        sub = _run_opencode_models(json.loads(Path(codex_auth_path).read_text()))
+        sub = _run_opencode_models(
+            _opencode_auth_from(json.loads(Path(codex_auth_path).read_text()))
+        )
     else:
         print("MODELS_CATALOG_CODEX_AUTH not set — using fallback Codex list", file=sys.stderr)
         sub = list(_FALLBACK_CODEX)

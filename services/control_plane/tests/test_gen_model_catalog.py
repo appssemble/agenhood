@@ -43,6 +43,46 @@ INFO something
     ]
 
 
+def _jwt_with_exp(exp: int) -> str:
+    import base64
+
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).rstrip(b"=")
+    return "eyJhbGciOiJub25lIn0." + payload.decode() + ".sig"
+
+
+def test_opencode_auth_from_converts_codex_format() -> None:
+    from gen_model_catalog import _opencode_auth_from
+
+    codex_auth = {
+        "OPENAI_API_KEY": None,
+        "auth_mode": "chatgpt",
+        "tokens": {
+            "access_token": _jwt_with_exp(1_800_000_000),
+            "refresh_token": "rt-abc",
+            "account_id": "acct-1",
+            "id_token": "ignored",
+        },
+        "last_refresh": "2026-07-13T00:00:00Z",
+    }
+    out = _opencode_auth_from(codex_auth)
+    assert out == {
+        "openai": {
+            "type": "oauth",
+            "access": codex_auth["tokens"]["access_token"],
+            "refresh": "rt-abc",
+            "expires": 1_800_000_000_000,
+            "accountId": "acct-1",
+        }
+    }
+
+
+def test_opencode_auth_from_passes_opencode_format_through() -> None:
+    from gen_model_catalog import _opencode_auth_from
+
+    auth = {"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": 1}}
+    assert _opencode_auth_from(auth) is auth
+
+
 def test_placeholder_go_auth_configures_opencode_providers() -> None:
     from gen_model_catalog import _PLACEHOLDER_AUTH, _PLACEHOLDER_GO_AUTH
 
