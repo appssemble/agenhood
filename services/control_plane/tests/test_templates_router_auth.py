@@ -266,6 +266,33 @@ def test_admin_create_defaults_effort_to_null() -> None:
     assert r.json()["effort"] is None
 
 
+def test_admin_create_with_invalid_effort_is_400() -> None:
+    # A bad effort must be rejected at create time, not stored and left to
+    # blow up later at container-create time.
+    _use(ADMIN)
+    body = {"name": "T", "driver": "codex", "effort": "ultra"}
+    with TestClient(app) as c:
+        r = c.post("/v1/templates", json=body)
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "effort"
+
+
+def test_admin_patch_with_invalid_effort_is_400() -> None:
+    class _R:
+        _mapping: dict[str, Any] = {
+            "id": "tpl_1", "tenant_id": "ten_1", "name": "T", "driver": "codex",
+            "model": None, "system_prompt": "", "system_prompt_mode": "augment",
+            "tools": [], "context": {}, "skills": [], "mcp_servers": [],
+            "limits": {}, "is_builtin": False, "created_by": "ten_1",
+        }
+
+    _use(ADMIN, rows=[_R()])
+    with TestClient(app) as c:
+        r = c.patch("/v1/templates/tpl_1", json={"effort": "ultra"})
+    assert r.status_code == 400
+    assert r.json()["error"]["field"] == "effort"
+
+
 def test_admin_patch_updates_mcp_servers() -> None:
     # PATCH with mcp_servers updates the template and returns the new value.
     class _R:

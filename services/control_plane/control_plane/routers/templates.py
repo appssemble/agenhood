@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Annotated, Any
+from typing import Annotated, Any, get_args
 
 from fastapi import APIRouter, Depends, Path, Request
 from pydantic import BaseModel, Field, ValidationError
@@ -11,7 +11,7 @@ from sqlalchemy import or_, select
 import agentcore.drivers.vanilla  # noqa: F401
 import agentcore.tools  # noqa: F401
 from agentcore.drivers.base import DRIVERS
-from agentcore.models import ContextSpec
+from agentcore.models import ContextSpec, Effort
 from agentcore.tools.base import TOOLS
 from control_plane.auth.principal import Principal, require_admin, resolve_principal
 from control_plane.config import Settings
@@ -22,6 +22,8 @@ from control_plane.resource_limits import resolve_resource_limits
 from control_plane.variants import assert_config_runnable_on_variant, known_variants
 
 router = APIRouter(tags=["Templates"])
+
+_VALID_EFFORTS = set(get_args(Effort))
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +77,19 @@ def context_from_body(raw: Any) -> dict[str, Any]:
         raise validation_error(
             f"invalid context: {first['msg']}", field="context"
         ) from exc
+
+
+def validate_effort(value: Any) -> None:
+    """Reject an ``effort`` that isn't one of the driver-agnostic levels.
+
+    A stored bad value would otherwise only surface later as a 500 when
+    ``AgentConfig(**base)`` raises at container-create time — reject it here
+    instead. ``None`` (unset) is always allowed."""
+    if value is not None and value not in _VALID_EFFORTS:
+        raise validation_error(
+            f"effort must be one of {', '.join(get_args(Effort))}",
+            field="effort",
+        )
 
 
 def validate_template_runtime(
@@ -276,6 +291,7 @@ async def create_template(
 
     if new_row["driver"] not in DRIVERS:
         raise validation_error(f"unknown driver: {new_row['driver']!r}", field="driver")
+    validate_effort(new_row["effort"])
 
     new_row.update(validate_template_runtime(
         image_variant=body.get("image_variant"),
@@ -341,6 +357,8 @@ async def patch_template(
         updates = {k: v for k, v in body.items() if k in allowed_fields}
         if "context" in updates:
             updates["context"] = context_from_body(updates["context"])
+        if "effort" in updates:
+            validate_effort(updates["effort"])
         # Re-validate the runtime triple whenever any input to it changes —
         # including tools/driver patches against a stored slim variant.
         if {"image_variant", "mem_limit", "cpus", "tools", "driver"} & updates.keys():
