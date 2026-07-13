@@ -1,107 +1,9 @@
 {
   "models": [
     {
-      "id": "claude-3-5-haiku-20241022",
+      "id": "claude-fable-5",
       "provider": "anthropic",
-      "label": "claude-3-5-haiku-20241022",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-3-5-haiku-latest",
-      "provider": "anthropic",
-      "label": "claude-3-5-haiku-latest",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-3-5-sonnet-20240620",
-      "provider": "anthropic",
-      "label": "claude-3-5-sonnet-20240620",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-3-5-sonnet-20241022",
-      "provider": "anthropic",
-      "label": "claude-3-5-sonnet-20241022",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-3-7-sonnet-20250219",
-      "provider": "anthropic",
-      "label": "claude-3-7-sonnet-20250219",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-3-haiku-20240307",
-      "provider": "anthropic",
-      "label": "claude-3-haiku-20240307",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-3-opus-20240229",
-      "provider": "anthropic",
-      "label": "claude-3-opus-20240229",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-3-sonnet-20240229",
-      "provider": "anthropic",
-      "label": "claude-3-sonnet-20240229",
+      "label": "claude-fable-5",
       "category": "api_key",
       "credentials": [
         "anthropic_api_key",
@@ -130,62 +32,6 @@
       "id": "claude-haiku-4-5-20251001",
       "provider": "anthropic",
       "label": "claude-haiku-4-5-20251001",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-opus-4-0",
-      "provider": "anthropic",
-      "label": "claude-opus-4-0",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-opus-4-1",
-      "provider": "anthropic",
-      "label": "claude-opus-4-1",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-opus-4-1-20250805",
-      "provider": "anthropic",
-      "label": "claude-opus-4-1-20250805",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-opus-4-20250514",
-      "provider": "anthropic",
-      "label": "claude-opus-4-20250514",
       "category": "api_key",
       "credentials": [
         "anthropic_api_key",
@@ -309,34 +155,6 @@
       ]
     },
     {
-      "id": "claude-sonnet-4-0",
-      "provider": "anthropic",
-      "label": "claude-sonnet-4-0",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
-      "id": "claude-sonnet-4-20250514",
-      "provider": "anthropic",
-      "label": "claude-sonnet-4-20250514",
-      "category": "api_key",
-      "credentials": [
-        "anthropic_api_key",
-        "anthropic_subscription"
-      ],
-      "drivers": [
-        "opencode",
-        "vanilla"
-      ]
-    },
-    {
       "id": "claude-sonnet-4-5",
       "provider": "anthropic",
       "label": "claude-sonnet-4-5",
@@ -368,6 +186,20 @@
       "id": "claude-sonnet-4-6",
       "provider": "anthropic",
       "label": "claude-sonnet-4-6",
+      "category": "api_key",
+      "credentials": [
+        "anthropic_api_key",
+        "anthropic_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "vanilla"
+      ]
+    },
+    {
+      "id": "claude-sonnet-5",
+      "provider": "anthropic",
+      "label": "claude-sonnet-5",
       "category": "api_key",
       "credentials": [
         "anthropic_api_key",
@@ -636,8 +468,7 @@
       "label": "gpt-5.2",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode"
@@ -697,8 +528,7 @@
       "label": "gpt-5.3-codex",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode"
@@ -829,6 +659,164 @@
       "label": "gpt-5.5-pro",
       "category": "api_key",
       "credentials": [
+        "openai_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6",
+      "provider": "openai",
+      "label": "gpt-5.6",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-fast",
+      "provider": "openai",
+      "label": "gpt-5.6-fast",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "provider": "openai",
+      "label": "gpt-5.6-luna",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-5.6-luna-fast",
+      "provider": "openai",
+      "label": "gpt-5.6-luna-fast",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-luna-pro",
+      "provider": "openai",
+      "label": "gpt-5.6-luna-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-pro",
+      "provider": "openai",
+      "label": "gpt-5.6-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "provider": "openai",
+      "label": "gpt-5.6-sol",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-5.6-sol-fast",
+      "provider": "openai",
+      "label": "gpt-5.6-sol-fast",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-sol-pro",
+      "provider": "openai",
+      "label": "gpt-5.6-sol-pro",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "provider": "openai",
+      "label": "gpt-5.6-terra",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode",
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-5.6-terra-fast",
+      "provider": "openai",
+      "label": "gpt-5.6-terra-fast",
+      "category": "api_key",
+      "credentials": [
+        "openai_api_key",
+        "openai_subscription"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "gpt-5.6-terra-pro",
+      "provider": "openai",
+      "label": "gpt-5.6-terra-pro",
+      "category": "api_key",
+      "credentials": [
         "openai_api_key",
         "openai_subscription"
       ],
@@ -853,30 +841,6 @@
       "id": "o1",
       "provider": "openai",
       "label": "o1",
-      "category": "api_key",
-      "credentials": [
-        "openai_api_key"
-      ],
-      "drivers": [
-        "opencode"
-      ]
-    },
-    {
-      "id": "o1-mini",
-      "provider": "openai",
-      "label": "o1-mini",
-      "category": "api_key",
-      "credentials": [
-        "openai_api_key"
-      ],
-      "drivers": [
-        "opencode"
-      ]
-    },
-    {
-      "id": "o1-preview",
-      "provider": "openai",
-      "label": "o1-preview",
       "category": "api_key",
       "credentials": [
         "openai_api_key"
@@ -1138,6 +1102,18 @@
       ]
     },
     {
+      "id": "opencode/claude-fable-5",
+      "provider": "opencode",
+      "label": "claude-fable-5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
       "id": "opencode/claude-haiku-4-5",
       "provider": "opencode",
       "label": "claude-haiku-4-5",
@@ -1237,6 +1213,18 @@
       "id": "opencode/claude-sonnet-4-6",
       "provider": "opencode",
       "label": "claude-sonnet-4-6",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/claude-sonnet-5",
+      "provider": "opencode",
+      "label": "claude-sonnet-5",
       "category": "api_key",
       "credentials": [
         "opencode_api_key"
@@ -1558,12 +1546,36 @@
       ]
     },
     {
+      "id": "opencode/grok-4.5",
+      "provider": "opencode",
+      "label": "grok-4.5",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
       "id": "opencode/grok-build-0.1",
       "provider": "opencode",
       "label": "grok-build-0.1",
       "category": "api_key",
       "credentials": [
         "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/hy3-free",
+      "provider": "opencode",
+      "label": "hy3-free",
+      "category": "free",
+      "credentials": [
+        "keyless"
       ],
       "drivers": [
         "opencode"
@@ -1585,6 +1597,18 @@
       "id": "opencode/kimi-k2.6",
       "provider": "opencode",
       "label": "kimi-k2.6",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/kimi-k2.7-code",
+      "provider": "opencode",
+      "label": "kimi-k2.7-code",
       "category": "api_key",
       "credentials": [
         "opencode_api_key"
@@ -1621,6 +1645,18 @@
       "id": "opencode/minimax-m2.7",
       "provider": "opencode",
       "label": "minimax-m2.7",
+      "category": "api_key",
+      "credentials": [
+        "opencode_api_key"
+      ],
+      "drivers": [
+        "opencode"
+      ]
+    },
+    {
+      "id": "opencode/minimax-m3",
+      "provider": "opencode",
+      "label": "minimax-m3",
       "category": "api_key",
       "credentials": [
         "opencode_api_key"
