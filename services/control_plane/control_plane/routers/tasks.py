@@ -29,6 +29,7 @@ from control_plane import lifecycle
 from control_plane.auth import Principal
 from control_plane.auth.crypto import decrypt_secret, load_key_from_env
 from control_plane.config import Settings
+from control_plane.config_validation import EFFORT_DRIVERS
 from control_plane.credentials_service import (
     credential_provider_for,
     decrypt_row,
@@ -156,6 +157,19 @@ async def _load_prompt(session: AsyncSession, tenant_id: str, pid: str) -> dict[
 # The credential lives ONLY in build_shim_request's output; it is NEVER
 # passed into build_task_row or written to any DB column.
 # ---------------------------------------------------------------------------
+
+
+def apply_effort_override(config: AgentConfig, effort: str | None) -> AgentConfig:
+    """Fold an optional per-task effort override into the config *before* the
+    snapshot, so shim/drivers/read-back all see one effective value."""
+    if effort is None:
+        return config
+    if config.driver not in EFFORT_DRIVERS:
+        raise APIError(
+            400, "validation_error",
+            f"driver '{config.driver}' does not support effort", "effort",
+        )
+    return config.model_copy(update={"effort": effort})
 
 
 def build_task_row(
@@ -548,6 +562,7 @@ async def submit_task_core(
 
     row = await _load_owned_container(session, tenant_id, cid)
     config = AgentConfig(**row.config)
+    config = apply_effort_override(config, body.effort)
 
     session_is_continuation = False
     if body.session_id is not None:
