@@ -8,6 +8,7 @@ import { assemblePrompt } from "./assemblePrompt";
 import { Field, Tag, Note, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { ConfigFields } from "../components/ConfigFields";
+import { EFFORT_DRIVERS } from "../api/types";
 import type { AgentConfig, Template, ToolSpec } from "../api/types";
 
 export default function Configuration() {
@@ -125,7 +126,7 @@ export default function Configuration() {
                 <Dropdown
                   id="cfg-driver"
                   value={draft.driver}
-                  onChange={(v) => patch({ driver: v })}
+                  onChange={(v) => patch({ driver: v, ...(EFFORT_DRIVERS.includes(v) ? {} : { effort: null }) })}
                   options={limits.allowed_drivers.map((d) => ({ value: d, label: d }))}
                 />
               </Field>

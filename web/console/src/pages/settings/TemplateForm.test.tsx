@@ -65,4 +65,22 @@ describe("TemplateForm (create mode)", () => {
     await waitFor(() => expect(screen.queryByLabelText("read_file")).not.toBeInTheDocument());
     expect(screen.getByLabelText("git-release")).toBeInTheDocument();
   });
+
+  it("clears effort when switching to a driver that doesn't support it", async () => {
+    setup();
+    let posted: any = null;
+    server.use(http.post("/v1/templates", async ({ request }) => { posted = await request.json(); return HttpResponse.json({ ...vanillaTpl, id: "tpl_new", tenant_id: "t", is_builtin: false }); }));
+    renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
+    await screen.findByLabelText("read_file");
+    // "vanilla" has a DRIVER_LABEL override ("barebones"); switch to opencode
+    // (an effort driver), set an effort, then switch back to vanilla.
+    await userEvent.click(screen.getByRole("radio", { name: "opencode" }));
+    await userEvent.click(await screen.findByRole("button", { name: "High" }));
+    await userEvent.click(screen.getByRole("radio", { name: "barebones" }));
+    await userEvent.type(screen.getByLabelText("Name"), "T");
+    await userEvent.click(screen.getByRole("button", { name: /Save template/i }));
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted.driver).toBe("vanilla");
+    expect(posted.effort).toBe(null);
+  });
 });

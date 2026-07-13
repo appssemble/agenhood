@@ -43,10 +43,10 @@ function setup(over: Partial<any> = {}) {
   server.use(http.get("/v1/skills", () => HttpResponse.json({ skills: [] })));
   server.use(http.get("/v1/containers/con_1", () => HttpResponse.json({
     id: "con_1", name: "c", external_id: null, status: "running", image_variant: over.variant ?? "slim", image_tag: "v",
-    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] } },
+    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null },
     metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
   server.use(http.get("/v1/containers/con_1/config", () => HttpResponse.json({
-    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] } },
+    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null },
     assembled_prompt: "## SYSTEM\n..." })));
 }
 
@@ -158,5 +158,22 @@ describe("Configuration editor (driver-aware)", () => {
     renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
     await waitFor(() => expect(screen.getByLabelText("Driver")).toBeInTheDocument());
     expect(screen.queryByLabelText("git-release")).not.toBeInTheDocument();
+  });
+
+  it("clears effort when switching to a driver that doesn't support it", async () => {
+    setup({ driver: "opencode", effort: "high" });
+    let patched: any = null;
+    server.use(http.patch("/v1/containers/con_1/config", async ({ request }) => { patched = await request.json(); return HttpResponse.json({ config: patched, assembled_prompt: "x" }); }));
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+    await screen.findByLabelText("Driver");
+    expect(screen.getByText("Effort")).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText("Driver"));
+    await userEvent.click(screen.getByRole("option", { name: "vanilla" }));
+    // vanilla doesn't support effort — the field disappears and the value clears
+    expect(screen.queryByText("Effort")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched.driver).toBe("vanilla");
+    expect(patched.effort).toBe(null);
   });
 });

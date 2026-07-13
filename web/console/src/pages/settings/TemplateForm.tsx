@@ -11,6 +11,7 @@ import { DriverPicker } from "../../components/DriverPicker";
 import { assemblePrompt } from "../assemblePrompt";
 import { driverLabel } from "../../lib/drivers";
 import { MEM_OPTIONS, CPU_OPTIONS, withCurrentValue } from "../../lib/resourceOptions";
+import { EFFORT_DRIVERS } from "../../api/types";
 import type { TemplateDraft, TemplateSavePayload, Template, AgentConfig, ToolSpec } from "../../api/types";
 
 const EMPTY: TemplateDraft = {
@@ -80,12 +81,14 @@ export default function TemplateForm() {
     const editableTools = meta?.driver_template.tools_user_editable ?? true;
     const supportsContext = meta?.driver_template.supports_context ?? true;
     const skillDriver = driver === "opencode" || driver === "codex";
+    const supportsEffort = EFFORT_DRIVERS.includes(driver);
     setDraft((d) => (d ? {
       ...d, driver,
       tools: editableTools ? d.tools : [],
       context: supportsContext ? d.context : { variables: {}, text: null, files: [] },
       skills: skillDriver ? d.skills : [],
       mcp_servers: skillDriver ? d.mcp_servers : [],
+      effort: supportsEffort ? d.effort : null,
     } : d));
   }
 
