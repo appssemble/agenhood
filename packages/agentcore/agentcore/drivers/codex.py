@@ -101,23 +101,28 @@ def skills_dir(workspace: str) -> str:
     return str(Path(codex_home(workspace)) / ".agents" / "skills")
 
 
-def build_command(*, workspace: str, model: str, ephemeral: bool = True) -> list[str]:
+def build_command(
+    *, workspace: str, model: str, ephemeral: bool = True, effort: str | None = None
+) -> list[str]:
     """Build the ``codex exec`` invocation (prompt is fed on stdin via ``-``).
 
     ``ephemeral=False`` drops ``--ephemeral`` so the rollout file persists,
     used for the first turn of a session (driver-sessions spec §4).
+    ``effort`` maps to codex's ``model_reasoning_effort`` config override.
     """
     cmd = ["codex", "exec", "--json", "--skip-git-repo-check"]
     if ephemeral:
         cmd.append("--ephemeral")
-    cmd += [
-        "-C", workspace, "-m", model,
-        "--dangerously-bypass-approvals-and-sandbox", "-",
-    ]
+    cmd += ["-C", workspace, "-m", model]
+    if effort:
+        cmd += ["-c", f"model_reasoning_effort={effort}"]
+    cmd += ["--dangerously-bypass-approvals-and-sandbox", "-"]
     return cmd
 
 
-def build_resume_command(*, model: str, thread_id: str) -> list[str]:
+def build_resume_command(
+    *, model: str, thread_id: str, effort: str | None = None
+) -> list[str]:
     """Build ``codex exec resume`` (continuing a prior session).
 
     Verified live against the installed codex CLI: the ``resume`` subcommand
@@ -125,11 +130,11 @@ def build_resume_command(*, model: str, thread_id: str) -> list[str]:
     working directory and on-disk persistence are implicit. The subprocess's
     own ``cwd=`` (set by the caller) still controls the actual process cwd.
     """
-    return [
-        "codex", "exec", "resume", "--json", "--skip-git-repo-check",
-        "-m", model, "--dangerously-bypass-approvals-and-sandbox",
-        thread_id, "-",
-    ]
+    cmd = ["codex", "exec", "resume", "--json", "--skip-git-repo-check", "-m", model]
+    if effort:
+        cmd += ["-c", f"model_reasoning_effort={effort}"]
+    cmd += ["--dangerously-bypass-approvals-and-sandbox", thread_id, "-"]
+    return cmd
 
 
 def build_env(
@@ -347,11 +352,14 @@ class CodexDriver:
         home = codex_home(workspace)
         sandbox.ensure_agent_dir(home)
         if resume_thread_id:
-            cmd = build_resume_command(model=model_arg(config.model), thread_id=resume_thread_id)
+            cmd = build_resume_command(
+                model=model_arg(config.model), thread_id=resume_thread_id,
+                effort=config.effort,
+            )
         else:
             cmd = build_command(
                 workspace=workspace, model=model_arg(config.model),
-                ephemeral=session_id is None,
+                ephemeral=session_id is None, effort=config.effort,
             )
         env = build_env(
             sandbox.build_child_env(),

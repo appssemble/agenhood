@@ -244,3 +244,38 @@ def test_event_thread_id_ignores_other_event_types():
     assert event_thread_id({"type": "turn.completed", "thread_id": "t-1"}) is None
     assert event_thread_id({"type": "thread.started"}) is None
     assert event_thread_id({"type": "thread.started", "thread_id": 5}) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 2: codex driver maps effort
+# ---------------------------------------------------------------------------
+
+def test_build_command_appends_reasoning_effort():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(workspace="/ws", model="gpt-5.6-sol", effort="high")
+    assert cmd == [
+        "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
+        "-C", "/ws", "-m", "gpt-5.6-sol",
+        "-c", "model_reasoning_effort=high",
+        "--dangerously-bypass-approvals-and-sandbox", "-",
+    ]
+
+
+def test_build_command_no_effort_flag_when_unset():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(workspace="/ws", model="gpt-5-codex")
+    assert "-c" not in cmd
+
+
+def test_build_resume_command_appends_reasoning_effort():
+    from agentcore.drivers.codex import build_resume_command
+
+    cmd = build_resume_command(model="gpt-5.6-sol", thread_id="t-1", effort="max")
+    assert cmd == [
+        "codex", "exec", "resume", "--json", "--skip-git-repo-check",
+        "-m", "gpt-5.6-sol",
+        "-c", "model_reasoning_effort=max",
+        "--dangerously-bypass-approvals-and-sandbox", "t-1", "-",
+    ]
