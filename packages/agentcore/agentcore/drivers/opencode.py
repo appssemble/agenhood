@@ -361,6 +361,12 @@ def write_opencode_mcp(workspace: str, servers: list[ShimMcpServer]) -> int:
     mcp_block: dict[str, Any] = render_opencode_mcp(servers)["mcp"] if servers else {}
     path.parent.mkdir(parents=True, exist_ok=True)
     existing["mcp"] = mcp_block
+    # Recreate rather than rewrite in place: opencode (agent uid) owns this file
+    # after a first task, and the sandbox grants root no CAP_FOWNER, so the
+    # in-place write/chmod would EPERM. Unlinking (root has DAC_OVERRIDE on the
+    # agent-owned dir) lets the fresh file be root-owned — same pattern as
+    # write_auth_json above.
+    path.unlink(missing_ok=True)
     path.write_text(json.dumps(existing))
     os.chmod(path, 0o600)
     return len(mcp_block)
