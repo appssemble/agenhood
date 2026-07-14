@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 import WorkflowForm from "./WorkflowForm";
@@ -12,7 +12,8 @@ vi.mock("../../api/queries", () => ({
   useContainers: () => ({ data: { containers: [{ id: "con_1", name: "ci" }] } }),
   useWorkflows: () => ({ data: { workflows: [] } }),
 }));
-vi.mock("../../components/Toast", () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn() }) }));
+const toastSuccess = vi.fn();
+vi.mock("../../components/Toast", () => ({ useToast: () => ({ success: toastSuccess, error: vi.fn() }) }));
 
 test("requires at least one valid step before saving", async () => {
   render(<MemoryRouter><WorkflowForm /></MemoryRouter>);
@@ -56,7 +57,8 @@ test("strips empty export entries from the save payload", async () => {
   fireEvent.click(screen.getByRole("button", { name: /add file/i })); // second row stays empty
 
   fireEvent.click(screen.getByRole("button", { name: /save/i }));
-  await vi.waitFor(() => expect(save).toHaveBeenCalled());
+  await waitFor(() => expect(save).toHaveBeenCalled());
   const payload = save.mock.calls[save.mock.calls.length - 1][0];
   expect(payload.steps[0].exports).toEqual(["report.pdf"]);
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
 });
