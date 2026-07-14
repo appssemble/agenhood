@@ -90,6 +90,16 @@ def test_expand_does_not_follow_directory_symlinks(tmp_path):
     assert unmatched2 == ["sneaky/**"]
 
 
+def test_expand_terminates_on_symlink_cycle(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    _mk(str(ws), "real.txt")
+    os.symlink(str(ws), str(ws / "loop"))  # self-referential cycle
+    files, unmatched = expand_exports(str(ws), ["**"])
+    assert [f["path"] for f in files] == ["real.txt"]
+    assert unmatched == []
+
+
 def test_expand_star_does_not_cross_slash(tmp_path):
     ws = str(tmp_path)
     _mk(ws, "a.csv")
