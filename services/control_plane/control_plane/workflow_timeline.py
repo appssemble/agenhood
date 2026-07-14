@@ -72,3 +72,13 @@ def mark_failed(
         out[i]["status"] = "failed"
         out[i]["ended_at"] = ended_at.isoformat()
     return out
+
+
+def mark_transfer(
+    timeline: list[dict[str, Any]], i: int, *, files: int, bytes_: int
+) -> list[dict[str, Any]]:
+    """Record a successful export transfer on the EXPORTING step's entry."""
+    out = _copy(timeline)
+    if 0 <= i < len(out):
+        out[i]["transfer"] = {"files": files, "bytes": bytes_}
+    return out

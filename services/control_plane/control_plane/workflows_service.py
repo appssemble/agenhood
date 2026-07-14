@@ -154,6 +154,7 @@ def step_view(s: dict[str, Any]) -> dict[str, Any]:
         "status": s.get("status"),
         "started_at": _s(s.get("started_at")),
         "ended_at": _s(s.get("ended_at")),
+        "transfer": s.get("transfer"),
     }
 
 

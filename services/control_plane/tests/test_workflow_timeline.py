@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 pytestmark = pytest.mark.unit
@@ -8,9 +10,6 @@ def test_workflow_runs_has_nullable_steps_column():
 
     assert "steps" in workflow_runs.c
     assert workflow_runs.c.steps.nullable is True
-
-
-from datetime import UTC, datetime
 
 
 _STEPS = [
@@ -63,3 +62,22 @@ def test_mutators_ignore_out_of_range_index():
     tl = init_timeline(_STEPS)
     out = mark_completed(tl, 5, datetime(2026, 6, 29, tzinfo=UTC))
     assert [e["status"] for e in out] == ["pending", "pending"]
+
+
+def test_mark_transfer_sets_summary_and_copies():
+    from control_plane.workflow_timeline import init_timeline, mark_transfer
+
+    tl = init_timeline([
+        {"container_id": "con_1"}, {"container_id": "con_2"},
+    ])
+    out = mark_transfer(tl, 0, files=3, bytes_=1234)
+    assert out[0]["transfer"] == {"files": 3, "bytes": 1234}
+    assert "transfer" not in tl[0]          # pure: original untouched
+    assert "transfer" not in out[1]
+
+
+def test_mark_transfer_out_of_range_noop():
+    from control_plane.workflow_timeline import init_timeline, mark_transfer
+
+    tl = init_timeline([{"container_id": "con_1"}])
+    assert mark_transfer(tl, 5, files=1, bytes_=1) == tl

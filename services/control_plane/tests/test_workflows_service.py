@@ -4,6 +4,7 @@ from control_plane.errors import APIError
 from control_plane.workflows_service import (
     build_workflow_row,
     run_view,
+    step_view,
     validate_workflow_fields,
     workflow_view,
 )
@@ -105,3 +106,11 @@ def test_step_exports_too_many_rejected():
             steps=_steps_with_exports([f"f{i}.txt" for i in range(21)]),
         )
     assert ei.value.status_code == 400
+
+
+def test_step_view_exposes_transfer():
+    s = {"step_index": 0, "task_id": "tsk_1", "container_id": "con_1",
+         "status": "completed", "started_at": None, "ended_at": None,
+         "transfer": {"files": 2, "bytes": 10}}
+    assert step_view(s)["transfer"] == {"files": 2, "bytes": 10}
+    assert step_view({"step_index": 1})["transfer"] is None
