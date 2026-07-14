@@ -92,7 +92,10 @@ export default function Configuration() {
       return;
     }
     try {
-      if (envDirty && envDraft) await saveEnv.mutateAsync(envDraft);
+      if (envDirty && envDraft) {
+        const saved = await saveEnv.mutateAsync(envDraft);
+        setEnvDraft(saved);
+      }
     } catch (err) {
       toast.error("Couldn't save environment variables", err instanceof ApiError ? err.message : undefined);
       return;

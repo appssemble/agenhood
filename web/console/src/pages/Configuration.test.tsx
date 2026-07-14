@@ -223,4 +223,37 @@ describe("Configuration editor (driver-aware)", () => {
     expect(screen.queryByText("Config saved. Applies to the next task")).not.toBeInTheDocument();
     expect(configPatched).toBe(false);
   });
+
+  it("reconciles envDraft with the masked PUT response so the dirty banner clears and stays clear", async () => {
+    // The real backend's env PUT returns the masked list (secret values → null),
+    // not the plaintext that was submitted. Simulate that round-trip via a
+    // stateful mock so a stale plaintext draft would keep the page dirty.
+    let storedEnv: any[] = [];
+    setup({ driver: "vanilla" });
+    server.use(http.get("/v1/containers/con_1/env", () => HttpResponse.json(storedEnv)));
+    server.use(http.put("/v1/containers/con_1/env", async ({ request }) => {
+      const body = (await request.json()) as any[];
+      storedEnv = body.map((v) => (v.secret ? { name: v.name, value: null, secret: true } : v));
+      return HttpResponse.json(storedEnv);
+    }));
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+
+    await userEvent.click(await screen.findByRole("button", { name: "+ Add variable" }));
+    await userEvent.type(screen.getByLabelText("Env name 1"), "API_KEY");
+    await userEvent.click(screen.getByLabelText("Secret 1"));
+    await userEvent.type(screen.getByLabelText("Env value 1"), "s3cret-value");
+
+    await waitFor(() => expect(screen.getByText(/unsaved change/i)).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() => expect(screen.getByText("Config saved. Applies to the next task")).toBeInTheDocument());
+    expect(screen.queryByText(/unsaved change/i)).not.toBeInTheDocument();
+
+    // Give any pending query refetch a chance to settle, then confirm the
+    // banner doesn't resurface (the bug this guards against: a stale
+    // plaintext draft that never matches the masked server state).
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText(/unsaved change/i)).not.toBeInTheDocument();
+  });
 });
