@@ -139,3 +139,31 @@ describe("CreateContainer", () => {
     }));
   });
 });
+
+test("shows the effort selector for a CLI driver and posts the picked value", async () => {
+  const user = userEvent.setup();
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [
+    tpl({ driver: "opencode", effort: null,
+      driver_template: { driver: "opencode", default_system_prompt: "", available_tools: [], tools_user_editable: false, supports_context: true } }),
+  ] })));
+  let posted: any = null;
+  server.use(http.post("/v1/containers", async ({ request }) => {
+    posted = await request.json();
+    return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+  }));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  await user.type(screen.getByLabelText(/name/i), "research-prod");
+  await user.click(await screen.findByRole("button", { name: "high" }));
+  await user.click(screen.getByRole("button", { name: /Create container/i }));
+  await waitFor(() => expect(posted?.config).toMatchObject({ driver: "opencode", effort: "high" }));
+});
+
+test("hides the effort selector for a driver without effort support", async () => {
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl()] })));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "high" })).not.toBeInTheDocument();
+});

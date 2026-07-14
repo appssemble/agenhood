@@ -60,7 +60,7 @@ describe("SubmitTask", () => {
     let body: any = null;
     server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => { body = await request.json(); return HttpResponse.json({ task_id: "tsk_10", status: "running", started_at: "t" }); }));
     renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
-    expect(screen.queryByLabelText(/Effort override/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "high" })).not.toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText(/Prompt/i), "No effort here");
     await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
     await waitFor(() => expect(body.prompt).toBe("No effort here"));
@@ -73,9 +73,7 @@ describe("SubmitTask", () => {
     server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => { body = await request.json(); return HttpResponse.json({ task_id: "tsk_11", status: "running", started_at: "t" }); }));
     renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
     await userEvent.type(await screen.findByLabelText(/Prompt/i), "Research pricing");
-    const effortSelect = await screen.findByLabelText(/Effort override/i);
-    await userEvent.click(effortSelect);
-    await userEvent.click(await screen.findByRole("option", { name: "high" }));
+    await userEvent.click(await screen.findByRole("button", { name: "high" }));
     await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
     await waitFor(() => expect(body.prompt).toBe("Research pricing"));
     expect(body.effort).toBe("high");

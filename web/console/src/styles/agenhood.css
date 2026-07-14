@@ -158,6 +158,8 @@ kbd{
 .seg button.active{ background: var(--surface); box-shadow: var(--sh-1); color: var(--ink); }
 .seg button.active .icon{ opacity: 1; }
 .seg button[disabled]{ opacity: .45; pointer-events: none; }
+/* content-sized seg: opt out of the parent flex column's cross-axis stretch */
+.seg.seg-fit{ align-self: flex-start; }
 
 /* pill search — gray background to match the segmented control */
 .search-pill{

@@ -228,3 +228,34 @@ describe("SubmitTask chat layout", () => {
     expect(body.session_id).toBeUndefined();
   });
 });
+
+test("chat Options panel carries the effort override into the payload and badges the toggle", async () => {
+  server.use(http.get("/v1/auth/me", () => HttpResponse.json({ id: "u", tenant_id: "t", name: "D", email: "d@x.io", role: "member", is_staff: false, must_change_password: false,
+    tenant: { id: "t", name: "A", limits: { allowed_drivers: ["opencode"], default_max_iterations: 30, default_max_tokens: 200000, default_task_timeout_seconds: 1800, max_concurrent_tasks_per_container: 4 } } })));
+  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl] })));
+  server.use(http.get("/v1/containers/con_1", () => HttpResponse.json({ id: "con_1", name: "c", external_id: null, status: "running", image_variant: "full", image_tag: "v",
+    config: { driver: "opencode", model: "opencode/hy3-free", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } }, metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
+  server.use(http.get("/v1/containers/con_1/tasks", () => HttpResponse.json({ tasks: [] })));
+  server.use(http.get("/v1/containers/con_1/sessions", () => HttpResponse.json({ sessions: [] })));
+  let body: any = null;
+  server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => {
+    body = await request.json();
+    return HttpResponse.json({ task_id: "tsk_e", status: "running", started_at: "t" });
+  }));
+
+  renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+  await userEvent.click(await screen.findByRole("button", { name: /chat/i }));
+
+  // Open the Options panel and pick a non-default effort.
+  await userEvent.click(await screen.findByRole("button", { name: /options/i }));
+  await userEvent.click(await screen.findByRole("button", { name: "high" }));
+
+  // Collapsed-state affordance: the toggle badges the active override.
+  await userEvent.click(screen.getByRole("button", { name: /options/i }));
+  expect(screen.getByText("effort high")).toBeInTheDocument();
+
+  await userEvent.type(await screen.findByLabelText("Prompt"), "Go deep");
+  await userEvent.click(screen.getByRole("button", { name: /send/i }));
+  await waitFor(() => expect(body?.prompt).toBe("Go deep"));
+  expect(body.effort).toBe("high");
+});

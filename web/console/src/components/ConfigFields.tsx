@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Field, Textarea, Checkbox, Tag, Note, SegControl } from "../ui";
 import { Icons } from "../ui/Icon";
+import { EffortField } from "./EffortField";
 import { ModelPicker } from "./ModelPicker";
 import { EFFORT_DRIVERS } from "../api/types";
 import type { ContextSpec, SystemPromptMode, Template, ToolSpec, Skill, McpServer, Effort } from "../api/types";
@@ -79,19 +80,14 @@ export function ConfigFields({
       <SectionCard icon={Icons.Cpu} title="Model">
         <ModelPicker driver={value.driver} value={value.model} onChange={(m) => onPatch({ model: m })} />
         {EFFORT_DRIVERS.includes(value.driver) && (
-          <Field label="Effort" hint="Reasoning effort passed to the CLI. Default keeps the model's own.">
-            <SegControl<"default" | Effort>
-              value={value.effort ?? "default"}
-              onChange={(v) => onPatch({ effort: v === "default" ? null : v })}
-              options={[
-                { value: "default", label: "Default" },
-                { value: "low", label: "Low" },
-                { value: "medium", label: "Medium" },
-                { value: "high", label: "High" },
-                { value: "max", label: "Max" },
-              ]}
+          <div style={{ marginTop: 14 }}>
+            <EffortField
+              driver={value.driver}
+              value={value.effort ?? null}
+              onChange={(v) => onPatch({ effort: v })}
+              hint="Reasoning effort passed to the CLI · Default keeps the model's own"
             />
-          </Field>
+          </div>
         )}
       </SectionCard>
 

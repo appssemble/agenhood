@@ -1,21 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Button, Tag, Textarea, Dropdown } from "../ui";
+import { Button, Tag, Textarea } from "../ui";
 import { Icons } from "../ui/Icon";
+import { EffortField } from "../components/EffortField";
 import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
 import { PromptPicker } from "../ui/PromptPicker";
 import { appendPrompt } from "../lib/prompt";
 import { EFFORT_DRIVERS } from "../api/types";
 import type { AgentConfig, Effort, OutputType, TaskSummary, TenantLimits } from "../api/types";
-
-const EFFORT_OPTIONS = [
-  { value: "", label: "container default" },
-  { value: "low", label: "low" },
-  { value: "medium", label: "medium" },
-  { value: "high", label: "high" },
-  { value: "max", label: "max" },
-];
 
 // Classic form layout for submitting a task. Extracted unchanged from the
 // original SubmitTask screen; the parent owns all state and submission.
@@ -154,6 +147,11 @@ export function SubmitTaskForm({
           />
         </div>
 
+        {/* Effort — per-task override, same control as the chat Options panel. */}
+        <div style={{ marginTop: 18 }}>
+          <EffortField driver={config.driver} value={effort} onChange={onEffortChange} />
+        </div>
+
         {/* Submit */}
         <div style={{ marginTop: 22, display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <Button variant="primary" style={{ gap: 6 }} onClick={onSubmit} disabled={!prompt || schemaBlocksSubmit || submitting}>
@@ -174,15 +172,7 @@ export function SubmitTaskForm({
             {EFFORT_DRIVERS.includes(config.driver) && (
               <>
                 <dt>Effort</dt>
-                <dd>
-                  <Dropdown
-                    aria-label="Effort override"
-                    value={effort ?? ""}
-                    onChange={(v) => onEffortChange((v || null) as Effort | null)}
-                    options={EFFORT_OPTIONS}
-                    width={160}
-                  />
-                </dd>
+                <dd className="mono">{config.effort ?? "default"}</dd>
               </>
             )}
             <dt>Tools</dt>

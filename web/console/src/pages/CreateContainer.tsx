@@ -5,9 +5,11 @@ import { useToast } from "../components/Toast";
 import { ApiError } from "../api/client";
 import { Button, SegControl, Field, Input, Note, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
+import { EffortField } from "../components/EffortField";
 import { ModelPicker } from "../components/ModelPicker";
 import { MEM_OPTIONS, CPU_OPTIONS } from "../lib/resourceOptions";
-import type { Template } from "../api/types";
+import { EFFORT_DRIVERS } from "../api/types";
+import type { Effort, Template } from "../api/types";
 
 const DEFAULT_OPTION = { value: "", label: "Default (by image variant)" };
 
@@ -85,6 +87,7 @@ export default function CreateContainer() {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [variant, setVariant] = useState<"full" | "slim">("full");
   const [model, setModel] = useState("");
+  const [effort, setEffort] = useState<Effort | null>(null);
   const [memLimit, setMemLimit] = useState("");
   const [cpus, setCpus] = useState("");
 
@@ -96,6 +99,7 @@ export default function CreateContainer() {
   // the form only sends explicit picks).
   useEffect(() => {
     setModel(chosen?.model ?? "");
+    setEffort(chosen?.effort ?? null);
     setVariant((chosen?.image_variant as "full" | "slim") ?? "full");
     setMemLimit("");
     setCpus("");
@@ -132,7 +136,7 @@ export default function CreateContainer() {
             system_prompt_mode: chosen.system_prompt_mode,
             tools: chosen.tools,
             context: chosen.context,
-            effort: chosen.effort ?? null,
+            effort,
           }
         : undefined;
       // Both dropdowns default to "" (use the image-variant default) — only
@@ -267,6 +271,16 @@ export default function CreateContainer() {
                 <Field label="Model">
                   <ModelPicker driver={chosen?.driver ?? ""} value={model} onChange={setModel} />
                 </Field>
+                {EFFORT_DRIVERS.includes(chosen?.driver ?? "") && (
+                  <div style={{ marginTop: 14 }}>
+                    <EffortField
+                      driver={chosen?.driver ?? ""}
+                      value={effort}
+                      onChange={setEffort}
+                      hint="Reasoning effort passed to the CLI · Default keeps the model's own"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </section>

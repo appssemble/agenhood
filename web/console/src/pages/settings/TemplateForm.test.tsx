@@ -75,7 +75,7 @@ describe("TemplateForm (create mode)", () => {
     // "vanilla" has a DRIVER_LABEL override ("barebones"); switch to opencode
     // (an effort driver), set an effort, then switch back to vanilla.
     await userEvent.click(screen.getByRole("radio", { name: "opencode" }));
-    await userEvent.click(await screen.findByRole("button", { name: "High" }));
+    await userEvent.click(await screen.findByRole("button", { name: "high" }));
     await userEvent.click(screen.getByRole("radio", { name: "barebones" }));
     await userEvent.type(screen.getByLabelText("Name"), "T");
     await userEvent.click(screen.getByRole("button", { name: /Save template/i }));
