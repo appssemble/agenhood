@@ -37,6 +37,7 @@ from control_plane.credentials_service import (
     model_is_keyless,
     provider_for_model,
 )
+from control_plane.env_vars import resolve_env
 from control_plane.errors import (
     APIError,
     api_error,
@@ -238,6 +239,7 @@ def build_shim_request(
     git_snapshots: bool = True,
     skills: list[ShimSkill] | None = None,
     mcp_servers: list[ShimMcpServer] | None = None,
+    env: dict[str, str] | None = None,
     session_id: str | None = None,
     session_is_continuation: bool = False,
 ) -> ShimTaskRequest:
@@ -255,6 +257,7 @@ def build_shim_request(
         git_snapshots=git_snapshots,
         skills=skills or [],
         mcp_servers=mcp_servers or [],
+        env=env or {},
         session_id=session_id,
         session_is_continuation=session_is_continuation,
     )
@@ -570,6 +573,12 @@ async def submit_task_core(
     config = AgentConfig(**row.config)
     config = apply_effort_override(config, body.effort)
 
+    # Per-container env for the agent process. Secrets decrypt in memory only;
+    # a decrypt failure fails the submission rather than silently dropping vars.
+    task_env: dict[str, str] = {}
+    if row.env_vars:
+        task_env = resolve_env(row.env_vars, load_key_from_env)
+
     session_is_continuation = False
     if body.session_id is not None:
         session_is_continuation = await _session_precheck(
@@ -649,6 +658,7 @@ async def submit_task_core(
         git_snapshots=not linked,
         skills=task_skills,
         mcp_servers=task_mcp,
+        env=task_env,
         session_id=body.session_id,
         session_is_continuation=session_is_continuation,
     )

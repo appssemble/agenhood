@@ -144,6 +144,10 @@ class ShimTaskRequest(BaseModel):
     skills: list[ShimSkill] = Field(default_factory=list)
     # Resolved MCP servers (opencode/codex only); decrypted, in-memory, never persisted.
     mcp_servers: list[ShimMcpServer] = Field(default_factory=list)
+    # Per-container env vars for the agent process (spec: container env vars).
+    # Decrypted by the control plane at dispatch; in-memory only — same
+    # handling rules as llm_credential: never persisted, never logged.
+    env: dict[str, str] = Field(default_factory=dict)
     # Driver-sessions: groups this task with prior tasks sharing the same id.
     # `session_is_continuation` is precomputed by the control plane (a cheap
     # `tasks` query) — the driver never queries the DB itself.

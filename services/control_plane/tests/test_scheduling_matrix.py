@@ -336,6 +336,7 @@ async def test_submit_task_core_rejects_over_cap(monkeypatch: pytest.MonkeyPatch
         name = "cap-test"
         external_id = None
         git_mode = "snapshot"
+        env_vars = None
 
     _LIMITS = {
         "max_running_containers": 5,

@@ -64,6 +64,7 @@ class _FakeContainerRow:
     name = "test"
     external_id = None
     git_mode = "snapshot"
+    env_vars = None
 
 
 _TENANT_LIMITS = {
