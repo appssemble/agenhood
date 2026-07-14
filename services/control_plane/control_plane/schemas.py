@@ -338,6 +338,14 @@ class WorkflowStepIn(BaseModel):
         default_factory=dict,
         description="Variable substitutions applied to the prompt for this step.",
     )
+    exports: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Workspace-relative paths or glob patterns (e.g. 'dist/**') copied "
+            "into the NEXT step's container before it runs. A pattern matching "
+            "no files fails the run. Ignored on the last step."
+        ),
+    )
 
 
 class CreateWorkflowRequest(BaseModel):

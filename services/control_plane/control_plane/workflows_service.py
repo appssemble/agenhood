@@ -13,6 +13,53 @@ from control_plane.ids import new_workflow_id
 
 MAX_WF_NAME = 120
 MAX_WF_STEPS = 50
+MAX_STEP_EXPORTS = 20
+MAX_EXPORT_LEN = 512
+_EXPORT_RESERVED = (".agent-runtime", ".agent-state", ".git")
+
+
+def _normalize_exports(idx: int, raw: Any) -> list[str]:
+    """Shape-validate a step's export paths/globs (workflow file transfer)."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise api_error(400, "validation_error", f"step {idx} exports must be a list", "steps")
+    if len(raw) > MAX_STEP_EXPORTS:
+        raise api_error(
+            400, "validation_error",
+            f"step {idx} has too many exports (max {MAX_STEP_EXPORTS})", "steps",
+        )
+    out: list[str] = []
+    for e in raw:
+        if not isinstance(e, str) or not e.strip():
+            raise api_error(
+                400, "validation_error",
+                f"step {idx} exports must be non-empty strings", "steps",
+            )
+        e = e.strip()
+        if len(e) > MAX_EXPORT_LEN:
+            raise api_error(
+                400, "validation_error",
+                f"step {idx} export exceeds {MAX_EXPORT_LEN} chars", "steps",
+            )
+        if e.startswith("/"):
+            raise api_error(
+                400, "validation_error",
+                f"step {idx} export must be workspace-relative: {e}", "steps",
+            )
+        parts = e.split("/")
+        if ".." in parts:
+            raise api_error(
+                400, "validation_error",
+                f"step {idx} export must not contain '..': {e}", "steps",
+            )
+        if parts[0] in _EXPORT_RESERVED:
+            raise api_error(
+                400, "validation_error",
+                f"step {idx} export targets a reserved path: {e}", "steps",
+            )
+        out.append(e)
+    return out
 
 
 def _normalize_step(idx: int, step: Any) -> dict[str, Any]:
@@ -28,7 +75,12 @@ def _normalize_step(idx: int, step: Any) -> dict[str, Any]:
     if not isinstance(raw_vars, dict):
         raise api_error(400, "validation_error", f"step {idx} variables must be an object", "steps")
     variables = {str(k): str(v) for k, v in raw_vars.items()}
-    return {"prompt_id": pid, "container_id": cid, "variables": variables}
+    return {
+        "prompt_id": pid,
+        "container_id": cid,
+        "variables": variables,
+        "exports": _normalize_exports(idx, step.get("exports")),
+    }
 
 
 def validate_workflow_fields(*, name: str, description: str | None, steps: Any) -> list[dict[str, Any]]:
