@@ -13,8 +13,10 @@ import agentcore.tools  # noqa: F401
 from agentcore.drivers.base import DRIVERS
 from agentcore.models import ContextSpec, Effort
 from agentcore.tools.base import TOOLS
+from control_plane.auth.crypto import load_key_from_env
 from control_plane.auth.principal import Principal, require_admin, resolve_principal
 from control_plane.config import Settings
+from control_plane.env_vars import public_env_vars, store_env_vars
 from control_plane.errors import APIError, api_error, not_found, validation_error
 from control_plane.ids import new_template_id
 from control_plane.models_db import templates
@@ -77,6 +79,20 @@ def context_from_body(raw: Any) -> dict[str, Any]:
         raise validation_error(
             f"invalid context: {first['msg']}", field="context"
         ) from exc
+
+
+def template_env_from_body(
+    raw: Any, *, existing: list[dict[str, Any]] | None
+) -> list[dict[str, Any]] | None:
+    """Validate + encrypt a submitted env_vars list (None = field absent).
+
+    ``existing`` supplies the stored secrets a null-valued secret item keeps
+    (PATCH round-trip); pass None on create."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(i, dict) for i in raw):
+        raise validation_error("env_vars must be a list of objects", field="env_vars")
+    return store_env_vars(raw, existing, load_key_from_env)
 
 
 def validate_effort(value: Any) -> None:
@@ -156,6 +172,7 @@ def template_public_view(row: dict[str, Any]) -> dict[str, Any]:
         "capabilities": capabilities,
         "driver_template": driver_template,
         "available_tool_specs": available_tool_specs,
+        "env_vars": public_env_vars(row.get("env_vars")),
     }
 
 
@@ -285,6 +302,7 @@ async def create_template(
         "skills": body.get("skills", []),
         "mcp_servers": body.get("mcp_servers", []),
         "limits": body.get("limits", {}),
+        "env_vars": template_env_from_body(body.get("env_vars"), existing=None),
         "is_builtin": False,
         "created_by": principal.user_id,
     }
@@ -352,13 +370,17 @@ async def patch_template(
         allowed_fields = {
             "name", "driver", "model", "effort", "system_prompt",
             "system_prompt_mode", "tools", "context", "skills", "mcp_servers", "limits",
-            "image_variant", "mem_limit", "cpus",
+            "image_variant", "mem_limit", "cpus", "env_vars",
         }
         updates = {k: v for k, v in body.items() if k in allowed_fields}
         if "context" in updates:
             updates["context"] = context_from_body(updates["context"])
         if "effort" in updates:
             validate_effort(updates["effort"])
+        if "env_vars" in updates:
+            updates["env_vars"] = template_env_from_body(
+                updates["env_vars"], existing=row_dict.get("env_vars")
+            )
         # Re-validate the runtime triple whenever any input to it changes —
         # including tools/driver patches against a stored slim variant.
         if {"image_variant", "mem_limit", "cpus", "tools", "driver"} & updates.keys():
@@ -454,6 +476,7 @@ async def clone_template(
             "image_variant": source.get("image_variant"),
             "mem_limit": source.get("mem_limit"),
             "cpus": source.get("cpus"),
+            "env_vars": source.get("env_vars"),
             "is_builtin": False,
             "created_by": principal.user_id,
         }
