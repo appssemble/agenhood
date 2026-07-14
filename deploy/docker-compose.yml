@@ -71,6 +71,7 @@ services:
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
       AGENT_IMAGE_TAG: ${AGENT_IMAGE_TAG}
+      WORKFLOW_TRANSFER_MAX_BYTES: ${WORKFLOW_TRANSFER_MAX_BYTES:-524288000}
     depends_on:
       postgres:
         condition: service_healthy
