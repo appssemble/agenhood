@@ -8,6 +8,7 @@ import { Field, Button, Note } from "../../ui";
 import { Dropdown } from "../../ui/Dropdown";
 import { ConfigFields } from "../../components/ConfigFields";
 import { DriverPicker } from "../../components/DriverPicker";
+import { EnvVarsField } from "../../components/EnvVarsField";
 import { assemblePrompt } from "../assemblePrompt";
 import { driverLabel } from "../../lib/drivers";
 import { MEM_OPTIONS, CPU_OPTIONS, withCurrentValue } from "../../lib/resourceOptions";
@@ -36,7 +37,7 @@ function fromTemplate(t: Template): TemplateDraft {
     mem_limit: t.mem_limit ?? "",
     cpus: t.cpus != null ? String(t.cpus) : "",
     effort: t.effort ?? null,
-    env_vars: t.env_vars ?? [],
+    env_vars: (t.env_vars ?? []).map((v) => ({ ...v })),
   };
 }
 
@@ -192,6 +193,17 @@ export default function TemplateForm() {
               />
             </div>
           </div>
+        </Field>
+
+        {/* Environment variables — seeded onto containers created from this template */}
+        <Field
+          label="Environment variables"
+          hint="Seeded onto containers created from this template · secret values are write-only"
+        >
+          <EnvVarsField
+            value={draft.env_vars}
+            onChange={(rows) => patch({ env_vars: rows })}
+          />
         </Field>
       </div>
 

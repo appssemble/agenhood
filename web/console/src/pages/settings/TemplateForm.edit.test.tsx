@@ -66,6 +66,24 @@ describe("TemplateForm (edit mode)", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/settings/templates"));
   });
 
+  it("round-trips a masked secret env var untouched", async () => {
+    setup();
+    const withSecret = { ...existingTpl, env_vars: [{ name: "KEY", value: null, secret: true }] };
+    server.use(http.get("/v1/templates/tpl_t", () => HttpResponse.json(withSecret)));
+    let patched: any = null;
+    server.use(http.patch("/v1/templates/tpl_t", async ({ request }) => { patched = await request.json(); return HttpResponse.json(withSecret); }));
+    renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
+
+    const nameInput = await screen.findByLabelText("Name");
+    await waitFor(() => expect(nameInput).toHaveValue("My reviewer"));
+    expect(screen.getByText("••••••••")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Save template/i }));
+
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched.env_vars[0]).toEqual({ name: "KEY", value: null, secret: true });
+  });
+
   it("shows an error state when the template fetch fails", async () => {
     setup();
     server.use(http.get("/v1/templates/tpl_t", () => new HttpResponse(null, { status: 404 })));

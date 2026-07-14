@@ -56,6 +56,20 @@ describe("TemplateForm (create mode)", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/settings/templates"));
   });
 
+  it("includes an added env var row in the save body", async () => {
+    setup();
+    let posted: any = null;
+    server.use(http.post("/v1/templates", async ({ request }) => { posted = await request.json(); return HttpResponse.json({ ...vanillaTpl, id: "tpl_new", tenant_id: "t", is_builtin: false }); }));
+    renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
+    await userEvent.type(await screen.findByLabelText("Name"), "With env");
+    await userEvent.click(screen.getByText("+ Add variable"));
+    await userEvent.type(screen.getByLabelText("Env name 1"), "foo");
+    await userEvent.type(screen.getByLabelText("Env value 1"), "bar");
+    await userEvent.click(screen.getByRole("button", { name: /Save template/i }));
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted.env_vars).toEqual([{ name: "FOO", value: "bar", secret: false }]);
+  });
+
   it("switches sections when the driver changes (tools hidden, skills shown)", async () => {
     setup();
     renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
