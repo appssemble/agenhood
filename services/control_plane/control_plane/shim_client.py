@@ -24,6 +24,32 @@ class ShimGitNotFound(ShimError):
     """Shim returned 404 — e.g. unknown snapshot sha."""
 
 
+class ShimExportUnmatched(ShimError):
+    """Shim returned 422 unmatched_exports — pattern(s) matched no files."""
+
+    def __init__(self, unmatched: list[str]):
+        super().__init__(
+            "export pattern(s) matched no files: " + (", ".join(unmatched) or "unknown")
+        )
+        self.unmatched = unmatched
+
+
+class ShimTransferTooLarge(ShimError):
+    """Shim returned 413 — export/import exceeds the transfer size cap."""
+
+
+def _raise_transfer_error(r: httpx.Response) -> None:
+    """Map the transfer endpoints' modeled 422/413 bodies to typed errors."""
+    if r.status_code == 422:
+        try:
+            unmatched = list(r.json()["error"]["unmatched"])
+        except Exception:  # noqa: BLE001 — malformed body still means 422
+            unmatched = []
+        raise ShimExportUnmatched(unmatched)
+    if r.status_code == 413:
+        raise ShimTransferTooLarge(r.text)
+
+
 class ShimClient:
     def __init__(self, base_url: str, token: str, timeout: float = 30.0):
         self._base_url = base_url.rstrip("/")
@@ -105,6 +131,49 @@ class ShimClient:
             resp.raise_for_status()
             async for chunk in resp.aiter_bytes():
                 yield chunk
+
+    # ---- Workflow file transfer (workflow file transfer spec) -------------
+
+    async def export_manifest(
+        self, paths: list[str], *, max_bytes: int | None = None
+    ) -> dict[str, Any]:
+        params: list[tuple[str, str]] = [("paths", p) for p in paths]
+        params.append(("dry_run", "true"))
+        if max_bytes is not None:
+            params.append(("max_bytes", str(max_bytes)))
+        r = await self._client.get("/files/export", params=params)
+        _raise_transfer_error(r)
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
+
+    async def export_stream(
+        self, paths: list[str], *, max_bytes: int | None = None
+    ) -> AsyncIterator[bytes]:
+        params: list[tuple[str, str]] = [("paths", p) for p in paths]
+        if max_bytes is not None:
+            params.append(("max_bytes", str(max_bytes)))
+        async with self._client.stream(
+            "GET", "/files/export", params=params, timeout=None
+        ) as resp:
+            if resp.status_code in (413, 422):
+                await resp.aread()
+                _raise_transfer_error(resp)
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+
+    async def import_archive(
+        self, content: AsyncIterator[bytes], *, max_bytes: int | None = None
+    ) -> dict[str, Any]:
+        params: dict[str, str] = {}
+        if max_bytes is not None:
+            params["max_bytes"] = str(max_bytes)
+        r = await self._client.post(
+            "/files/import", params=params, content=content, timeout=None
+        )
+        _raise_transfer_error(r)
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
 
     # ---- Git (workspace git rollback spec) -------------------------------
 
