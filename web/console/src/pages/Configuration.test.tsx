@@ -204,4 +204,23 @@ describe("Configuration editor (driver-aware)", () => {
     expect(envPut).toEqual([{ name: "URL", value: "https://y", secret: false }]);
     expect(configPatched).toBe(false);
   });
+
+  it("shows an env-specific error toast when the env PUT fails, without touching config", async () => {
+    setup({ driver: "vanilla", tools: ["read_file"], envVars: [{ name: "URL", value: "https://x", secret: false }] });
+    let configPatched = false;
+    server.use(http.patch("/v1/containers/con_1/config", async ({ request }) => { configPatched = true; const body = await request.json(); return HttpResponse.json({ config: body, assembled_prompt: "x" }); }));
+    server.use(http.put("/v1/containers/con_1/env", () => HttpResponse.json({ detail: "Invalid env var name" }, { status: 400 })));
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+
+    const envValue = await screen.findByLabelText("Env value 1");
+    await userEvent.clear(envValue);
+    await userEvent.type(envValue, "https://y");
+
+    await waitFor(() => expect(screen.getByText(/unsaved change/i)).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() => expect(screen.getByText("Couldn't save environment variables")).toBeInTheDocument());
+    expect(screen.queryByText("Config saved. Applies to the next task")).not.toBeInTheDocument();
+    expect(configPatched).toBe(false);
+  });
 });

@@ -87,11 +87,17 @@ export default function Configuration() {
   async function onSave() {
     try {
       if (configDirty) await save.mutateAsync(draft!);
-      if (envDirty && envDraft) await saveEnv.mutateAsync(envDraft);
-      toast.success("Config saved. Applies to the next task");
     } catch (err) {
       toast.error("Couldn't save config", err instanceof ApiError ? err.message : undefined);
+      return;
     }
+    try {
+      if (envDirty && envDraft) await saveEnv.mutateAsync(envDraft);
+    } catch (err) {
+      toast.error("Couldn't save environment variables", err instanceof ApiError ? err.message : undefined);
+      return;
+    }
+    toast.success("Config saved. Applies to the next task");
   }
 
 
