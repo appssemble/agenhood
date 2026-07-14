@@ -30,7 +30,9 @@ def _failing_loader() -> bytes:
 # ---- store_env_vars: validation ---------------------------------------------
 
 def test_plain_var_stored_verbatim() -> None:
-    stored = store_env_vars([{"name": "MY_URL", "value": "https://x", "secret": False}], None, _loader)
+    stored = store_env_vars(
+        [{"name": "MY_URL", "value": "https://x", "secret": False}], None, _loader
+    )
     assert stored == [{"name": "MY_URL", "value": "https://x", "secret": False}]
 
 
@@ -48,7 +50,10 @@ def test_name_too_long_rejected() -> None:
         store_env_vars([{"name": "A" * 129, "value": "v", "secret": False}], None, _loader)
 
 
-@pytest.mark.parametrize("reserved", ["SHIM_TOKEN", "HOME", "PATH", "HTTP_PROXY", "NO_PROXY", "TENANT_ID"])
+@pytest.mark.parametrize(
+    "reserved",
+    ["SHIM_TOKEN", "HOME", "PATH", "HTTP_PROXY", "NO_PROXY", "TENANT_ID"],
+)
 def test_reserved_name_rejected(reserved: str) -> None:
     with pytest.raises(APIError) as exc:
         store_env_vars([{"name": reserved, "value": "v", "secret": False}], None, _loader)
@@ -109,7 +114,10 @@ def test_secret_null_with_no_existing_rejected() -> None:
 
 def test_omitted_item_is_deleted_full_replace() -> None:
     existing = store_env_vars(
-        [{"name": "A", "value": "1", "secret": False}, {"name": "B", "value": "2", "secret": False}],
+        [
+            {"name": "A", "value": "1", "secret": False},
+            {"name": "B", "value": "2", "secret": False},
+        ],
         None, _loader,
     )
     stored = store_env_vars([{"name": "A", "value": "1", "secret": False}], existing, _loader)
