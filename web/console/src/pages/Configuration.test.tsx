@@ -238,7 +238,7 @@ describe("Configuration editor (driver-aware)", () => {
     }));
     renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
 
-    await userEvent.click(await screen.findByRole("button", { name: "+ Add variable" }));
+    await userEvent.click(await screen.findByRole("button", { name: /add variable/i }));
     await userEvent.type(screen.getByLabelText("Env name 1"), "API_KEY");
     await userEvent.click(screen.getByLabelText("Secret 1"));
     await userEvent.type(screen.getByLabelText("Env value 1"), "s3cret-value");

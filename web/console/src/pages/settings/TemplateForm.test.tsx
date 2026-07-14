@@ -62,7 +62,7 @@ describe("TemplateForm (create mode)", () => {
     server.use(http.post("/v1/templates", async ({ request }) => { posted = await request.json(); return HttpResponse.json({ ...vanillaTpl, id: "tpl_new", tenant_id: "t", is_builtin: false }); }));
     renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
     await userEvent.type(await screen.findByLabelText("Name"), "With env");
-    await userEvent.click(screen.getByText("+ Add variable"));
+    await userEvent.click(screen.getByRole("button", { name: /add variable/i }));
     await userEvent.type(screen.getByLabelText("Env name 1"), "foo");
     await userEvent.type(screen.getByLabelText("Env value 1"), "bar");
     await userEvent.click(screen.getByRole("button", { name: /Save template/i }));

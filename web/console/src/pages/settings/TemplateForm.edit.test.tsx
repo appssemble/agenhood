@@ -76,7 +76,9 @@ describe("TemplateForm (edit mode)", () => {
 
     const nameInput = await screen.findByLabelText("Name");
     await waitFor(() => expect(nameInput).toHaveValue("My reviewer"));
-    expect(screen.getByText("••••••••")).toBeInTheDocument();
+    // Masked secret: locked name, placeholder-masked value, Replace affordance.
+    expect(screen.getByLabelText("Env name 1")).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: /replace secret value 1/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /Save template/i }));
 

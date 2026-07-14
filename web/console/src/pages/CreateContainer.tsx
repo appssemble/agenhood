@@ -131,8 +131,10 @@ export default function CreateContainer() {
   if (!model) missing.push("Choose a model");
   // An inline env list can't reference template ciphertext: once touched,
   // inherited secrets (value === null) must be re-entered or removed.
-  if (envTouched && envVars.some((v) => v.secret && v.value === null))
-    missing.push("Re-enter inherited secret env values");
+  // Inherited template secrets (value null) can't ride an inline list, and a
+  // replaced-but-empty secret would silently store an encrypted empty string.
+  if (envTouched && envVars.some((v) => v.secret && !v.value))
+    missing.push("Re-enter secret env values");
   if (envTouched && envVars.some((v) => !v.name.trim()))
     missing.push("Name every env variable");
   const ready = missing.length === 0;

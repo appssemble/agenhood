@@ -223,16 +223,17 @@ test("inherited template secret blocks create until replaced with a typed value"
   renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
   expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
   await user.type(screen.getByLabelText("Name"), "research-prod");
-  // Touch the env section without clearing the inherited secret: edit its name.
+  // Inherited secret rows lock their name; Replace is how the row is touched.
   const nameInput = await screen.findByLabelText(/Env name 1/i);
-  await user.type(nameInput, "X");
-  expect(screen.getByRole("button", { name: /Create container/i })).toBeDisabled();
-  expect(screen.getByText(/Re-enter inherited secret env values/i)).toBeInTheDocument();
+  expect(nameInput).toHaveAttribute("readonly");
   await user.click(screen.getByRole("button", { name: /Replace/i }));
+  // Touched but still empty: create stays blocked until a value is typed.
+  expect(screen.getByRole("button", { name: /Create container/i })).toBeDisabled();
+  expect(screen.getByText(/Re-enter secret env values/i)).toBeInTheDocument();
   const secretInput = screen.getByLabelText(/Env value 1/i);
   await user.type(secretInput, "s3cr3t");
   expect(screen.getByRole("button", { name: /Create container/i })).not.toBeDisabled();
   await user.click(screen.getByRole("button", { name: /Create container/i }));
   await waitFor(() => expect(posted).not.toBeNull());
-  expect(posted.env_vars).toEqual([{ name: "KEYX", value: "s3cr3t", secret: true }]);
+  expect(posted.env_vars).toEqual([{ name: "KEY", value: "s3cr3t", secret: true }]);
 });

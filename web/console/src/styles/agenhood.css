@@ -2310,3 +2310,24 @@ table.tbl{ width: 100%; border-collapse: separate; border-spacing: 0; font-size:
 .cal-chip.pr{ background: var(--info-100); color: var(--info-700); border-left-color: var(--info-500); }
 .cal-chip.off{ background: var(--surface-3); color: var(--muted); border-left-color: var(--border-strong); }   /* paused — greyed */
 .cal-more{ font-size: 10.5px; color: var(--muted); font-weight: 600; margin-top: 4px; padding-left: 4px; }
+
+/* ── env vars editor (EnvVarsField) ──────────── */
+.envv{ display:flex; flex-direction:column; gap:8px; }
+.envv-row{
+  display:grid; grid-template-columns: minmax(150px,1fr) minmax(210px,1.55fr) auto;
+  gap:10px; align-items:center;
+}
+.envv-row .input{ font-family:var(--font-mono); font-size:12.5px; padding:8px 10px; }
+.envv-row .input[readonly]{ background:var(--surface-2); color:var(--ink-2); }
+.envv-row .input:disabled{ background:var(--surface-2); color:var(--muted); }
+.envv-val{ display:flex; align-items:center; gap:6px; min-width:0; }
+.envv-val .input{ flex:1; min-width:0; }
+.envv-ctl{ display:flex; align-items:center; gap:12px; justify-content:flex-end; }
+.envv-ctl .check{ font-size:12.5px; white-space:nowrap; }
+.envv-empty{ font-size:12.5px; color:var(--muted); padding:2px 0; }
+.envv-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:2px; }
+.envv-rules{ font-size:11px; color:var(--muted); }
+@media (max-width: 760px){
+  .envv-row{ grid-template-columns:1fr; gap:6px; }
+  .envv-ctl{ justify-content:flex-start; }
+}

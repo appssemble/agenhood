@@ -207,14 +207,22 @@ export default function Configuration() {
           />
 
           {/* Per-container env vars for the agent process. Applies to the next
-              task, like every other config change; secrets are write-only. */}
-          <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Field
-              label="Environment variables"
-              hint="Available to the agent's processes on the next task · secret values are write-only"
-            >
+              task, like every other config change; secrets are write-only.
+              Rendered as a section-card so it reads as part of the same stack
+              ConfigFields produces above. */}
+          <div className="section-card">
+            <div className="section-card-head">
+              <span className="section-card-ico"><Icons.Code w={15} /></span>
+              <div className="section-card-titles">
+                <span className="section-card-title">Environment variables</span>
+                <span className="section-card-hint">
+                  Injected into the agent's processes on the next task · secret values are write-only
+                </span>
+              </div>
+            </div>
+            <div className="section-card-body">
               <EnvVarsField value={envDraft ?? []} onChange={setEnvDraft} />
-            </Field>
+            </div>
           </div>
         </div>
       </div>
