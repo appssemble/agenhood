@@ -180,6 +180,7 @@ class VanillaDriver:
         mcp_servers: list[Any] | None = None,  # opencode/codex-only; ignored here
         session_id: str | None = None,
         session_is_continuation: bool = False,
+        env: dict[str, str] | None = None,
     ) -> TaskResult:
         from agentcore.prompt import assemble_system_prompt
 
@@ -194,7 +195,7 @@ class VanillaDriver:
             limits=limits,
         )
         anthropic_tools = [_tool_spec_to_anthropic(s) for s in specs]
-        tool_ctx = ToolContext(workspace=workspace, cancel=cancel)
+        tool_ctx = ToolContext(workspace=workspace, cancel=cancel, env=env or {})
 
         if session_id is not None and session_is_continuation:
             state = read_session_state(workspace, self.name, session_id)

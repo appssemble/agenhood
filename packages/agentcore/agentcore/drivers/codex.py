@@ -296,6 +296,7 @@ class CodexDriver:
         mcp_servers: list[ShimMcpServer] | None = None,
         session_id: str | None = None,
         session_is_continuation: bool = False,
+        env: dict[str, str] | None = None,
     ) -> TaskResult:
         resume_thread_id: str | None = None
         if session_id is not None and session_is_continuation:
@@ -317,6 +318,7 @@ class CodexDriver:
             workspace=workspace, skills=skills, mcp_servers=mcp_servers,
             session_id=session_id, resume_thread_id=resume_thread_id,
             latest_thread_id=latest_thread_id,
+            env=env,
         )
         if session_id is not None and latest_thread_id["id"]:
             write_session_state(
@@ -341,6 +343,7 @@ class CodexDriver:
         session_id: str | None,
         resume_thread_id: str | None,
         latest_thread_id: dict[str, str | None],
+        env: dict[str, str] | None = None,
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
@@ -361,8 +364,8 @@ class CodexDriver:
                 workspace=workspace, model=model_arg(config.model),
                 ephemeral=session_id is None, effort=config.effort,
             )
-        env = build_env(
-            sandbox.build_child_env(),
+        child_env = build_env(
+            sandbox.build_child_env(env),
             credential=credential,
             credential_kind=credential_kind,
             codex_home=home,
@@ -415,7 +418,7 @@ class CodexDriver:
             count = write_codex_mcp(workspace, mcp_servers or [])
             if count:
                 sandbox.chown_to_agent(codex_config_path(workspace))
-                env.update(codex_mcp_env(mcp_servers or []))
+                child_env.update(codex_mcp_env(mcp_servers or []))
                 await emit("log", log_payload("mcp_materialized", data={"count": count}))
         except Exception as exc:  # noqa: BLE001 — MCP is best-effort
             await emit(
@@ -432,7 +435,7 @@ class CodexDriver:
             proc = await sandbox.spawn_untrusted(
                 cmd,
                 cwd=workspace,
-                env=env,
+                env=child_env,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,

@@ -215,6 +215,7 @@ class ClaudeCodeDriver:
         mcp_servers: list[ShimMcpServer] | None = None,
         session_id: str | None = None,
         session_is_continuation: bool = False,
+        env: dict[str, str] | None = None,
     ) -> TaskResult:
         resume_session_id: str | None = None
         if session_id is not None and session_is_continuation:
@@ -235,6 +236,7 @@ class ClaudeCodeDriver:
             cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
             workspace=workspace, skills=skills, mcp_servers=mcp_servers,
             resume_session_id=resume_session_id, latest_session_id=latest_session_id,
+            env=env,
         )
         if session_id is not None and latest_session_id["id"]:
             write_session_state(
@@ -259,6 +261,7 @@ class ClaudeCodeDriver:
         mcp_servers: list[ShimMcpServer] | None,
         resume_session_id: str | None,
         latest_session_id: dict[str, str | None],
+        env: dict[str, str] | None = None,
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
@@ -311,8 +314,8 @@ class ClaudeCodeDriver:
             workspace=workspace, model=model_arg(config.model), mcp_config=mcp_path,
             resume_session_id=resume_session_id, effort=config.effort,
         )
-        env = build_env(
-            sandbox.build_child_env(),
+        child_env = build_env(
+            sandbox.build_child_env(env),
             credential=credential,
             credential_kind=credential_kind,
             home=home,
@@ -322,7 +325,7 @@ class ClaudeCodeDriver:
             proc = await sandbox.spawn_untrusted(
                 cmd,
                 cwd=workspace,
-                env=env,
+                env=child_env,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,

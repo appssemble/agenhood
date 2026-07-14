@@ -22,13 +22,13 @@ def _truncate(text: str) -> str:
 
 
 async def _run_subprocess(
-    argv: list[str], cwd: str, timeout_secs: int
+    argv: list[str], cwd: str, timeout_secs: int, env: dict[str, str] | None = None
 ) -> tuple[int, str, str, bool]:
     """Run argv as the unprivileged agent, returning (rc, stdout, stderr, timed_out)."""
     proc = await sandbox.spawn_untrusted(
         argv,
         cwd=cwd,
-        env=sandbox.build_child_env(),
+        env=sandbox.build_child_env(env),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -69,7 +69,7 @@ class BashTool:
         timeout = min(int(input.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT)
         cwd = os.path.realpath(ctx.workspace)
         code, out, err, timed_out = await _run_subprocess(
-            ["bash", "-lc", input["command"]], cwd, timeout
+            ["bash", "-lc", input["command"]], cwd, timeout, env=ctx.env
         )
         body_parts = []
         if out:
@@ -108,7 +108,7 @@ class PythonTool:
         timeout = min(int(input.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT)
         cwd = os.path.realpath(ctx.workspace)
         code, out, err, timed_out = await _run_subprocess(
-            [sys.executable, "-c", input["code"]], cwd, timeout
+            [sys.executable, "-c", input["code"]], cwd, timeout, env=ctx.env
         )
         body_parts = []
         if out:

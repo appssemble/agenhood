@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from agentcore.errors import NotFoundError
@@ -34,6 +34,9 @@ class ToolSpec:
 class ToolContext:
     workspace: str  # "/workspace"
     cancel: asyncio.Event
+    # Per-container env vars merged into tool subprocess environments
+    # (spec: container env vars). In-memory only; never logged.
+    env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

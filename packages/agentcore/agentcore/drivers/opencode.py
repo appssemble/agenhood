@@ -416,6 +416,7 @@ class OpencodeDriver:
         mcp_servers: list[ShimMcpServer] | None = None,
         session_id: str | None = None,
         session_is_continuation: bool = False,
+        env: dict[str, str] | None = None,
     ) -> TaskResult:
         resume_session_id: str | None = None
         if session_id is not None and session_is_continuation:
@@ -436,6 +437,7 @@ class OpencodeDriver:
             cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
             workspace=workspace, skills=skills, mcp_servers=mcp_servers,
             resume_session_id=resume_session_id, latest_session_id=latest_session_id,
+            env=env,
         )
         if session_id is not None and latest_session_id["id"]:
             write_session_state(
@@ -460,6 +462,7 @@ class OpencodeDriver:
         mcp_servers: list[ShimMcpServer] | None,
         resume_session_id: str | None,
         latest_session_id: dict[str, str | None],
+        env: dict[str, str] | None = None,
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
@@ -473,8 +476,8 @@ class OpencodeDriver:
             workspace=workspace, model_ref=model_ref(config.model), prompt=task.prompt,
             resume_session_id=resume_session_id, effort=config.effort,
         )
-        env = build_env(
-            sandbox.build_child_env(),
+        child_env = build_env(
+            sandbox.build_child_env(env),
             provider=provider,
             credential=credential,
             credential_kind=credential_kind,
@@ -484,7 +487,7 @@ class OpencodeDriver:
         xdg = workspace_xdg(workspace)
         for path in xdg.values():
             sandbox.ensure_agent_dir(path)
-        env.update(xdg)
+        child_env.update(xdg)
 
         # Materialize opencode skills into the discovery dir (best-effort: a
         # failure must never change the task outcome — skills are an enhancement).
@@ -556,7 +559,7 @@ class OpencodeDriver:
             proc = await sandbox.spawn_untrusted(
                 cmd,
                 cwd=workspace,
-                env=env,
+                env=child_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )

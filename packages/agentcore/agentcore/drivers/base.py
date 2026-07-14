@@ -83,6 +83,7 @@ class Driver(Protocol):
         mcp_servers: list[Any] | None = None,
         session_id: str | None = None,
         session_is_continuation: bool = False,
+        env: dict[str, str] | None = None,
     ) -> TaskResult: ...
 
 
