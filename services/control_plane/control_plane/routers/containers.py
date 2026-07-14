@@ -19,7 +19,9 @@ from agentcore.models import AgentConfig, ResolvedLimits, TaskBody
 from agentcore.prompt import assemble_system_prompt
 from agentcore.tools.base import TOOLS
 from control_plane import lifecycle
+from control_plane.audit import audit
 from control_plane.auth import Principal
+from control_plane.auth.crypto import load_key_from_env
 from control_plane.auth.principal import require_admin, resolve_principal
 from control_plane.config import Settings
 from control_plane.config_validation import (
@@ -32,6 +34,7 @@ from control_plane.docker_ctl.provision import (
     destroy_container,
     provision_container,
 )
+from control_plane.env_vars import public_env_vars, store_env_vars
 from control_plane.errors import APIError, api_error, not_found, validation_error
 from control_plane.ids import new_container_id
 from control_plane.mcp_service import filter_known_mcp_server_ids
@@ -44,6 +47,8 @@ from control_plane.schemas import (
     ConfigPatch,
     ContainerOut,
     CreateContainerRequest,
+    EnvVarIn,
+    EnvVarOut,
     ResourceLimitsIn,
 )
 from control_plane.skills_service import filter_known_skill_ids
@@ -616,6 +621,76 @@ async def patch_config(
     await session.commit()
     preview = _preview_prompt(new_config)
     return ConfigOut(config=new_config, assembled_prompt=preview).model_dump()
+
+
+@router.get(
+    "/containers/{cid}/env",
+    response_model=list[EnvVarOut],
+    response_description="The container's env vars; secret values are masked (null).",
+)
+async def get_container_env(
+    cid: Annotated[str, Path(description="Container id whose env vars to fetch.")],
+    request: Request,
+    principal: Principal = Depends(_principal),
+    session: AsyncSession = Depends(_session),
+) -> list[dict]:  # type: ignore[type-arg]
+    """List a container's environment variables.
+
+    Requires a tenant-scoped credential. Secret values are write-only and
+    returned with ``value: null``. Returns 404 (not_found) if the container is
+    missing or not owned by the caller's tenant.
+    """
+    row = await _load_owned_container(session, _tid(principal), cid)
+    return public_env_vars(row.env_vars)
+
+
+@router.put(
+    "/containers/{cid}/env",
+    response_model=list[EnvVarOut],
+    response_description="The saved env vars; secret values are masked (null).",
+)
+async def put_container_env(
+    cid: Annotated[str, Path(description="Container id whose env vars to replace.")],
+    body: list[EnvVarIn],
+    request: Request,
+    principal: Principal = Depends(_principal),
+    session: AsyncSession = Depends(_session),
+) -> list[dict]:  # type: ignore[type-arg]
+    """Replace a container's environment variables; applies to subsequent tasks.
+
+    Requires a tenant-scoped credential. Full-replace semantics: vars omitted
+    from the body are deleted. A secret item with ``value: null`` keeps the
+    stored secret; with a value it is (re-)encrypted. Values reach the agent
+    process on the next task — like a config change, no restart involved.
+
+    Errors: 400 (validation_error) for bad/reserved/duplicate names, missing
+    values, or size/count limits; 404 (not_found) if the container is missing
+    or not owned by the caller; 500 (encryption_unavailable) if secrets are
+    submitted but the platform has no encryption key configured.
+    """
+    tid = _tid(principal)
+    row = await _load_owned_container(session, tid, cid)
+    stored = store_env_vars(
+        [item.model_dump() for item in body], row.env_vars, load_key_from_env
+    )
+    await session.execute(
+        containers.update().where(containers.c.id == cid).values(env_vars=stored)
+    )
+    # Names only — values (secret or not) never reach the audit log.
+    await audit(
+        session,
+        actor_type="tenant",
+        actor_id=tid,
+        action="container.update_env",
+        target_type="container",
+        target_id=cid,
+        details={
+            "names": [i["name"] for i in stored],
+            "secret_names": [i["name"] for i in stored if i["secret"]],
+        },
+    )
+    await session.commit()
+    return public_env_vars(stored)
 
 
 # ---------------------------------------------------------------------------

@@ -6,9 +6,9 @@ contracts.py defines:
 - ALLOW                     — (METHOD, path) pairs reviewed and explicitly exempt
 - CONTRACTS                 — full (method, path_template, sample_url, kind) matrix
 
-Live route count: 122 (as of 2026-07-07, after the /v1/deploy-keys CRUD add).
+Live route count: 124 (as of 2026-07-14, after the /v1/containers/{cid}/env GET+PUT add).
   ALLOW: 2 (GET /docs/oauth2-redirect + WEBSOCKET console — framework/ws, not HTTP-testable)
-  CONTRACTS: 120 (auth 114 + public 3 + redirect 3)
+  CONTRACTS: 122 (auth 116 + public 3 + redirect 3)
 
 Reconciliation vs AUDIT.md (117 as of 2026-06-30):
   The AUDIT missed WEBSOCKET /v1/containers/{cid}/console and GET /docs/oauth2-redirect
@@ -137,6 +137,7 @@ SELF_SCOPED_MUTATIONS: set[str] = {
     "/v1/containers",                              # create; capped by tenant limits
     "/v1/containers/{cid}",                        # DELETE (destroy alias / remove)
     "/v1/containers/{cid}/config",                 # PATCH config
+    "/v1/containers/{cid}/env",                    # PUT env vars
     "/v1/containers/{cid}/destroy",                # POST lifecycle
     "/v1/containers/{cid}/pause",                  # POST lifecycle
     "/v1/containers/{cid}/resources",              # PATCH lifecycle
@@ -191,7 +192,8 @@ SELF_SCOPED_MUTATIONS: set[str] = {
 # "public":   no-credentials request → any status except 401
 # "redirect": no-credentials request → 307 or 308 with Location header
 #
-# All 117 AUDIT routes are covered here (auth=111, public=3, redirect=3).
+# All 117 AUDIT routes plus later additions are covered here
+# (auth=116, public=3, redirect=3).
 # ---------------------------------------------------------------------------
 CONTRACTS: list[tuple[str, str, str, str]] = [
     # ------------------------------------------------------------------
@@ -253,6 +255,8 @@ CONTRACTS: list[tuple[str, str, str, str]] = [
     ("DELETE", "/v1/containers/{cid}",  "/v1/containers/c_x", "auth"),
     ("GET",    "/v1/containers/{cid}/config",  "/v1/containers/c_x/config",  "auth"),
     ("PATCH",  "/v1/containers/{cid}/config",  "/v1/containers/c_x/config",  "auth"),
+    ("GET",    "/v1/containers/{cid}/env",     "/v1/containers/c_x/env",     "auth"),
+    ("PUT",    "/v1/containers/{cid}/env",     "/v1/containers/c_x/env",     "auth"),
     ("POST",   "/v1/containers/{cid}/destroy", "/v1/containers/c_x/destroy", "auth"),
     ("GET",    "/v1/containers/{cid}/files",   "/v1/containers/c_x/files",   "auth"),
     ("GET",    "/v1/containers/{cid}/files/archive",

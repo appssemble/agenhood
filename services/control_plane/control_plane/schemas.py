@@ -26,6 +26,32 @@ class ResourceLimitsIn(BaseModel):
     )
 
 
+class EnvVarIn(BaseModel):
+    name: str = Field(
+        description="Env var name: uppercase letters, digits, underscores "
+        "([A-Z_][A-Z0-9_]*, max 128 chars). Reserved platform names are rejected.",
+        examples=["MY_API_KEY"],
+    )
+    value: str | None = Field(
+        None,
+        description=(
+            "The value (max 8 KiB). For a secret var, null means 'keep the "
+            "currently stored secret' (write-only round-trip); on create, a "
+            "secret must always carry a value."
+        ),
+    )
+    secret: bool = Field(
+        False,
+        description="Secret values are encrypted at rest and never returned by reads.",
+    )
+
+
+class EnvVarOut(BaseModel):
+    name: str = Field(description="Env var name.")
+    value: str | None = Field(description="The value; always null for secrets (write-only).")
+    secret: bool = Field(description="Whether the value is a write-only secret.")
+
+
 class CreateContainerRequest(BaseModel):
     name: str = Field(
         description="Human-readable name for the agent container.", examples=["research-bot"]
