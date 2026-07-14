@@ -459,3 +459,101 @@ async def test_submit_failure_marks_next_step_failed_in_timeline(monkeypatch):
     assert final is not None
     assert final[1]["status"] == "failed"
     assert final[1]["ended_at"] is not None
+
+
+# ---- step export transfer (workflow file transfer) ---------------------------
+
+_STEPS_EXPORTS = [
+    {"prompt_id": "prm_a", "container_id": "con_1", "variables": {},
+     "exports": ["out/**"]},
+    {"prompt_id": "prm_b", "container_id": "con_2", "variables": {}},
+]
+
+
+def _wire_transfer(monkeypatch, result=None, exc=None):
+    calls: list[dict] = []
+
+    async def fake_transfer(session, **kw):
+        calls.append(kw)
+        if exc is not None:
+            raise exc
+        return result or {"files": 2, "bytes": 10}
+
+    monkeypatch.setattr(eng, "transfer_step_exports", fake_transfer)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_advance_transfers_exports_before_submit(monkeypatch):
+    run = _Run(cursor=0, current_task_id="tsk_0", step_count=2,
+               steps=_timeline("running", "pending"))
+    events, applied, submitted = _wire(
+        monkeypatch, runs=[run], status="completed", steps=_STEPS_EXPORTS,
+    )
+    calls = _wire_transfer(monkeypatch)
+    db = _FakeDB(events)
+
+    await _run(db)
+
+    assert len(calls) == 1
+    assert calls[0]["exports"] == ["out/**"]
+    assert calls[0]["source_cid"] == "con_1"
+    assert calls[0]["dest_cid"] == "con_2"
+    assert submitted == [(1, "con_2")]
+    # files_transferred event emitted and timeline carries the summary
+    assert ("event", "wfr_1", "files_transferred") in events
+    final = _steps_of(applied)
+    assert final[0]["transfer"] == {"files": 2, "bytes": 10}
+
+
+@pytest.mark.asyncio
+async def test_advance_without_exports_never_calls_transfer(monkeypatch):
+    run = _Run(cursor=0, current_task_id="tsk_0", step_count=2,
+               steps=_timeline("running", "pending"))
+    _, _applied, submitted = _wire(monkeypatch, runs=[run], status="completed")
+    calls = _wire_transfer(monkeypatch)
+
+    await _run(_FakeDB([]))
+
+    assert calls == []
+    assert submitted == [(1, "con_2")]
+
+
+@pytest.mark.asyncio
+async def test_transfer_failure_fails_run_at_exporting_step(monkeypatch):
+    from control_plane.workflow_transfer import WorkflowTransferError
+
+    run = _Run(cursor=0, current_task_id="tsk_0", step_count=2,
+               steps=_timeline("running", "pending"))
+    _, applied, submitted = _wire(
+        monkeypatch, runs=[run], status="completed", steps=_STEPS_EXPORTS,
+    )
+    _wire_transfer(
+        monkeypatch,
+        exc=WorkflowTransferError("export pattern 'out/**' matched no files"),
+    )
+
+    await _run(_FakeDB([]))
+
+    assert submitted == []  # next step never submitted
+    assert any(
+        v.get("status") == "failed" and v.get("error_step") == 0
+        and "out/**" in (v.get("error_message") or "")
+        for _, v, _ in applied
+    )
+    final = _steps_of(applied)
+    assert final[0]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_transfer_success_on_legacy_run_without_timeline(monkeypatch):
+    run = _Run(cursor=0, current_task_id="tsk_0", step_count=2, steps=None)
+    events, _applied, submitted = _wire(
+        monkeypatch, runs=[run], status="completed", steps=_STEPS_EXPORTS,
+    )
+    _wire_transfer(monkeypatch)
+    db = _FakeDB(events)
+
+    await _run(db)
+
+    assert submitted == [(1, "con_2")]  # legacy runs still transfer + submit
