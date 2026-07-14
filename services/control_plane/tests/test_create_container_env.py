@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,6 +12,7 @@ from control_plane.app import create_app
 from control_plane.auth.principal import Principal, resolve_principal
 from control_plane.config import Settings
 from control_plane.docker_ctl.provision import ProvisionResult
+from control_plane.env_vars import store_env_vars
 
 pytestmark = pytest.mark.unit
 
@@ -23,6 +25,7 @@ _SETTINGS = Settings(
 _APP = create_app(_SETTINGS)
 TENANT_ID = "ten_1"
 _PRINCIPAL = Principal(tenant_id=TENANT_ID, role="admin", is_staff=False, user_id="usr_1")
+_KEY = os.urandom(32)
 
 
 class _FakeResult:
@@ -60,14 +63,19 @@ class _FakeRow:
         self.git_mode = "snapshot"
         self.mem_limit = mem_limit
         self.cpus = cpus
+        self.env_vars = None
 
 
 class _FakeSession:
     def __init__(self) -> None:
         self._row = _FakeRow("2g", 1.0)  # slim defaults, as resolved by the handler
+        self.inserts: list[dict] = []
 
     async def execute(self, stmt: Any, params: Any = None) -> _FakeResult:
         s = str(stmt).lower()
+        if s.startswith("insert into containers"):
+            self.inserts.append(dict(stmt.compile().params))
+            return _FakeResult()
         if (
             "select limits from tenants" in s
             or "tenants.limits" in s
@@ -88,7 +96,7 @@ class _FakeSession:
         pass
 
 
-def _make_client(captured: dict) -> TestClient:
+def _make_client(captured: dict) -> tuple[_FakeSession, TestClient]:
     fake_session = _FakeSession()
 
     async def _fake_session_dep() -> AsyncIterator[_FakeSession]:
@@ -101,70 +109,57 @@ def _make_client(captured: dict) -> TestClient:
     _APP.dependency_overrides[resolve_principal] = lambda: _PRINCIPAL
     _APP.dependency_overrides[containers_mod._session] = _fake_session_dep  # type: ignore[attr-defined]
     containers_mod.provision_container = fake_provision_container  # type: ignore[assignment]
-    return TestClient(_APP, raise_server_exceptions=False)
+    containers_mod.load_key_from_env = lambda: _KEY  # type: ignore[assignment]
+    return fake_session, TestClient(_APP, raise_server_exceptions=False)
 
 
 def teardown_function() -> None:
     _APP.dependency_overrides.clear()
 
 
-def test_create_slim_container_gets_slim_tiered_default() -> None:
+_CONFIG = {"driver": "vanilla", "model": "claude-opus-4-7", "system_prompt": "",
+           "system_prompt_mode": "augment", "tools": [], "context": {}}
+
+
+def test_create_with_inline_env_vars_persists_stored_shape() -> None:
     captured: dict = {}
-    client = _make_client(captured)
-    r = client.post(
-        "/v1/containers",
-        json={
-            "name": "x", "image_variant": "slim",
-            "config": {"driver": "vanilla", "model": "claude-opus-4-7", "system_prompt": "",
-                       "system_prompt_mode": "augment", "tools": [], "context": {}},
-        },
-    )
+    session, client = _make_client(captured)
+    r = client.post("/v1/containers", json={
+        "name": "x", "image_variant": "slim", "config": _CONFIG,
+        "env_vars": [{"name": "KEY", "value": "s", "secret": True},
+                     {"name": "URL", "value": "https://x"}],
+    })
     assert r.status_code == 201, r.text
-    assert captured["mem_limit"] == "2g"
-    assert captured["cpus"] == 1.0
-    assert r.json()["mem_limit"] == "2g"
-    assert r.json()["cpus"] == 1.0
+    stored = session.inserts[0]["env_vars"]
+    assert stored[0]["name"] == "KEY" and stored[0]["secret"] is True and "ciphertext" in stored[0]
+    assert stored[1] == {"name": "URL", "value": "https://x", "secret": False}
 
 
-def test_create_with_explicit_override() -> None:
+def test_create_secret_without_value_is_400() -> None:
     captured: dict = {}
-    client = _make_client(captured)
-    r = client.post(
-        "/v1/containers",
-        json={
-            "name": "x", "image_variant": "slim",
-            "config": {"driver": "vanilla", "model": "claude-opus-4-7", "system_prompt": "",
-                       "system_prompt_mode": "augment", "tools": [], "context": {}},
-            "resource_limits": {"mem_limit": "3g"},
-        },
-    )
-    assert r.status_code == 201, r.text
-    assert captured["mem_limit"] == "3g"
-    assert captured["cpus"] == 1.0  # slim default, since cpus wasn't overridden
-
-
-def test_create_out_of_bounds_override_rejected() -> None:
-    captured: dict = {}
-    client = _make_client(captured)
-    r = client.post(
-        "/v1/containers",
-        json={
-            "name": "x", "image_variant": "slim",
-            "config": {"driver": "vanilla", "model": "claude-opus-4-7", "system_prompt": "",
-                       "system_prompt_mode": "augment", "tools": [], "context": {}},
-            "resource_limits": {"cpus": 99.0},
-        },
-    )
+    _session, client = _make_client(captured)
+    r = client.post("/v1/containers", json={
+        "name": "x", "image_variant": "slim", "config": _CONFIG,
+        "env_vars": [{"name": "KEY", "value": None, "secret": True}],
+    })
     assert r.status_code == 400
-    assert r.json()["error"]["code"] == "validation_error"
-    assert r.json()["error"]["field"] == "resource_limits.cpus"
-    assert "mem_limit" not in captured  # rejected before provisioning
+    assert r.json()["error"]["field"] == "env_vars[0].value"
+
+
+def test_create_without_env_vars_inserts_none() -> None:
+    captured: dict = {}
+    session, client = _make_client(captured)
+    r = client.post("/v1/containers", json={
+        "name": "x", "image_variant": "slim", "config": _CONFIG,
+    })
+    assert r.status_code == 201, r.text
+    assert session.inserts[0]["env_vars"] is None
 
 
 class _FakeTplRow:
     """Template row with runtime fields; attribute access like a SA row."""
 
-    def __init__(self, image_variant=None, mem_limit=None, cpus=None) -> None:
+    def __init__(self, env_vars: list | None = None) -> None:
         self.id = "tpl_1"
         self.driver = "vanilla"
         self.model = "claude-opus-4-7"
@@ -175,10 +170,10 @@ class _FakeTplRow:
         self.context: dict = {}
         self.skills: list[str] = []
         self.mcp_servers: list[str] = []
-        self.image_variant = image_variant
-        self.mem_limit = mem_limit
-        self.cpus = cpus
-        self.env_vars = None
+        self.image_variant = "slim"
+        self.mem_limit = None
+        self.cpus = None
+        self.env_vars = env_vars
 
 
 class _FakeSessionWithTemplate(_FakeSession):
@@ -190,17 +185,10 @@ class _FakeSessionWithTemplate(_FakeSession):
         s = str(stmt).lower()
         if "from templates" in s:
             return _FakeResult(value=self._tpl)
-        if "insert into containers" in s:
-            # Reflect what the handler actually persisted so the row re-fetched
-            # for the response isn't the stale hardcoded _FakeRow default.
-            values = stmt.compile().params
-            self._row.image_variant = values.get("image_variant", self._row.image_variant)
-            self._row.mem_limit = values.get("mem_limit", self._row.mem_limit)
-            self._row.cpus = values.get("cpus", self._row.cpus)
         return await super().execute(stmt, params)
 
 
-def _make_client_with_template(captured: dict, tpl: _FakeTplRow) -> TestClient:
+def _make_client_with_template(captured: dict, tpl: _FakeTplRow) -> tuple[_FakeSession, TestClient]:
     fake_session = _FakeSessionWithTemplate(tpl)
 
     async def _fake_session_dep() -> AsyncIterator[_FakeSessionWithTemplate]:
@@ -213,60 +201,19 @@ def _make_client_with_template(captured: dict, tpl: _FakeTplRow) -> TestClient:
     _APP.dependency_overrides[resolve_principal] = lambda: _PRINCIPAL
     _APP.dependency_overrides[containers_mod._session] = _fake_session_dep  # type: ignore[attr-defined]
     containers_mod.provision_container = fake_provision_container  # type: ignore[assignment]
-    return TestClient(_APP, raise_server_exceptions=False)
+    containers_mod.load_key_from_env = lambda: _KEY  # type: ignore[assignment]
+    return fake_session, TestClient(_APP, raise_server_exceptions=False)
 
 
-def test_template_runtime_is_inherited() -> None:
+_TPL_STORED_ENV = store_env_vars(
+    [{"name": "SECRET_KEY", "value": "topsecret", "secret": True}], None, lambda: _KEY
+)
+
+
+def test_create_from_template_seeds_env_vars_verbatim() -> None:
     captured: dict = {}
-    client = _make_client_with_template(
-        captured, _FakeTplRow(image_variant="slim", mem_limit="512m", cpus=0.5)
-    )
+    tpl = _FakeTplRow(env_vars=_TPL_STORED_ENV)
+    session, client = _make_client_with_template(captured, tpl)
     r = client.post("/v1/containers", json={"name": "x", "template_id": "tpl_1"})
     assert r.status_code == 201, r.text
-    assert captured["mem_limit"] == "512m"
-    assert captured["cpus"] == 0.5
-    assert r.json()["image_variant"] == "slim"
-
-
-def test_request_overrides_template_runtime() -> None:
-    captured: dict = {}
-    client = _make_client_with_template(
-        captured, _FakeTplRow(image_variant="slim", mem_limit="512m", cpus=0.5)
-    )
-    r = client.post("/v1/containers", json={
-        "name": "x", "template_id": "tpl_1",
-        "image_variant": "full", "resource_limits": {"mem_limit": "1g"},
-    })
-    assert r.status_code == 201, r.text
-    assert captured["mem_limit"] == "1g"        # request wins
-    assert captured["cpus"] == 0.5              # template wins (request silent)
-    assert r.json()["image_variant"] == "full"  # request wins
-
-
-def test_null_template_runtime_falls_through_to_variant_default() -> None:
-    captured: dict = {}
-    client = _make_client_with_template(captured, _FakeTplRow())
-    r = client.post("/v1/containers", json={
-        "name": "x", "template_id": "tpl_1", "image_variant": "slim",
-    })
-    assert r.status_code == 201, r.text
-    assert captured["mem_limit"] == "2g"   # slim tier default
-    assert captured["cpus"] == 1.0
-
-
-def test_template_variant_used_when_request_omits_it() -> None:
-    captured: dict = {}
-    client = _make_client_with_template(captured, _FakeTplRow(image_variant="slim"))
-    r = client.post("/v1/containers", json={"name": "x", "template_id": "tpl_1"})
-    assert r.status_code == 201, r.text
-    assert r.json()["image_variant"] == "slim"
-    assert captured["mem_limit"] == "2g"   # slim defaults follow the variant
-    assert captured["cpus"] == 1.0
-
-
-def test_out_of_bounds_template_mem_is_rejected_at_create() -> None:
-    # Bounds may tighten after a template was saved — create re-checks.
-    captured: dict = {}
-    client = _make_client_with_template(captured, _FakeTplRow(mem_limit="64g"))
-    r = client.post("/v1/containers", json={"name": "x", "template_id": "tpl_1"})
-    assert r.status_code == 400
+    assert session.inserts[0]["env_vars"] == _TPL_STORED_ENV

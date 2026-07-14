@@ -114,11 +114,12 @@ class ResourceUpdateResponse(BaseModel):
 
 
 class TemplateRuntime(NamedTuple):
-    """A template's stored runtime triple; Nones fall through at create."""
+    """A template's stored runtime values; Nones fall through at create."""
 
     image_variant: str | None = None
     mem_limit: str | None = None
     cpus: float | None = None
+    env_vars: list | None = None  # stored-shape items, copied verbatim
 
 
 router = APIRouter(tags=["Containers"])
@@ -269,6 +270,7 @@ async def _resolve_create_config(
             image_variant=trow.image_variant,
             mem_limit=trow.mem_limit,
             cpus=trow.cpus,
+            env_vars=trow.env_vars,
         )
 
     if req.config is not None:
@@ -358,6 +360,16 @@ async def create_container(
         settings=settings,
     )
 
+    # Env vars: inline wins outright; else the template's stored list is copied
+    # verbatim (ciphertext included — same platform key). Inline secrets must
+    # carry a value: at create there is no stored secret to keep.
+    if body.env_vars is not None:
+        stored_env = store_env_vars(
+            [item.model_dump() for item in body.env_vars], None, load_key_from_env
+        )
+    else:
+        stored_env = tpl_runtime.env_vars
+
     # Total-provisioned cap (spec §4.4): every row not in 'destroyed'.
     count = (
         await session.execute(
@@ -442,6 +454,7 @@ async def create_container(
                 resources=resources,
                 mem_limit=mem_limit,
                 cpus=cpus,
+                env_vars=stored_env,
             )
         )
         await session.commit()

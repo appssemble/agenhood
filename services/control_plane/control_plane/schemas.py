@@ -105,6 +105,14 @@ class CreateContainerRequest(BaseModel):
         None,
         description="Optional memory/CPU limits for the container. Falls back to variant defaults.",
     )
+    env_vars: list[EnvVarIn] | None = Field(
+        None,
+        description=(
+            "Environment variables for the agent process. Omitted: inherited "
+            "from the template (if any). Present: used verbatim (no merge). "
+            "Secrets must carry a value here — there is nothing to 'keep' yet."
+        ),
+    )
 
 
 class ContainerOut(BaseModel):
