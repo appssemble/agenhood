@@ -20,7 +20,7 @@ import type { ApiKeyCreated, ApiKeyRow } from "../../api/types";
 type SortKey = "last_used" | "created" | "name";
 
 export default function ApiKeys() {
-  const { data } = useApiKeys();
+  const { data, error } = useApiKeys();
   const create = useCreateApiKey();
   const qc = useQueryClient();
   const toast = useToast();
@@ -193,7 +193,15 @@ export default function ApiKeys() {
                 </tr>
               );
             })}
-            {sorted.length === 0 && (
+            {error != null && (
+              <EmptyRow
+                colSpan={6}
+                icon="Key"
+                title="Couldn't load API keys"
+                description={error instanceof ApiError ? error.message : "Something went wrong — try reloading."}
+              />
+            )}
+            {error == null && sorted.length === 0 && (
               <EmptyRow
                 colSpan={6}
                 icon="Key"

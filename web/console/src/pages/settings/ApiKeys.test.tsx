@@ -44,3 +44,14 @@ describe("ApiKeys", () => {
     await waitFor(() => expect(revoked).toBe(true));
   });
 });
+
+test("a failed keys query surfaces the API error instead of a fake empty list", async () => {
+  server.use(http.get("/v1/api-keys", () => HttpResponse.json(
+    { error: { code: "validation_error", message: "Select a workspace to view its API keys" } },
+    { status: 400 },
+  )));
+  renderWithProviders(<ApiKeys />);
+  expect(await screen.findByText("Couldn't load API keys")).toBeInTheDocument();
+  expect(screen.getByText(/Select a workspace to view its API keys/)).toBeInTheDocument();
+  expect(screen.queryByText("No API keys yet")).not.toBeInTheDocument();
+});

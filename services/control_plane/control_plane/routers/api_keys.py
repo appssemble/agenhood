@@ -126,16 +126,18 @@ async def list_keys(
     """List the calling tenant's API keys (no secrets).
 
     Requires a tenant-scoped admin/owner **user session** (an API key principal
-    cannot manage keys — spec §4.2). Only non-secret metadata is returned; the
-    plaintext token is never included.
+    cannot manage keys — spec §4.2). Staff must have an active tenant selected
+    (impersonation) — they then act as that tenant's owner, same as the create
+    and revoke endpoints. Only non-secret metadata is returned; the plaintext
+    token is never included.
 
-    Errors: 400 `validation_error` if called with a staff session (staff manage
-    a tenant's keys through that tenant's own session); 403 if the caller is not
-    a tenant admin/owner or authenticates with an API key instead of a session.
+    Errors: 400 `validation_error` if the session has no active tenant (staff
+    without a selected workspace); 403 if the caller is not a tenant
+    admin/owner or authenticates with an API key instead of a session.
     """
-    if p.is_staff:
+    if p.tenant_id is None:
         raise api_error(400, "validation_error",
-                        "Staff manage tenant keys via the tenant's own session")
+                        "Select a workspace to view its API keys")
     rows = (
         await conn.execute(
             sa.select(t.api_keys).where(t.api_keys.c.tenant_id == p.tenant_id)
