@@ -45,6 +45,22 @@ def test_bad_name_rejected(bad: str) -> None:
     assert exc.value.field == "env_vars[0].name"
 
 
+def test_non_string_name_rejected() -> None:
+    with pytest.raises(APIError) as exc:
+        store_env_vars([{"name": 123, "value": "v", "secret": False}], None, _loader)
+    assert exc.value.status_code == 400
+    assert exc.value.code == "validation_error"
+    assert exc.value.field == "env_vars[0].name"
+
+
+def test_non_string_value_rejected() -> None:
+    with pytest.raises(APIError) as exc:
+        store_env_vars([{"name": "OK", "value": 123, "secret": False}], None, _loader)
+    assert exc.value.status_code == 400
+    assert exc.value.code == "validation_error"
+    assert exc.value.field == "env_vars[0].value"
+
+
 def test_name_too_long_rejected() -> None:
     with pytest.raises(APIError):
         store_env_vars([{"name": "A" * 129, "value": "v", "secret": False}], None, _loader)

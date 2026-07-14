@@ -75,6 +75,16 @@ def store_env_vars(
         name = item.get("name") or ""
         secret = bool(item.get("secret"))
         value = item.get("value")
+        if not isinstance(name, str):
+            raise validation_error(
+                "name must be a string",
+                field=_item_field(field_prefix, idx, "name"),
+            )
+        if value is not None and not isinstance(value, str):
+            raise validation_error(
+                "value must be a string",
+                field=_item_field(field_prefix, idx, "value"),
+            )
         if not _NAME_RE.fullmatch(name) or len(name) > MAX_NAME_LEN:
             raise validation_error(
                 "name must be 1-128 chars matching [A-Z_][A-Z0-9_]*",
