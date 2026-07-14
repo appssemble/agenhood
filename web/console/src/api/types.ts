@@ -369,7 +369,7 @@ export interface ImageTag {
 }
 
 // ---- Workflows ---------------------------------------------------------------
-export interface WorkflowStep { prompt_id: string; container_id: string; variables: Record<string, string>; }
+export interface WorkflowStep { prompt_id: string; container_id: string; variables: Record<string, string>; exports?: string[]; }
 export interface Workflow {
   id: string; name: string; description: string | null;
   steps: WorkflowStep[]; created_by: string | null; created_at: string; updated_at: string;

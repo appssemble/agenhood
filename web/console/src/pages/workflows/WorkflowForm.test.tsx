@@ -38,3 +38,25 @@ test("adding a step reveals its prompt/container dropdowns and prompt variables"
   // Selecting the prompt surfaces its {{x}} variable input.
   expect(screen.getByLabelText("Variable x")).toBeTruthy();
 });
+
+test("strips empty export entries from the save payload", async () => {
+  save.mockClear();
+  render(<MemoryRouter><WorkflowForm /></MemoryRouter>);
+  fireEvent.change(screen.getByLabelText(/workflow name/i), { target: { value: "WF" } });
+  fireEvent.click(screen.getByRole("button", { name: /add step/i }));
+  fireEvent.click(screen.getByLabelText("Prompt"));
+  fireEvent.mouseDown(screen.getByRole("option", { name: "Build" }));
+  fireEvent.click(screen.getByLabelText("Container"));
+  fireEvent.mouseDown(screen.getByRole("option", { name: "ci" }));
+
+  fireEvent.click(screen.getByRole("button", { name: /add file/i }));
+  fireEvent.change(screen.getByLabelText("Export path 1"), {
+    target: { value: "  report.pdf  " },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /add file/i })); // second row stays empty
+
+  fireEvent.click(screen.getByRole("button", { name: /save/i }));
+  await vi.waitFor(() => expect(save).toHaveBeenCalled());
+  const payload = save.mock.calls[save.mock.calls.length - 1][0];
+  expect(payload.steps[0].exports).toEqual(["report.pdf"]);
+});
