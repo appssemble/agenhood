@@ -25,6 +25,10 @@ export interface AgentConfig {
   timeout_seconds?: number | null;
 }
 
+// Per-container env var (spec: container env vars). A secret's value is
+// write-only: reads return null; sending null back means "keep the stored value".
+export interface EnvVar { name: string; value: string | null; secret: boolean; }
+
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "timed_out";
 export interface TaskResult { success: boolean; output?: unknown; reason?: string | null; }
 
@@ -67,6 +71,7 @@ export interface Template {
   context: ContextSpec; skills: string[]; mcp_servers: string[]; limits: TaskLimits; is_builtin: boolean;
   image_variant?: "full" | "slim" | null; mem_limit?: string | null; cpus?: number | null;
   effort?: Effort | null;
+  env_vars?: EnvVar[];
   capabilities: DriverCapabilities; driver_template: DriverTemplate; available_tool_specs: ToolSpec[];
 }
 
@@ -81,6 +86,7 @@ export interface TemplateDraft {
   tools: string[]; context: ContextSpec; skills: string[]; mcp_servers: string[]; limits: TaskLimits;
   image_variant: "" | "full" | "slim"; mem_limit: string; cpus: string;
   effort: Effort | null;
+  env_vars: EnvVar[];
 }
 
 // Wire payload for saving a template: like the draft, but `model` is null when unset.

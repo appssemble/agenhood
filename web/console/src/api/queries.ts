@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "./client";
 import { containerFileRawPath } from "./fileUrls";
 import type {
-  Container, ContainerConfigResponse, AgentConfig, Template, TaskSummary,
+  Container, ContainerConfigResponse, AgentConfig, Template, TaskSummary, EnvVar,
   TaskDetail, FileEntry, ApiKeyRow, ApiKeyCreated, Credential, CredentialProvider, User, StaffUser, Me,
   UsageResponse, BreakdownResponse, TenantTaskSummary,
   OAuthStartResponse, OAuthConnectionStatus, AnthropicOAuthStart, AnthropicOAuthComplete, ModelOption,
@@ -22,6 +22,7 @@ export const keys = {
   containers: ["containers"] as const,
   container: (cid: string) => ["containers", cid] as const,
   config: (cid: string) => ["containers", cid, "config"] as const,
+  env: (cid: string) => ["containers", cid, "env"] as const,
   tasks: (cid: string, sessionId?: string) =>
     sessionId ? (["containers", cid, "tasks", { sessionId }] as const) : (["containers", cid, "tasks"] as const),
   sessions: (cid: string) => ["containers", cid, "sessions"] as const,
@@ -172,6 +173,16 @@ export function useSaveConfig(cid: string) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: keys.config(cid) }); qc.invalidateQueries({ queryKey: keys.container(cid) }); },
   });
 }
+export const useContainerEnv = (cid: string) =>
+  useQuery({ queryKey: keys.env(cid), queryFn: () => api.get<EnvVar[]>(`/v1/containers/${cid}/env`) });
+
+export function useUpdateEnvVars(cid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (envVars: EnvVar[]) => api.put<EnvVar[]>(`/v1/containers/${cid}/env`, envVars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.env(cid) }),
+  });
+}
 // Create (POST) when no id, update (PATCH) when an id is supplied. `body` is the
 // serialized template payload (model already null-coalesced).
 export function useSaveTemplate() {
@@ -281,6 +292,7 @@ export function useCreateContainer() {
       name: string; template_id: string; image_variant: "full" | "slim";
       external_id?: string; config?: AgentConfig;
       resource_limits?: { mem_limit?: string; cpus?: number };
+      env_vars?: EnvVar[];
     }) => api.post<Container>("/v1/containers", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.containers }),
   });

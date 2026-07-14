@@ -17,7 +17,7 @@ import type { TemplateDraft, TemplateSavePayload, Template, AgentConfig, ToolSpe
 const EMPTY: TemplateDraft = {
   name: "", driver: "vanilla", model: "", system_prompt: "", system_prompt_mode: "augment",
   tools: [], context: { variables: {}, text: null, files: [] }, skills: [], mcp_servers: [], limits: {},
-  image_variant: "", mem_limit: "", cpus: "", effort: null,
+  image_variant: "", mem_limit: "", cpus: "", effort: null, env_vars: [],
 };
 
 function fromTemplate(t: Template): TemplateDraft {
@@ -36,6 +36,7 @@ function fromTemplate(t: Template): TemplateDraft {
     mem_limit: t.mem_limit ?? "",
     cpus: t.cpus != null ? String(t.cpus) : "",
     effort: t.effort ?? null,
+    env_vars: t.env_vars ?? [],
   };
 }
 
