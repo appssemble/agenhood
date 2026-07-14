@@ -7,9 +7,10 @@ import { Button, SegControl, Field, Input, Note, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "../components/EffortField";
 import { ModelPicker } from "../components/ModelPicker";
+import { EnvVarsField } from "../components/EnvVarsField";
 import { MEM_OPTIONS, CPU_OPTIONS } from "../lib/resourceOptions";
 import { EFFORT_DRIVERS } from "../api/types";
-import type { Effort, Template } from "../api/types";
+import type { Effort, EnvVar, Template } from "../api/types";
 
 const DEFAULT_OPTION = { value: "", label: "Default (by image variant)" };
 
@@ -90,6 +91,8 @@ export default function CreateContainer() {
   const [effort, setEffort] = useState<Effort | null>(null);
   const [memLimit, setMemLimit] = useState("");
   const [cpus, setCpus] = useState("");
+  const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+  const [envTouched, setEnvTouched] = useState(false);
 
   const chosen = templates.find((t) => t.id === templateId) ?? templates[0];
   const effectiveTemplateId = templateId ?? chosen?.id ?? "";
@@ -103,6 +106,8 @@ export default function CreateContainer() {
     setVariant((chosen?.image_variant as "full" | "slim") ?? "full");
     setMemLimit("");
     setCpus("");
+    setEnvVars((chosen?.env_vars ?? []).map((v) => ({ ...v })));
+    setEnvTouched(false);
   }, [chosen?.id]);
 
   const tplCpuLabel =
@@ -124,6 +129,12 @@ export default function CreateContainer() {
   if (!chosen) missing.push("Select a template");
   if (!name.trim()) missing.push("Name the container");
   if (!model) missing.push("Choose a model");
+  // An inline env list can't reference template ciphertext: once touched,
+  // inherited secrets (value === null) must be re-entered or removed.
+  if (envTouched && envVars.some((v) => v.secret && v.value === null))
+    missing.push("Re-enter inherited secret env values");
+  if (envTouched && envVars.some((v) => !v.name.trim()))
+    missing.push("Name every env variable");
   const ready = missing.length === 0;
 
   async function onCreate() {
@@ -149,6 +160,7 @@ export default function CreateContainer() {
       const ctr = await create.mutateAsync({
         name, template_id: effectiveTemplateId, image_variant: variant, config,
         ...(resource_limits && { resource_limits }),
+        ...(envTouched && { env_vars: envVars }),
       });
       navigate(`/containers/${ctr.id}`, { replace: true });
     } catch (err) {
@@ -282,6 +294,22 @@ export default function CreateContainer() {
                   </div>
                 )}
               </div>
+
+              <div className="fluid-w" style={{ maxWidth: 560 }}>
+                <Field
+                  label="Environment variables (optional)"
+                  hint={
+                    envTouched
+                      ? "Sent with this container · inherited secrets must be re-entered"
+                      : "Inherited from the template unless edited"
+                  }
+                >
+                  <EnvVarsField
+                    value={envVars}
+                    onChange={(rows) => { setEnvVars(rows); setEnvTouched(true); }}
+                  />
+                </Field>
+              </div>
             </div>
           </section>
         </div>
@@ -307,6 +335,7 @@ export default function CreateContainer() {
                 CPU_OPTIONS.find((o) => o.value === cpus)?.label
                   ?? (tplCpuLabel ? `${tplCpuLabel} (template)` : null)
               } />
+              <ReviewRow label="Env vars" value={envVars.length ? `${envVars.length} variable${envVars.length === 1 ? "" : "s"}${envTouched ? "" : " (template)"}` : null} />
             </div>
             <div className="nc-rev-foot">
               <Button

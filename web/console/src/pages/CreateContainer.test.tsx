@@ -167,3 +167,72 @@ test("hides the effort selector for a driver without effort support", async () =
   expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "high" })).not.toBeInTheDocument();
 });
+
+test("untouched env vars are omitted from the create request", async () => {
+  const user = userEvent.setup();
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({
+    templates: [tpl({ env_vars: [{ name: "URL", value: "https://x", secret: false }] })],
+  })));
+  let posted: any = null;
+  server.use(http.post("/v1/containers", async ({ request }) => {
+    posted = await request.json();
+    return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+  }));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  await user.type(screen.getByLabelText("Name"), "research-prod");
+  await user.click(screen.getByRole("button", { name: /Create container/i }));
+  await waitFor(() => expect(posted).not.toBeNull());
+  expect(posted).not.toHaveProperty("env_vars");
+});
+
+test("editing an env row sends the full inline list", async () => {
+  const user = userEvent.setup();
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({
+    templates: [tpl({ env_vars: [{ name: "URL", value: "https://x", secret: false }] })],
+  })));
+  let posted: any = null;
+  server.use(http.post("/v1/containers", async ({ request }) => {
+    posted = await request.json();
+    return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+  }));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  await user.type(screen.getByLabelText("Name"), "research-prod");
+  const valueInput = await screen.findByLabelText(/Env value 1/i);
+  await user.clear(valueInput);
+  await user.type(valueInput, "https://y");
+  await user.click(screen.getByRole("button", { name: /Create container/i }));
+  await waitFor(() => expect(posted).not.toBeNull());
+  expect(posted.env_vars).toEqual([{ name: "URL", value: "https://y", secret: false }]);
+});
+
+test("inherited template secret blocks create until replaced with a typed value", async () => {
+  const user = userEvent.setup();
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({
+    templates: [tpl({ env_vars: [{ name: "KEY", value: null, secret: true }] })],
+  })));
+  let posted: any = null;
+  server.use(http.post("/v1/containers", async ({ request }) => {
+    posted = await request.json();
+    return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+  }));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  await user.type(screen.getByLabelText("Name"), "research-prod");
+  // Touch the env section without clearing the inherited secret: edit its name.
+  const nameInput = await screen.findByLabelText(/Env name 1/i);
+  await user.type(nameInput, "X");
+  expect(screen.getByRole("button", { name: /Create container/i })).toBeDisabled();
+  expect(screen.getByText(/Re-enter inherited secret env values/i)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Replace/i }));
+  const secretInput = screen.getByLabelText(/Env value 1/i);
+  await user.type(secretInput, "s3cr3t");
+  expect(screen.getByRole("button", { name: /Create container/i })).not.toBeDisabled();
+  await user.click(screen.getByRole("button", { name: /Create container/i }));
+  await waitFor(() => expect(posted).not.toBeNull());
+  expect(posted.env_vars).toEqual([{ name: "KEYX", value: "s3cr3t", secret: true }]);
+});
