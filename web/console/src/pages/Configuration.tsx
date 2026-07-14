@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { useContainer, useTemplates, useSaveConfig, useSkills, useMcpServers } from "../api/queries";
+import { useContainer, useTemplates, useSaveConfig, useSkills, useMcpServers, useContainerEnv, useUpdateEnvVars } from "../api/queries";
 import { useAuth } from "../auth/useAuth";
 import { useToast } from "../components/Toast";
 import { ApiError } from "../api/client";
@@ -8,8 +8,9 @@ import { assemblePrompt } from "./assemblePrompt";
 import { Field, Tag, Note, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { ConfigFields } from "../components/ConfigFields";
+import { EnvVarsField } from "../components/EnvVarsField";
 import { EFFORT_DRIVERS } from "../api/types";
-import type { AgentConfig, Template, ToolSpec } from "../api/types";
+import type { AgentConfig, EnvVar, Template, ToolSpec } from "../api/types";
 
 export default function Configuration() {
   const { cid } = useParams<{ cid: string }>();
@@ -20,9 +21,13 @@ export default function Configuration() {
   const save = useSaveConfig(cid!);
   const skillsQ = useSkills();
   const mcpQ = useMcpServers();
+  const envQ = useContainerEnv(cid!);
+  const saveEnv = useUpdateEnvVars(cid!);
 
   const [draft, setDraft] = useState<AgentConfig | null>(null);
   useEffect(() => { if (containerQ.data && !draft) setDraft(containerQ.data.config); }, [containerQ.data, draft]);
+  const [envDraft, setEnvDraft] = useState<EnvVar[] | null>(null);
+  useEffect(() => { if (envQ.data && envDraft === null) setEnvDraft(envQ.data); }, [envQ.data, envDraft]);
 
   const limits = user?.tenant?.limits;
   const builtins = templatesQ.data?.templates.filter((t) => t.is_builtin) ?? [];
@@ -35,7 +40,9 @@ export default function Configuration() {
 
   if (!draft || !limits) return <div className="p-8 text-sm text-muted">Loading…</div>;
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(containerQ.data?.config);
+  const configDirty = JSON.stringify(draft) !== JSON.stringify(containerQ.data?.config);
+  const envDirty = envDraft !== null && JSON.stringify(envDraft) !== JSON.stringify(envQ.data ?? []);
+  const dirty = configDirty || envDirty;
   const editableTools = driverMeta?.driver_template.tools_user_editable ?? true;
   // Only the vanilla driver runs the host-managed reason→act loop; opencode,
   // codex, and claude-code drive their own control flow, so the iteration cap doesn't apply.
@@ -73,12 +80,18 @@ export default function Configuration() {
     if ((orig.max_iterations ?? null) !== (draft.max_iterations ?? null)) n++;
     if ((orig.max_tokens ?? null) !== (draft.max_tokens ?? null)) n++;
     if ((orig.timeout_seconds ?? null) !== (draft.timeout_seconds ?? null)) n++;
+    if (envDirty) n++;
     return n;
   })();
 
   async function onSave() {
-    try { await save.mutateAsync(draft!); toast.success("Config saved. Applies to the next task"); }
-    catch (err) { toast.error("Couldn't save config", err instanceof ApiError ? err.message : undefined); }
+    try {
+      if (configDirty) await save.mutateAsync(draft!);
+      if (envDirty && envDraft) await saveEnv.mutateAsync(envDraft);
+      toast.success("Config saved. Applies to the next task");
+    } catch (err) {
+      toast.error("Couldn't save config", err instanceof ApiError ? err.message : undefined);
+    }
   }
 
 
@@ -107,7 +120,7 @@ export default function Configuration() {
               <div className="actions">
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={() => setDraft(containerQ.data!.config)}
+                  onClick={() => { setDraft(containerQ.data!.config); setEnvDraft(envQ.data ?? []); }}
                 >
                   Discard
                 </button>
@@ -183,6 +196,17 @@ export default function Configuration() {
               </Note>
             ) : undefined}
           />
+
+          {/* Per-container env vars for the agent process. Applies to the next
+              task, like every other config change; secrets are write-only. */}
+          <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Field
+              label="Environment variables"
+              hint="Available to the agent's processes on the next task · secret values are write-only"
+            >
+              <EnvVarsField value={envDraft ?? []} onChange={setEnvDraft} />
+            </Field>
+          </div>
         </div>
       </div>
 

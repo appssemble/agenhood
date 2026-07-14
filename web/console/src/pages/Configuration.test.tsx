@@ -48,6 +48,7 @@ function setup(over: Partial<any> = {}) {
   server.use(http.get("/v1/containers/con_1/config", () => HttpResponse.json({
     config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null },
     assembled_prompt: "## SYSTEM\n..." })));
+  server.use(http.get("/v1/containers/con_1/env", () => HttpResponse.json(over.envVars ?? [])));
 }
 
 describe("Configuration editor (driver-aware)", () => {
@@ -175,5 +176,32 @@ describe("Configuration editor (driver-aware)", () => {
     await waitFor(() => expect(patched).not.toBeNull());
     expect(patched.driver).toBe("vanilla");
     expect(patched.effort).toBe(null);
+  });
+
+  it("renders the env section with fetched vars", async () => {
+    setup({ driver: "vanilla", envVars: [{ name: "URL", value: "https://x", secret: false }] });
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+    expect(await screen.findByText("Environment variables")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Env name 1")).toHaveValue("URL");
+  });
+
+  it("editing env marks the page dirty and Save calls the env mutation without touching config", async () => {
+    setup({ driver: "vanilla", tools: ["read_file"], envVars: [{ name: "URL", value: "https://x", secret: false }] });
+    let configPatched = false;
+    let envPut: any = null;
+    server.use(http.patch("/v1/containers/con_1/config", async ({ request }) => { configPatched = true; const body = await request.json(); return HttpResponse.json({ config: body, assembled_prompt: "x" }); }));
+    server.use(http.put("/v1/containers/con_1/env", async ({ request }) => { envPut = await request.json(); return HttpResponse.json(envPut); }));
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+
+    const envValue = await screen.findByLabelText("Env value 1");
+    await userEvent.clear(envValue);
+    await userEvent.type(envValue, "https://y");
+
+    await waitFor(() => expect(screen.getByText(/unsaved change/i)).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() => expect(envPut).not.toBeNull());
+    expect(envPut).toEqual([{ name: "URL", value: "https://y", secret: false }]);
+    expect(configPatched).toBe(false);
   });
 });
