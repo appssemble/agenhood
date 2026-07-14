@@ -4,6 +4,8 @@ import asyncio
 import json
 import os
 import shutil
+import tarfile
+import uuid
 import zipfile
 from collections.abc import Iterator
 from typing import Any
@@ -19,6 +21,12 @@ from agentcore.tools.paths import RESERVED_DIRS
 from shim.auth import TokenAuth
 from shim.git_ops import GitError, GitOps
 from shim.runner import TaskRunner
+from shim.transfer import (
+    TarImportError,
+    expand_exports,
+    extract_import_tar,
+    stream_export_tar,
+)
 
 _ARCHIVE_CHUNK_SIZE_BYTES = 64 * 1024
 _TASK_HISTORY_LIMIT = 100
@@ -422,6 +430,78 @@ def create_app(
             media_type="application/zip",
             headers={"Content-Disposition": 'attachment; filename="workspace.zip"'},
         )
+
+    # ---- Workflow file transfer (proxied by the control plane) --------------
+
+    @app.get("/files/export", response_model=None)
+    async def export_files_route(
+        request: Request,
+        dry_run: bool = Query(default=False),
+        max_bytes: int | None = Query(default=None),
+        authorization: str | None = Header(default=None),
+    ) -> Response | dict[str, Any]:
+        auth.check(authorization)
+        patterns = request.query_params.getlist("paths")
+        if not patterns:
+            raise HTTPException(status_code=422, detail="paths is required")
+        files, unmatched = expand_exports(workspace, patterns)
+        if unmatched:
+            return JSONResponse(
+                status_code=422,
+                content={"error": {"code": "unmatched_exports",
+                                   "message": "pattern(s) matched no files",
+                                   "unmatched": unmatched}},
+            )
+        total = sum(f["size"] for f in files)
+        if max_bytes is not None and total > max_bytes:
+            return JSONResponse(
+                status_code=413,
+                content={"error": {"code": "transfer_too_large",
+                                   "message": f"export is {total} bytes (cap {max_bytes})",
+                                   "total_bytes": total}},
+            )
+        if dry_run:
+            return {"files": files, "total_bytes": total}
+        return StreamingResponse(
+            stream_export_tar(workspace, files), media_type="application/x-tar"
+        )
+
+    @app.post("/files/import", response_model=None)
+    async def import_files_route(
+        request: Request,
+        max_bytes: int | None = Query(default=None),
+        authorization: str | None = Header(default=None),
+    ) -> Response | dict[str, Any]:
+        auth.check(authorization)
+        # Spool to the shim-owned reserved dir (on the volume, hidden from
+        # agent tools) so a big archive never sits in tmpfs RAM.
+        spool_dir = os.path.join(workspace, ".agent-runtime", "tmp")
+        os.makedirs(spool_dir, exist_ok=True)
+        spool_path = os.path.join(spool_dir, f"import-{uuid.uuid4().hex}.tar")
+        try:
+            written = 0
+            with open(spool_path, "wb") as spool:
+                async for chunk in request.stream():
+                    written += len(chunk)
+                    if max_bytes is not None and written > max_bytes:
+                        return JSONResponse(
+                            status_code=413,
+                            content={"error": {"code": "transfer_too_large",
+                                               "message": f"import exceeds cap {max_bytes}"}},
+                        )
+                    spool.write(chunk)
+            try:
+                return extract_import_tar(workspace, spool_path)
+            except (TarImportError, tarfile.TarError) as e:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": {"code": "invalid_archive", "message": str(e)}},
+                )
+        finally:
+            try:
+                os.remove(spool_path)
+            except OSError:
+                pass
 
     # ---- Git endpoints (proxied by the control plane) ------------------------
 
