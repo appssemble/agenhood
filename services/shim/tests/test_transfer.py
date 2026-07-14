@@ -74,6 +74,32 @@ def test_expand_dedupes_overlapping_patterns(tmp_path):
     assert unmatched == []
 
 
+def test_expand_does_not_follow_directory_symlinks(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_bytes(b"s")
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    _mk(str(ws), "real.txt")
+    os.symlink(str(outside), str(ws / "sneaky"))
+    files, unmatched = expand_exports(str(ws), ["**"])
+    assert [f["path"] for f in files] == ["real.txt"]
+    assert unmatched == []
+    files2, unmatched2 = expand_exports(str(ws), ["sneaky/**"])
+    assert files2 == []
+    assert unmatched2 == ["sneaky/**"]
+
+
+def test_expand_star_does_not_cross_slash(tmp_path):
+    ws = str(tmp_path)
+    _mk(ws, "a.csv")
+    _mk(ws, "sub/b.csv")
+    files, _ = expand_exports(ws, ["*.csv"])
+    assert [f["path"] for f in files] == ["a.csv"]
+    files2, _ = expand_exports(ws, ["**/*.csv"])
+    assert [f["path"] for f in files2] == ["a.csv", "sub/b.csv"]
+
+
 # ---- stream_export_tar ---------------------------------------------------------
 
 def test_tar_round_trip(tmp_path):

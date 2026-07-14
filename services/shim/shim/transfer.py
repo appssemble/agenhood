@@ -7,8 +7,8 @@ cross the wire, at any depth; symlinks are never followed or created.
 """
 from __future__ import annotations
 
-import glob as globlib
 import os
+import re
 import tarfile
 from collections.abc import Iterator
 from typing import Any
@@ -25,6 +25,34 @@ class TarImportError(ValueError):
     """A tar member violates the workspace import guards."""
 
 
+def _pattern_regex(pat: str) -> re.Pattern[str]:
+    """Translate an export glob to a full-relative-path regex.
+
+    ``*`` and ``?`` never cross ``/``; a segment that is exactly ``**``
+    matches any number of segments (including none). Mirrors
+    ``glob.glob(recursive=True)`` for the supported pattern forms, but is
+    applied to an os.walk listing so symlinked directories are never
+    traversed.
+    """
+    segs = pat.split("/")
+    regex = ""
+    for i, seg in enumerate(segs):
+        last = i == len(segs) - 1
+        if seg == "**":
+            regex += ".*" if last else "(?:[^/]+/)*"
+            continue
+        for ch in seg:
+            if ch == "*":
+                regex += "[^/]*"
+            elif ch == "?":
+                regex += "[^/]"
+            else:
+                regex += re.escape(ch)
+        if not last:
+            regex += "/"
+    return re.compile("^" + regex + "$")
+
+
 def expand_exports(
     workspace: str, patterns: list[str]
 ) -> tuple[list[dict[str, Any]], list[str]]:
@@ -33,26 +61,34 @@ def expand_exports(
     Returns ``(files, unmatched)``: ``files`` is a sorted, de-duplicated list
     of ``{"path", "size"}`` for every REGULAR file matched by at least one
     pattern; ``unmatched`` lists patterns that matched no regular file.
+    The workspace is walked with ``followlinks=False`` and symlinks are
+    skipped outright, so symlinked directories are never traversed.
     Directory matches don't count — export ``dir/**`` to ship a directory.
     """
     ws = os.path.realpath(workspace)
+    all_files: list[tuple[str, int]] = []
+    for dirpath, dirnames, filenames in os.walk(ws, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_NAMES]
+        for name in filenames:
+            if name in _EXCLUDED_NAMES:
+                continue
+            full = os.path.join(dirpath, name)
+            if os.path.islink(full) or not os.path.isfile(full):
+                continue
+            try:
+                size = os.path.getsize(full)
+            except OSError:  # vanished mid-walk — best-effort, like the zip
+                continue
+            all_files.append((os.path.relpath(full, ws), size))
     seen: dict[str, int] = {}
     unmatched: list[str] = []
     for pat in patterns:
-        matched = False
-        for full in globlib.glob(os.path.join(ws, pat), recursive=True):
-            real = os.path.realpath(full)
-            if real != ws and not real.startswith(ws + os.sep):
-                continue
-            rel = os.path.relpath(real, ws)
-            if any(part in _EXCLUDED_NAMES for part in rel.split(os.sep)):
-                continue
-            if os.path.islink(full) or not os.path.isfile(full):
-                continue
-            seen[rel] = os.path.getsize(full)
-            matched = True
-        if not matched:
+        rx = _pattern_regex(pat)
+        hits = [(rel, size) for rel, size in all_files if rx.match(rel)]
+        if not hits:
             unmatched.append(pat)
+        for rel, size in hits:
+            seen[rel] = size
     files = [{"path": p, "size": s} for p, s in sorted(seen.items())]
     return files, unmatched
 
