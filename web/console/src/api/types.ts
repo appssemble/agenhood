@@ -388,6 +388,7 @@ export interface WorkflowRunStep {
   status: "pending" | "running" | "completed" | "failed";
   started_at: string | null;
   ended_at: string | null;
+  transfer?: { files: number; bytes: number } | null;
 }
 export interface WorkflowRunDetail extends WorkflowRun {
   steps: WorkflowRunStep[] | null;
