@@ -83,6 +83,9 @@ class Settings:
     session_cookie_secure: bool = True
     # Maximum number of workspaces a regular (non-staff) user may own. Staff are exempt.
     max_owned_tenants_per_user: int = 20
+    # Total-bytes cap for one workflow step-to-step file transfer (export
+    # manifest pre-check AND import spool both enforce it).
+    workflow_transfer_max_bytes: int = 524288000
     # --- ChatGPT subscription (OpenAI device-flow OAuth) ---
     oauth_subscription_kill_switch: bool = False
     oauth_subscription_grace_seconds: int = 300
@@ -156,6 +159,9 @@ class Settings:
             credential_encryption_key=os.environ.get("CREDENTIAL_ENCRYPTION_KEY") or None,
             session_cookie_secure=os.environ.get("SESSION_COOKIE_SECURE", "true").lower()
                 not in ("0", "false", "no"),
+            workflow_transfer_max_bytes=int(
+                os.environ.get("WORKFLOW_TRANSFER_MAX_BYTES", "524288000")
+            ),
             oauth_subscription_kill_switch=os.environ.get(
                 "OAUTH_SUBSCRIPTION_KILL_SWITCH", ""
             ).lower() in ("1", "true", "yes"),

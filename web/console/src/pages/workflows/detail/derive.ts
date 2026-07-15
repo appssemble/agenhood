@@ -62,6 +62,19 @@ export function formatDuration(ms: number): string {
   return rm ? `${h}h ${rm}m` : `${h}h`;
 }
 
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n;
+  let u = -1;
+  do {
+    v /= 1024;
+    u += 1;
+  } while (v >= 1024 && u < units.length - 1);
+  return `${v.toFixed(1)} ${units[u]}`;
+}
+
 export function timeAgo(iso: string | null, nowMs: number): string {
   if (!iso) return "—";
   const t = Date.parse(iso);
@@ -112,6 +125,7 @@ export interface StepDetailVM {
   variables: Array<[string, string]>;
   resolvedBody: string;
   errorMessage: string | null;
+  transferLabel: string | null;
 }
 
 function nameOfPrompt(prompts: Prompt[], id: string): string {
@@ -190,6 +204,10 @@ export function buildStepDetailVM(
       : null;
   const isFailedStep =
     !!detail && detail.status === "failed" && detail.error_step === index;
+  const transfer = tl?.transfer ?? null;
+  const transferLabel = transfer
+    ? `${transfer.files} file${transfer.files === 1 ? "" : "s"} · ${formatBytes(transfer.bytes)} → step ${index + 2}`
+    : null;
   return {
     index,
     promptName: nameOfPrompt(prompts, step.prompt_id),
@@ -205,5 +223,6 @@ export function buildStepDetailVM(
     variables: Object.entries(step.variables ?? {}),
     resolvedBody: resolveStepBody(prompt, step.variables ?? {}),
     errorMessage: isFailedStep ? detail!.error_message : null,
+    transferLabel,
   };
 }

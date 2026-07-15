@@ -6,9 +6,10 @@ contracts.py defines:
 - ALLOW                     — (METHOD, path) pairs reviewed and explicitly exempt
 - CONTRACTS                 — full (method, path_template, sample_url, kind) matrix
 
-Live route count: 124 (as of 2026-07-14, after the /v1/containers/{cid}/env GET+PUT add).
+Live route count: 126 (as of 2026-07-15, after the /v1/containers/{cid}/env GET+PUT
+and files/export + files/import adds).
   ALLOW: 2 (GET /docs/oauth2-redirect + WEBSOCKET console — framework/ws, not HTTP-testable)
-  CONTRACTS: 122 (auth 116 + public 3 + redirect 3)
+  CONTRACTS: 124 (auth 118 + public 3 + redirect 3)
 
 Reconciliation vs AUDIT.md (117 as of 2026-06-30):
   The AUDIT missed WEBSOCKET /v1/containers/{cid}/console and GET /docs/oauth2-redirect
@@ -157,6 +158,7 @@ SELF_SCOPED_MUTATIONS: set[str] = {
     "/v1/containers/{cid}/git/rollback",           # POST
 
     # Container file mutations — _principal
+    "/v1/containers/{cid}/files/import",           # POST
     "/v1/containers/{cid}/files/raw",              # PUT + DELETE
 
     # Container task mutations — _principal
@@ -261,6 +263,10 @@ CONTRACTS: list[tuple[str, str, str, str]] = [
     ("GET",    "/v1/containers/{cid}/files",   "/v1/containers/c_x/files",   "auth"),
     ("GET",    "/v1/containers/{cid}/files/archive",
      "/v1/containers/c_x/files/archive", "auth"),
+    ("GET",    "/v1/containers/{cid}/files/export",
+     "/v1/containers/c_x/files/export", "auth"),
+    ("POST",   "/v1/containers/{cid}/files/import",
+     "/v1/containers/c_x/files/import", "auth"),
     ("GET",    "/v1/containers/{cid}/files/raw",
      "/v1/containers/c_x/files/raw", "auth"),
     ("PUT",    "/v1/containers/{cid}/files/raw",

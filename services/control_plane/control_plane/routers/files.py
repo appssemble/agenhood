@@ -4,6 +4,7 @@ import re
 from typing import Annotated, Any
 from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from control_plane import lifecycle
 from control_plane.auth import Principal
 from control_plane.config import Settings
-from control_plane.errors import container_not_runnable
+from control_plane.errors import api_error, container_not_runnable
 from control_plane.routers.containers import (
     _load_owned_container,
     _principal,
@@ -19,7 +20,11 @@ from control_plane.routers.containers import (
     _tid,
     load_tenant_limits,
 )
-from control_plane.shim_client import ShimClient
+from control_plane.shim_client import (
+    ShimClient,
+    ShimExportUnmatched,
+    ShimTransferTooLarge,
+)
 
 router = APIRouter(tags=["Files"])
 
@@ -280,3 +285,97 @@ async def download_archive(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get(
+    "/containers/{cid}/files/export",
+    response_model=None,
+    response_description=(
+        "With dry_run=true, a JSON manifest {files:[{path,size}], total_bytes}; "
+        "otherwise the matched files streamed as an uncompressed tar."
+    ),
+)
+async def export_files(
+    cid: Annotated[str, Path(description="Container id.")],
+    request: Request,
+    paths: Annotated[
+        list[str], Query(description="Workspace-relative paths or glob patterns to export.")
+    ],
+    dry_run: Annotated[
+        bool, Query(description="Return the manifest instead of the tar body.")
+    ] = False,
+    principal: Principal = Depends(_principal),
+    session: AsyncSession = Depends(_session),
+) -> Response | StreamingResponse | dict:  # type: ignore[type-arg]
+    """Export workspace files matched by paths/globs as a tar (or manifest).
+
+    Same wake semantics as the other file routes (spec §4.6). A pattern that
+    matches no regular file yields 422 unmatched_exports; a match set larger
+    than WORKFLOW_TRANSFER_MAX_BYTES yields 413 transfer_too_large.
+    """
+    settings: Settings = request.app.state.settings
+    cap = settings.workflow_transfer_max_bytes
+    row = await _wake_and_load(request, session, _tid(principal), cid)
+    shim = _shim_for(request, row)
+    try:
+        # Manifest first even when streaming: validates patterns + cap before
+        # any body bytes are committed to the response.
+        manifest = await shim.export_manifest(paths, max_bytes=cap)
+    except ShimExportUnmatched as e:
+        await shim.aclose()
+        raise api_error(422, "unmatched_exports", str(e), "paths") from e
+    except ShimTransferTooLarge as e:
+        await shim.aclose()
+        raise api_error(413, "transfer_too_large", str(e), "paths") from e
+    except Exception:
+        await shim.aclose()
+        raise
+    if dry_run:
+        await shim.aclose()
+        return manifest
+
+    async def gen() -> Any:
+        try:
+            async for chunk in shim.export_stream(paths, max_bytes=cap):
+                yield chunk
+        finally:
+            await shim.aclose()
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/x-tar",
+        headers={"Content-Disposition": 'attachment; filename="export.tar"'},
+    )
+
+
+@router.post(
+    "/containers/{cid}/files/import",
+    response_model=None,
+    response_description="Counts of files/bytes written to the workspace.",
+)
+async def import_files(
+    cid: Annotated[str, Path(description="Container id.")],
+    request: Request,
+    principal: Principal = Depends(_principal),
+    session: AsyncSession = Depends(_session),
+) -> dict:  # type: ignore[type-arg]
+    """Import an uncompressed tar (request body) into the workspace.
+
+    Regular files/directories only; absolute, traversing, reserved or
+    symlink members are rejected with 400 invalid_archive. Bodies over
+    WORKFLOW_TRANSFER_MAX_BYTES are rejected with 413.
+    """
+    settings: Settings = request.app.state.settings
+    cap = settings.workflow_transfer_max_bytes
+    row = await _wake_and_load(request, session, _tid(principal), cid)
+    async with _shim_for(request, row) as shim:
+        try:
+            return await shim.import_archive(request.stream(), max_bytes=cap)
+        except ShimTransferTooLarge as e:
+            raise api_error(413, "transfer_too_large", str(e), "body") from e
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                raise api_error(
+                    400, "invalid_archive", e.response.text, "body"
+                ) from e
+            raise

@@ -76,6 +76,7 @@ services:
       AGENT_CPUS_MIN: ${AGENT_CPUS_MIN:-0.25}
       AGENT_CPUS_MAX: ${AGENT_CPUS_MAX:-4}
       AGENT_PIDS_LIMIT: ${AGENT_PIDS_LIMIT:-512}
+      WORKFLOW_TRANSFER_MAX_BYTES: ${WORKFLOW_TRANSFER_MAX_BYTES:-524288000}
       CONNECTORS_BASE_URL: http://connectors:8090
       CONNECTORS_S2S_TOKEN: ${CONNECTORS_S2S_TOKEN:-}
     networks: ["default", "agent-runtime-internal"]

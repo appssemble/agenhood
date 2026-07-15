@@ -43,7 +43,7 @@ export default function WorkflowForm() {
   }, [editing, wf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addStep() {
-    setSteps((s) => [...s, { prompt_id: "", container_id: "", variables: {} }]);
+    setSteps((s) => [...s, { prompt_id: "", container_id: "", variables: {}, exports: [] }]);
   }
   function updateStep(i: number, next: WorkflowStep) {
     setSteps((s) => s.map((step, idx) => (idx === i ? next : step)));
@@ -60,8 +60,12 @@ export default function WorkflowForm() {
   }
 
   async function onSave() {
+    const payloadSteps = steps.map((s) => ({
+      ...s,
+      exports: (s.exports ?? []).map((e) => e.trim()).filter(Boolean),
+    }));
     try {
-      await save.mutateAsync({ id, name: name.trim(), description: description.trim() || null, steps });
+      await save.mutateAsync({ id, name: name.trim(), description: description.trim() || null, steps: payloadSteps });
       toast.success(editing ? "Workflow updated" : "Workflow created");
       nav("/workflows");
     } catch (err) {

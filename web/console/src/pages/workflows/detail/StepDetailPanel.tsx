@@ -39,6 +39,8 @@ export function StepDetailPanel({ vm }: { vm: StepDetailVM }) {
             <dd>{vm.startedAt ? formatDate(vm.startedAt) : "—"}</dd>
             <dt>Duration</dt>
             <dd>{vm.durationLabel ?? "—"}</dd>
+            <dt>Passed on</dt>
+            <dd>{vm.transferLabel ?? "—"}</dd>
           </dl>
 
           {vm.variables.length > 0 && (

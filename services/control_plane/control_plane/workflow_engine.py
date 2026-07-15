@@ -30,6 +30,11 @@ from control_plane.workflow_timeline import (
     mark_failed,
     mark_running,
     mark_task,
+    mark_transfer,
+)
+from control_plane.workflow_transfer import (
+    WorkflowTransferError,
+    transfer_step_exports,
 )
 
 STEP_NULL_GRACE_SECONDS = 120
@@ -406,6 +411,42 @@ async def advance_workflow_runs(
                 event=("completed", {"step_count": run.step_count}),
             )
             continue
+        # Move the previous step's declared exports into the next step's
+        # container BEFORE its task runs (workflow file transfer spec). Any
+        # failure fails the run at the EXPORTING step; the next task is
+        # never submitted with missing inputs.
+        prev_index = next_cursor - 1
+        prev_step = steps[prev_index] if 0 <= prev_index < len(steps) else {}
+        exports = list(prev_step.get("exports") or [])
+        if exports:
+            try:
+                summary = await transfer_step_exports(
+                    db,
+                    settings=settings,
+                    docker_client=docker_client,
+                    shim_dispatcher=shim,
+                    tenant_id=run.tenant_id,
+                    exports=exports,
+                    source_cid=prev_step["container_id"],
+                    dest_cid=steps[next_cursor]["container_id"],
+                )
+            except WorkflowTransferError as exc:
+                await _fail_run(db, run.id, tl, prev_index, str(exc), now)
+                continue
+            payload = {"step": prev_index,
+                       "files": summary["files"], "bytes": summary["bytes"]}
+            if tl is not None:
+                tl = mark_transfer(
+                    tl, prev_index,
+                    files=summary["files"], bytes_=summary["bytes"],
+                )
+                await _apply_run_update(
+                    db, run.id, {"steps": tl},
+                    event=("files_transferred", payload),
+                )
+            else:
+                await _emit_workflow_event(db, run.id, "files_transferred", payload)
+                await db.commit()
         try:
             task_id = await submit_step(
                 db,

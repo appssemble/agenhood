@@ -4,6 +4,7 @@ from control_plane.errors import APIError
 from control_plane.workflows_service import (
     build_workflow_row,
     run_view,
+    step_view,
     validate_workflow_fields,
     workflow_view,
 )
@@ -29,7 +30,9 @@ def test_validate_normalizes_variables_to_string_map():
         name="W", description=None,
         steps=[{"prompt_id": "prm_1", "container_id": "con_1", "variables": {"x": 7}}],
     )
-    assert steps == [{"prompt_id": "prm_1", "container_id": "con_1", "variables": {"x": "7"}}]
+    assert steps == [
+        {"prompt_id": "prm_1", "container_id": "con_1", "variables": {"x": "7"}, "exports": []}
+    ]
 
 
 def test_build_and_view_roundtrip_hides_tenant():
@@ -52,3 +55,62 @@ def test_run_view_shape():
         "started_at": "2026-06-28T00:00:00+00:00", "ended_at": None,
     })
     assert v["status"] == "running" and v["step_count"] == 2 and "tenant_id" not in v
+
+
+# ---- step exports (workflow file transfer) -----------------------------------
+
+def _steps_with_exports(exports):
+    return [{"prompt_id": "prm_1", "container_id": "con_1", "exports": exports}]
+
+
+def test_step_exports_normalized_and_stripped():
+    out = validate_workflow_fields(
+        name="wf", description=None,
+        steps=_steps_with_exports([" report.pdf ", "dist/**"]),
+    )
+    assert out[0]["exports"] == ["report.pdf", "dist/**"]
+
+
+def test_step_without_exports_gets_empty_list():
+    out = validate_workflow_fields(
+        name="wf", description=None,
+        steps=[{"prompt_id": "prm_1", "container_id": "con_1"}],
+    )
+    assert out[0]["exports"] == []
+
+
+@pytest.mark.parametrize("bad", [
+    "not-a-list",
+    ["/abs/path.txt"],
+    ["a/../b.txt"],
+    [".git/config"],
+    [".agent-runtime/x"],
+    [".agent-state/x"],
+    [""],
+    ["  "],
+    [123],
+    ["x" * 513],
+])
+def test_step_exports_invalid_rejected(bad):
+    with pytest.raises(APIError) as ei:
+        validate_workflow_fields(
+            name="wf", description=None, steps=_steps_with_exports(bad),
+        )
+    assert ei.value.status_code == 400
+
+
+def test_step_exports_too_many_rejected():
+    with pytest.raises(APIError) as ei:
+        validate_workflow_fields(
+            name="wf", description=None,
+            steps=_steps_with_exports([f"f{i}.txt" for i in range(21)]),
+        )
+    assert ei.value.status_code == 400
+
+
+def test_step_view_exposes_transfer():
+    s = {"step_index": 0, "task_id": "tsk_1", "container_id": "con_1",
+         "status": "completed", "started_at": None, "ended_at": None,
+         "transfer": {"files": 2, "bytes": 10}}
+    assert step_view(s)["transfer"] == {"files": 2, "bytes": 10}
+    assert step_view({"step_index": 1})["transfer"] is None

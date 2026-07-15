@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   stepStatusFromRun, runMetrics, formatDuration, timeAgo,
-  resolveStepBody, buildPipelineVMs, buildStepDetailVM,
+  resolveStepBody, buildPipelineVMs, buildStepDetailVM, formatBytes,
 } from "./derive";
 import type { WorkflowRun, WorkflowRunDetail, Prompt, Container, Workflow } from "../../../api/types";
 
@@ -153,5 +153,49 @@ describe("buildStepDetailVM", () => {
     const vm = buildStepDetailVM({ workflow: WF, detail: null, prompts: PROMPTS, containers: CONTAINERS, index: 0, nowMs: 0 });
     expect(vm.status).toBeNull();
     expect(vm.taskLink).toBeNull();
+  });
+});
+
+describe("formatBytes", () => {
+  test("formats byte counts humanely", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(999)).toBe("999 B");
+    expect(formatBytes(2048)).toBe("2.0 KB");
+    expect(formatBytes(13002342)).toBe("12.4 MB");
+    expect(formatBytes(3 * 1024 ** 3)).toBe("3.0 GB");
+    expect(formatBytes(-1)).toBe("—");
+  });
+});
+
+describe("step transfer label", () => {
+  const wf: Workflow = {
+    id: "wf_1", name: "wf", description: null,
+    steps: [
+      { prompt_id: "prm_1", container_id: "con_1", variables: {}, exports: ["out/**"] },
+      { prompt_id: "prm_1", container_id: "con_2", variables: {} },
+    ],
+    created_by: null, created_at: "", updated_at: "",
+  };
+  const detail: WorkflowRunDetail = {
+    ...run({ status: "completed", cursor: 1, step_count: 2 }),
+    steps: [
+      { step_index: 0, task_id: "tsk_1", container_id: "con_1", status: "completed",
+        started_at: null, ended_at: null, transfer: { files: 3, bytes: 13002342 } },
+      { step_index: 1, task_id: "tsk_2", container_id: "con_2", status: "completed",
+        started_at: null, ended_at: null },
+    ],
+  };
+  const args = {
+    workflow: wf, detail,
+    prompts: [] as Prompt[], containers: [] as Container[], nowMs: 0,
+  };
+
+  test("exposes a transfer label when the timeline entry has one", () => {
+    expect(buildStepDetailVM({ ...args, index: 0 }).transferLabel)
+      .toBe("3 files · 12.4 MB → step 2");
+  });
+
+  test("is null without a transfer", () => {
+    expect(buildStepDetailVM({ ...args, index: 1 }).transferLabel).toBeNull();
   });
 });
