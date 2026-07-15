@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Icons } from "../../../ui/Icon";
 import { Pill } from "../../../ui/Pill";
 import { STEP_PILL_TONE, type StepDetailVM } from "./derive";
 import { formatDate } from "../../../lib/format";
@@ -40,7 +41,15 @@ export function StepDetailPanel({ vm }: { vm: StepDetailVM }) {
             <dt>Duration</dt>
             <dd>{vm.durationLabel ?? "—"}</dd>
             <dt>Passed on</dt>
-            <dd>{vm.transferLabel ?? "—"}</dd>
+            <dd>
+              {vm.transferLabel ? (
+                <span className="chip" style={{ padding: "3px 8px", fontSize: 11.5 }}>
+                  <Icons.File w={12} /> {vm.transferLabel}
+                </span>
+              ) : (
+                "—"
+              )}
+            </dd>
           </dl>
 
           {vm.variables.length > 0 && (
@@ -51,6 +60,17 @@ export function StepDetailPanel({ vm }: { vm: StepDetailVM }) {
                   <span key={k} className="tag" style={{ fontSize: 11, background: "var(--p-100)", color: "var(--p-700)" }}>
                     {k} = {v || "∅"}
                   </span>
+                ))}
+              </div>
+            </>
+          )}
+
+          {vm.exports.length > 0 && (
+            <>
+              <div style={{ ...SECLABEL, margin: "16px 0 8px" }}>Files to next step</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {vm.exports.map((p) => (
+                  <span key={p} className="tag" style={{ fontSize: 11 }}>{p}</span>
                 ))}
               </div>
             </>

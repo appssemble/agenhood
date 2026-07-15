@@ -4,6 +4,7 @@ import { Field } from "../../ui/Field";
 import { Dropdown } from "../../ui/Dropdown";
 import { Icons } from "../../ui/Icon";
 import { InlinePromptEditor } from "./InlinePromptEditor";
+import ExportsEditor from "./ExportsEditor";
 import { reconcileStepValues } from "./builderUtils";
 
 const NEW_PROMPT = "__new__";
@@ -39,20 +40,6 @@ export default function StepRow({
 
   function handleVariableChange(name: string, value: string) {
     onChange({ ...step, variables: { ...step.variables, [name]: value } });
-  }
-
-  const exports = step.exports ?? [];
-
-  function handleExportChange(i: number, value: string) {
-    const next = exports.slice();
-    next[i] = value;
-    onChange({ ...step, exports: next });
-  }
-  function addExport() {
-    onChange({ ...step, exports: [...exports, ""] });
-  }
-  function removeExport(i: number) {
-    onChange({ ...step, exports: exports.filter((_, idx) => idx !== i) });
   }
 
   function handlePromptSaved(prompt: Prompt) {
@@ -145,34 +132,12 @@ export default function StepRow({
             </div>
           )}
 
-          <div className="wfb-vars">
-            <div className="wfb-vars-lab">Files to pass to next step</div>
-            {exports.map((e, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                <input
-                  className="input"
-                  aria-label={`Export path ${i + 1}`}
-                  value={e}
-                  placeholder="e.g. report.pdf or dist/**"
-                  onChange={(ev) => handleExportChange(i, ev.target.value)}
-                />
-                <button
-                  type="button" className="btn btn-ghost btn-icon btn-sm"
-                  onClick={() => removeExport(i)} aria-label={`Remove export ${i + 1}`}
-                >
-                  <Icons.Trash w={14} />
-                </button>
-              </div>
-            ))}
-            <button type="button" className="btn btn-secondary btn-sm" onClick={addExport} style={{ gap: 6 }}>
-              <Icons.Plus w={13} /> Add file
-            </button>
-            {isLast && exports.some((e) => e.trim()) && (
-              <div className="note" style={{ marginTop: 8 }}>
-                This is the last step — these files go nowhere until a step follows it.
-              </div>
-            )}
-          </div>
+          <ExportsEditor
+            stepIndex={index}
+            isLast={isLast}
+            exports={step.exports ?? []}
+            onChange={(exports) => onChange({ ...step, exports })}
+          />
 
           {editor === "edit" && selectedPrompt && (
             <InlinePromptEditor

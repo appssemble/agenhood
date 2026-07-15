@@ -49,26 +49,21 @@ function renderRowExports(step: WorkflowStep, isLast = false, onChange = vi.fn()
   return { onChange };
 }
 
-describe("exports editor", () => {
+describe("exports editor integration", () => {
   const base = { prompt_id: "prm_1", container_id: "con_1", variables: {} };
 
-  it("adds an export row", () => {
-    const { onChange } = renderRowExports({ ...base });
-    fireEvent.click(screen.getByRole("button", { name: /add file/i }));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ exports: [""] }));
-  });
-
-  it("edits an existing export value", () => {
-    const { onChange } = renderRowExports({ ...base, exports: ["dist/**"] });
-    fireEvent.change(screen.getByLabelText("Export path 1"), {
-      target: { value: "report.pdf" },
+  it("adding a path patches the step's exports", () => {
+    const { onChange } = renderRowExports({ ...base, exports: ["a.txt"] });
+    fireEvent.change(screen.getByLabelText("Add export path"), {
+      target: { value: "dist/**" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /add file/i }));
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ exports: ["report.pdf"] }),
+      expect.objectContaining({ exports: ["a.txt", "dist/**"] }),
     );
   });
 
-  it("removes an export row", () => {
+  it("removing a tag patches the step's exports", () => {
     const { onChange } = renderRowExports({ ...base, exports: ["a.txt", "b.txt"] });
     fireEvent.click(screen.getByRole("button", { name: "Remove export 1" }));
     expect(onChange).toHaveBeenCalledWith(
@@ -76,12 +71,12 @@ describe("exports editor", () => {
     );
   });
 
-  it("shows the last-step hint when last with a non-empty export", () => {
+  it("shows the last-step note when last with exports", () => {
     renderRowExports({ ...base, exports: ["a.txt"] }, true);
     expect(screen.getByText(/last step/i)).toBeInTheDocument();
   });
 
-  it("hides the hint when not last", () => {
+  it("hides the note when not last", () => {
     renderRowExports({ ...base, exports: ["a.txt"] }, false);
     expect(screen.queryByText(/last step/i)).not.toBeInTheDocument();
   });

@@ -36,8 +36,11 @@ test("workflow step exports round-trip through the builder", async ({ page }) =>
   await page.getByLabel("Container", { exact: true }).click();
   await page.getByRole("option").first().click();
 
+  await page.getByLabel("Add export path").fill("dist/**");
   await page.getByRole("button", { name: /add file/i }).click();
-  await page.getByLabel("Export path 1").fill("dist/**");
+  // The added path renders as a tag in the exports list.
+  const exportsList = page.getByRole("list", { name: "Files to pass to next step" });
+  await expect(exportsList.getByText("dist/**")).toBeVisible();
 
   await page.getByRole("button", { name: "Save workflow" }).click();
   await expect(page).toHaveURL(/\/workflows$/);
@@ -48,5 +51,7 @@ test("workflow step exports round-trip through the builder", async ({ page }) =>
   // page) — scope to the card so it's unambiguous among other workflows.
   const card = page.locator(".wf-card", { hasText: name });
   await card.getByRole("link", { name: "Edit" }).click();
-  await expect(page.getByLabel("Export path 1")).toHaveValue("dist/**");
+  await expect(
+    page.getByRole("list", { name: "Files to pass to next step" }).getByText("dist/**"),
+  ).toBeVisible();
 });

@@ -40,7 +40,7 @@ test("adding a step reveals its prompt/container dropdowns and prompt variables"
   expect(screen.getByLabelText("Variable x")).toBeTruthy();
 });
 
-test("strips empty export entries from the save payload", async () => {
+test("added export paths reach the save payload trimmed", async () => {
   save.mockClear();
   render(<MemoryRouter><WorkflowForm /></MemoryRouter>);
   fireEvent.change(screen.getByLabelText(/workflow name/i), { target: { value: "WF" } });
@@ -50,11 +50,10 @@ test("strips empty export entries from the save payload", async () => {
   fireEvent.click(screen.getByLabelText("Container"));
   fireEvent.mouseDown(screen.getByRole("option", { name: "ci" }));
 
-  fireEvent.click(screen.getByRole("button", { name: /add file/i }));
-  fireEvent.change(screen.getByLabelText("Export path 1"), {
+  fireEvent.change(screen.getByLabelText("Add export path"), {
     target: { value: "  report.pdf  " },
   });
-  fireEvent.click(screen.getByRole("button", { name: /add file/i })); // second row stays empty
+  fireEvent.click(screen.getByRole("button", { name: /add file/i }));
 
   fireEvent.click(screen.getByRole("button", { name: /save/i }));
   await waitFor(() => expect(save).toHaveBeenCalled());

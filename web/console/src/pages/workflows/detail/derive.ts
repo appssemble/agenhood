@@ -123,6 +123,7 @@ export interface StepDetailVM {
   durationLabel: string | null;
   taskLink: string | null;
   variables: Array<[string, string]>;
+  exports: string[];
   resolvedBody: string;
   errorMessage: string | null;
   transferLabel: string | null;
@@ -221,6 +222,7 @@ export function buildStepDetailVM(
       : null,
     taskLink,
     variables: Object.entries(step.variables ?? {}),
+    exports: step.exports ?? [],
     resolvedBody: resolveStepBody(prompt, step.variables ?? {}),
     errorMessage: isFailedStep ? detail!.error_message : null,
     transferLabel,

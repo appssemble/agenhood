@@ -1467,6 +1467,37 @@ table.tbl{ width: 100%; border-collapse: separate; border-spacing: 0; font-size:
 .wfb-add:hover{ border-color: var(--ink); background: var(--p-100); color: var(--ink); }
 @media (max-width: 720px){ .wfb-grid2{ grid-template-columns: 1fr; } }
 
+/* step exports — "files to pass to next step" chip editor */
+.wfb-exports{ border-top: 1px dashed var(--border); padding-top: 12px; }
+.wfb-exports-count{
+  display: inline-block; margin-left: 7px; padding: 1px 7px;
+  border-radius: var(--r-pill); background: var(--p-100); color: var(--p-700);
+  font-size: 10px; font-weight: 700; letter-spacing: 0;
+}
+.wfb-exports-list{
+  list-style: none; display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 0 0 10px; padding: 0;
+}
+.wfb-exports-tag{ padding: 4px 5px 4px 9px; gap: 7px; color: var(--ink); max-width: 100%; }
+.wfb-exports-tag > svg:first-child{ color: var(--muted); flex: 0 0 auto; }
+.wfb-exports-path{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+.wfb-exports-remove{
+  display: grid; place-items: center; width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: var(--r-1); background: transparent; color: var(--muted);
+  cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.wfb-exports-remove:hover{ background: var(--err-100); color: var(--err-700); }
+.wfb-exports-addrow{ display: flex; gap: 8px; }
+.wfb-exports-addrow .input{ flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 12.5px; }
+.wfb-exports-addrow .btn{ flex: 0 0 auto; }
+.wfb-exports-hint{ margin-top: 6px; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.wfb-exports-error{ margin-top: 6px; font-size: 11.5px; color: var(--err-700); line-height: 1.5; }
+.wfb-exports-lastnote{
+  margin-top: 10px; display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 12px; font-size: 12px;
+}
+.wfb-exports-lastnote svg{ flex: 0 0 auto; margin-top: 2px; }
+
 /* template chooser */
 .nc-tpl-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .nc-tpl{
