@@ -100,3 +100,16 @@ def test_model_is_keyless_only_for_free_zen() -> None:
     # Other providers are never keyless.
     assert model_is_keyless("claude-opus-4-7") is False
     assert model_is_keyless("openai/gpt-4o") is False
+
+
+def test_provider_prefixes_shared_with_router():
+    """Every bare id the agentcore router sends to OpenAI must resolve to the
+    openai credential provider — one table, no drift."""
+    from agentcore.llm.router import OPENAI_MODEL_PREFIXES
+    from control_plane.credentials_service import provider_for_model
+
+    for prefix in OPENAI_MODEL_PREFIXES:
+        assert provider_for_model(f"{prefix}-something") == "openai"
+    assert provider_for_model("o5-mini") == "openai"
+    assert provider_for_model("claude-opus-4-7") == "anthropic"
+    assert provider_for_model("opencode-go/glm-5.2") == "opencode-go"

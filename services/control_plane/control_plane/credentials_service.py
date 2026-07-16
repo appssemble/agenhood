@@ -3,18 +3,17 @@ from __future__ import annotations
 import base64
 from datetime import UTC, datetime
 
+from agentcore.llm.router import OPENAI_MODEL_PREFIXES
 from control_plane.auth.crypto import decrypt_secret, encrypt_secret
 from control_plane.ids_compat import new_id
 
-# spec §3.5.1 / §4.4: v1 is Anthropic-only for the vanilla driver; OpenAI is the
-# next adapter. Map the configured model to its credential provider.
+# Map a bare configured model id to its credential provider. The OpenAI
+# prefixes come from agentcore's LLM router so credential resolution and the
+# vanilla driver's wire routing cannot drift (spec §4.4: fully-qualified
+# ``provider/model`` ids take their provider from the prefix instead).
 _MODEL_PREFIX_PROVIDER = (
     ("claude", "anthropic"),
-    ("gpt-", "openai"),
-    ("gpt", "openai"),
-    ("o1", "openai"),
-    ("o3", "openai"),
-    ("o4", "openai"),
+    *((p, "openai") for p in OPENAI_MODEL_PREFIXES),
 )
 
 # Model-catalog providers whose credential is stored under a different provider
