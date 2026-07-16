@@ -794,7 +794,7 @@ async def update_image(
 
     try:
         await asyncio.to_thread(
-            provision.pull_or_verify_image, docker_client, settings, image_tag
+            provision.pull_or_verify_image, docker_client, settings, image_tag, force=True
         )
     except provision.ImageUnavailable as e:
         raise api_error(422, "image_unavailable", str(e)) from e

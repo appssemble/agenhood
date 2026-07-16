@@ -23,8 +23,8 @@ def recorder(monkeypatch):
     async def fake_restore(db, dc, shim, cid, tid, **kw):
         calls.append(("restore", cid))
 
-    def fake_pull(client, settings, image_tag):
-        calls.append(("pull", image_tag))
+    def fake_pull(client, settings, image_tag, *, force=False):
+        calls.append(("pull", image_tag, force))
         return f"agent-runtime:{image_tag}"
 
     async def fake_audit(db, *, actor_type, action, actor_id=None, target_type=None, target_id=None, details=None):
@@ -65,6 +65,17 @@ async def test_archived_only_sets_tag(recorder, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_update_image_forces_pull(recorder, monkeypatch):
+    async def status(db, cid):
+        return "running"
+
+    monkeypatch.setattr(lc, "current_status", status)
+    await lc.update_image(None, object(), object(), "ctr_1", "ten_1", "v2", limit=5, settings=object())
+    pull_call = next(c for c in recorder if c[0] == "pull")
+    assert pull_call == ("pull", "v2", True)
+
+
+@pytest.mark.asyncio
 async def test_invalid_state_409(recorder, monkeypatch):
     async def status(db, cid):
         return "provisioning"
@@ -86,7 +97,7 @@ async def test_pull_failure_no_teardown(monkeypatch):
     async def fake_destroy(db, dc, shim, cid, **kw):
         calls.append(("destroy", cid))
 
-    def fail_pull(client, settings, image_tag):
+    def fail_pull(client, settings, image_tag, *, force=False):
         raise provision.ImageUnavailable("nope")
 
     monkeypatch.setattr(lc, "current_status", status)
