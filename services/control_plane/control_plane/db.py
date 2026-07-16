@@ -13,7 +13,15 @@ from control_plane.config import Settings
 
 
 def make_engine(settings: Settings) -> AsyncEngine:
-    return create_async_engine(settings.database_url, pool_pre_ping=True, future=True)
+    # Slow container provisions hold checked-out connections (create route),
+    # so the pool gets explicit, env-tunable headroom (DB_POOL_SIZE/DB_MAX_OVERFLOW).
+    return create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        future=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )
 
 
 def make_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
