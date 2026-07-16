@@ -50,6 +50,18 @@ class Settings:
     # `docker login` is not seen — these env creds are passed as auth_config.
     agent_registry_username: str = ""
     agent_registry_password: str = ""
+    # Image pull behavior at provision time. "if-not-present" (default) skips the
+    # registry entirely when the tag is already on the daemon; "always" restores
+    # the historical unconditional force-pull (moving tags like `dev` refresh on
+    # every provision). update_image forces a pull regardless of this policy.
+    agent_image_pull_policy: str = "if-not-present"
+    # How often the background pre-pull sweep re-checks the default agent image
+    # (registry mode only). Startup runs one pass immediately.
+    image_prepull_interval_seconds: int = 600
+    # SQLAlchemy engine pool sizing. Slow provisions hold DB connections; these
+    # defaults (10+20) give more headroom than SQLAlchemy's stock 5+10.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     # Variant-tiered per-container defaults (env-tunable). `full` ships Chromium
     # and needs headroom for browser automation; `slim` doesn't.
     agent_mem_limit_full: str = "4g"
@@ -121,6 +133,12 @@ class Settings:
 
     @staticmethod
     def from_env() -> Settings:
+        pull_policy = os.environ.get("AGENT_IMAGE_PULL_POLICY", "if-not-present")
+        if pull_policy not in ("if-not-present", "always"):
+            raise ValueError(
+                "AGENT_IMAGE_PULL_POLICY must be 'if-not-present' or 'always', "
+                f"got {pull_policy!r}"
+            )
         return Settings(
             database_url=_asyncpg_url(
                 os.environ.get(
@@ -149,6 +167,12 @@ class Settings:
             agent_cpus_min=float(os.environ.get("AGENT_CPUS_MIN", "0.25")),
             agent_cpus_max=float(os.environ.get("AGENT_CPUS_MAX", "4")),
             agent_pids_limit=int(os.environ.get("AGENT_PIDS_LIMIT", "512")),
+            agent_image_pull_policy=pull_policy,
+            image_prepull_interval_seconds=int(
+                os.environ.get("IMAGE_PREPULL_INTERVAL_SECONDS", "600")
+            ),
+            db_pool_size=int(os.environ.get("DB_POOL_SIZE", "10")),
+            db_max_overflow=int(os.environ.get("DB_MAX_OVERFLOW", "20")),
             internal_network=os.environ.get("INTERNAL_NETWORK", "agent-runtime-internal"),
             readyz_timeout_seconds=float(os.environ.get("READYZ_TIMEOUT_SECONDS", "30")),
             shim_port=int(os.environ.get("SHIM_PORT", "8080")),
