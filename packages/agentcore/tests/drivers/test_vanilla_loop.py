@@ -787,3 +787,56 @@ async def test_no_mcp_servers_no_runtime(tmp_path):
         credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
     )
     assert created == []
+
+
+@pytest.mark.asyncio
+async def test_no_mcp_connect_or_leak_on_session_state_lost(tmp_path):
+    """A continuation with missing session state must not leave MCP connected
+    (or ideally not connect at all) — the early return is a terminal path."""
+    fake = FakeMcpRuntime()
+    created = []
+    def factory():
+        created.append(fake)
+        return fake
+    llm = ScriptedLLM([])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm, mcp_factory=factory)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), mcp_servers=[_mcp_server()],
+        session_id="missing", session_is_continuation=True,
+    )
+    assert not result.success
+    assert result.reason == "session_state_lost"
+    # Either never constructed, or constructed and closed — never left open.
+    assert all(rt.closed for rt in created)
+
+
+@pytest.mark.asyncio
+async def test_stale_skills_cleared_when_skills_detached(tmp_path):
+    stale = tmp_path / ".agent-runtime" / "skills" / "old-skill"
+    stale.mkdir(parents=True)
+    (stale / "SKILL.md").write_text("stale")
+    llm = ScriptedLLM([_done_response()])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert result.success
+    assert not stale.exists()
+
+
+@pytest.mark.asyncio
+async def test_malformed_cap_env_falls_back_to_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOOL_RESULT_MAX_CHARS", "not-a-number")
+    llm = ScriptedLLM([_done_response()])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert result.success  # no ValueError escaped

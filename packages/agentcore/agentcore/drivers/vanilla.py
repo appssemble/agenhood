@@ -128,7 +128,10 @@ DEFAULT_TOOL_RESULT_MAX_CHARS = 30_000
 
 def _cap_tool_result(content: str) -> str:
     """Cap a tool result before it enters history/events (uniform for all tools)."""
-    limit = int(os.environ.get("TOOL_RESULT_MAX_CHARS", DEFAULT_TOOL_RESULT_MAX_CHARS))
+    try:
+        limit = int(os.environ.get("TOOL_RESULT_MAX_CHARS", DEFAULT_TOOL_RESULT_MAX_CHARS))
+    except ValueError:
+        limit = DEFAULT_TOOL_RESULT_MAX_CHARS
     if len(content) <= limit:
         return content
     dropped = len(content) - limit
@@ -246,6 +249,21 @@ class VanillaDriver:
             )
             return TaskResult(success=False, reason="unroutable_model")
 
+        if session_id is not None and session_is_continuation:
+            state = read_session_state(workspace, self.name, session_id)
+            if state is None:
+                await emit(
+                    "status_change",
+                    {"from": "running", "to": "failed", "result": None,
+                     "error": {"code": "session_state_lost",
+                               "message": "session state file missing"}},
+                )
+                return TaskResult(success=False, reason="session_state_lost")
+            messages: list[dict[str, Any]] = list(state.get("messages", []))
+            messages.append({"role": "user", "content": task.prompt})
+        else:
+            messages = [{"role": "user", "content": task.prompt}]
+
         # ---- Per-run tool table: built-ins + (skill) — MCP adapters join in
         # Task 5. `done` stays driver-dispatched, never in the table.
         run_tools: dict[str, Tool] = {
@@ -253,15 +271,15 @@ class VanillaDriver:
         }
 
         written_skills: list[ShimSkill] = []
+        try:
+            written = await write_skills(skills_dir(workspace), skills or [])
+        except Exception as e:  # noqa: BLE001 — skills must never abort the task
+            written = []
+            await emit("log", {
+                "level": "warn", "message": "skill_materialization_failed",
+                "data": {"error": str(e)},
+            })
         if skills:
-            try:
-                written = await write_skills(skills_dir(workspace), skills)
-            except Exception as e:  # noqa: BLE001 — skills must never abort the task
-                written = []
-                await emit("log", {
-                    "level": "warn", "message": "skill_materialization_failed",
-                    "data": {"error": str(e)},
-                })
             skipped = [s.name for s in skills if s.name not in written]
             if skipped:
                 await emit("log", {
@@ -311,20 +329,6 @@ class VanillaDriver:
         anthropic_tools = [_tool_spec_to_anthropic(s) for s in specs]
         tool_ctx = ToolContext(workspace=workspace, cancel=cancel, env=env or {})
 
-        if session_id is not None and session_is_continuation:
-            state = read_session_state(workspace, self.name, session_id)
-            if state is None:
-                await emit(
-                    "status_change",
-                    {"from": "running", "to": "failed", "result": None,
-                     "error": {"code": "session_state_lost",
-                               "message": "session state file missing"}},
-                )
-                return TaskResult(success=False, reason="session_state_lost")
-            messages: list[dict[str, Any]] = list(state.get("messages", []))
-            messages.append({"role": "user", "content": task.prompt})
-        else:
-            messages = [{"role": "user", "content": task.prompt}]
         iterations = 0
         tokens_in = 0
         tokens_out = 0
