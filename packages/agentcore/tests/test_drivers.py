@@ -92,21 +92,12 @@ def test_registered_fake_driver_runs_via_protocol():
 
 
 def test_capability_flags_for_skills_and_mcp():
-    import importlib
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+    from agentcore.drivers.codex import CodexDriver
+    from agentcore.drivers.opencode import OpencodeDriver
+    from agentcore.drivers.vanilla import VanillaDriver
 
-    from agentcore.drivers import claude_code, codex, opencode, vanilla
-    from agentcore.drivers.base import DRIVERS
-
-    # `agentcore.drivers` (and its submodules) is already imported by this
-    # point in the process — a plain `import agentcore.drivers` is a no-op
-    # and would not repopulate DRIVERS after the _clean_registry fixture
-    # clears it. Reload each driver submodule so its module-level
-    # `register(...)` call re-runs against the now-empty registry.
-    for mod in (vanilla, opencode, codex, claude_code):
-        importlib.reload(mod)
-
-    caps = {name: d.capabilities for name, d in DRIVERS.items()}
-    assert caps["vanilla"].supports_skills is True
-    assert caps["vanilla"].supports_mcp is True
-    for cli in ("opencode", "codex", "claude-code"):
-        assert caps[cli].supports_skills is True, cli
+    assert VanillaDriver.capabilities.supports_skills is True
+    assert VanillaDriver.capabilities.supports_mcp is True
+    for cls in (OpencodeDriver, CodexDriver, ClaudeCodeDriver):
+        assert cls.capabilities.supports_skills is True, cls.name

@@ -69,11 +69,6 @@ from control_plane.sse import format_sse, parse_event_line, should_forward
 
 router = APIRouter(tags=["Tasks"])
 
-# Drivers that shell out to a native CLI which discovers SKILL.md / MCP config
-# on disk (as opposed to the in-process "vanilla" driver). Skills and MCP
-# servers are only resolved for these.
-SHELL_OUT_DRIVERS = ("opencode", "codex", "claude-code")
-
 
 async def _load_tenant_rows_by_id(
     session: AsyncSession, table: Any, tenant_id: str, ids: list[str]
