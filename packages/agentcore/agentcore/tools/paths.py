@@ -9,11 +9,14 @@ class PathError(ValueError):
     """Raised when a tool path escapes the workspace or hits a reserved dir."""
 
 
-def safe_resolve(workspace: str, path: str) -> str:
+def safe_resolve(workspace: str, path: str, *, allow_skills_read: bool = False) -> str:
     """Resolve `path` against `workspace`, following symlinks on existing parents.
 
     Returns an absolute path guaranteed to live inside `workspace` and outside
     any reserved directory. Raises PathError otherwise.
+
+    When allow_skills_read is True, paths under .agent-runtime/skills/ are allowed
+    (for read-only access to materialized skills).
     """
     ws = os.path.realpath(workspace)
     raw = path if os.path.isabs(path) else os.path.join(ws, path)
@@ -28,6 +31,18 @@ def safe_resolve(workspace: str, path: str) -> str:
     rel = os.path.relpath(resolved, ws)
     first = rel.split(os.sep, 1)[0]
     if first in RESERVED_DIRS:
-        raise PathError(f"path {path!r} is inside the reserved {first}/ directory")
+        # Skills are read-only inputs materialized under
+        # .agent-runtime/skills/ — read tools may opt in to that subtree.
+        parts = rel.split(os.sep)
+        skills_read = (
+            allow_skills_read
+            and len(parts) >= 2
+            and parts[0] == ".agent-runtime"
+            and parts[1] == "skills"
+        )
+        if not skills_read:
+            raise PathError(
+                f"path {path!r} is inside the reserved {first}/ directory"
+            )
 
     return resolved

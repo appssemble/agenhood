@@ -34,7 +34,7 @@ class ReadFileTool:
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         try:
-            target = safe_resolve(ctx.workspace, input["path"])
+            target = safe_resolve(ctx.workspace, input["path"], allow_skills_read=True)
         except PathError as e:
             return _err(str(e), start)
         if not os.path.isfile(target):
@@ -138,9 +138,12 @@ class ListFilesTool:
         start = time.monotonic()
         rel_root = input.get("path", "")
         try:
-            root = safe_resolve(ctx.workspace, rel_root) if rel_root else os.path.realpath(
-                ctx.workspace
-            )
+            if rel_root:
+                root = safe_resolve(
+                    ctx.workspace, rel_root, allow_skills_read=True
+                )
+            else:
+                root = os.path.realpath(ctx.workspace)
         except PathError as e:
             return _err(str(e), start)
         max_depth = int(input.get("max_depth", 10))
