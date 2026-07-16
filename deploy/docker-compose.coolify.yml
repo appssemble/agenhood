@@ -60,6 +60,13 @@ services:
       AGENT_REGISTRY: ${AGENT_REGISTRY}
       AGENT_REGISTRY_USERNAME: ${AGENT_REGISTRY_USERNAME:-}
       AGENT_REGISTRY_PASSWORD: ${AGENT_REGISTRY_PASSWORD:-}
+      # Image pull behavior: if-not-present skips the registry when the tag is
+      # already on the host; the pre-pull sweep keeps the default tag warm.
+      AGENT_IMAGE_PULL_POLICY: ${AGENT_IMAGE_PULL_POLICY:-if-not-present}
+      IMAGE_PREPULL_INTERVAL_SECONDS: ${IMAGE_PREPULL_INTERVAL_SECONDS:-600}
+      # DB pool headroom — slow provisions hold connections (see db.py).
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
       # Per-agent resource caps for VM sizing (Phase 5), tiered by image variant:
       # `full` ships Chromium and needs more headroom than `slim`. Defaults below
       # preserve this deploy's pre-tiering behavior (2g/1 CPU for every agent) —

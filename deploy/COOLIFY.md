@@ -5,6 +5,11 @@
 - Agent image pushed multi-arch: `registry.example.com/agent-runtime:<AGENT_IMAGE_TAG>`.
 - Control-plane env has `AGENT_REGISTRY` + `AGENT_REGISTRY_USERNAME` + `AGENT_REGISTRY_PASSWORD`
   (the control plane pulls the private image with these — no host `docker login` needed; see Task 6).
+- Provisioning pulls: `AGENT_IMAGE_PULL_POLICY=if-not-present` (default) makes creates
+  skip the registry when the image is already on the host; a background sweep pre-pulls
+  `AGENT_IMAGE_TAG` every `IMAGE_PREPULL_INTERVAL_SECONDS` (600) so version bumps are
+  downloaded outside user-facing requests. Set `AGENT_IMAGE_PULL_POLICY=always` only if
+  you deliberately ride a moving tag and want every create to force-pull.
 
 ## Create the app resource
 - New Resource → Docker Compose.
