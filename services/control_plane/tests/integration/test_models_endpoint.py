@@ -46,5 +46,15 @@ async def test_models_endpoint_driver_filter_vanilla(seeded_app: object) -> None
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.get("/v1/models?driver=vanilla", headers=_HEADERS)
         assert r.status_code == 200
-        providers = {m["provider"] for m in r.json()["models"]}
-        assert providers <= {"anthropic"}  # vanilla → anthropic only
+        models = r.json()["models"]
+        # Every returned entry actually offers the vanilla driver.
+        assert models and all("vanilla" in m["drivers"] for m in models)
+        # Vanilla is multi-provider: anthropic plus the openai and opencode-go
+        # chat-completions/messages paths — and nothing else.
+        providers = {m["provider"] for m in models}
+        assert providers == {"anthropic", "openai", "opencode-go"}
+        # Representative members of each new path are offered.
+        ids = {m["id"] for m in models}
+        assert "gpt-4o-mini" in ids
+        assert "opencode-go/glm-5.2" in ids
+        assert "opencode-go/minimax-m3" in ids
