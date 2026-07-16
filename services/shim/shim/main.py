@@ -13,15 +13,23 @@ from agentcore.drivers.codex import CodexDriver
 from agentcore.drivers.opencode import OpencodeDriver
 from agentcore.drivers.vanilla import VanillaDriver
 from agentcore.llm.anthropic import DEFAULT_BASE_URL, AnthropicClient
+from agentcore.llm.openai_compat import DEFAULT_BASE_URL as OPENAI_DEFAULT_BASE_URL
+from agentcore.llm.router import OPENCODE_GO_DEFAULT_BASE_URL, LLMRouter
 from shim.app import create_app
 from shim.git_ops import GitOps
 
 
 def build_drivers() -> dict[str, Driver]:
     base_url = os.environ.get("ANTHROPIC_BASE_URL", DEFAULT_BASE_URL)
-    llm = AnthropicClient(base_url=base_url)
+    router = LLMRouter(
+        anthropic_base_url=base_url,
+        openai_base_url=os.environ.get("OPENAI_BASE_URL", OPENAI_DEFAULT_BASE_URL),
+        opencode_go_base_url=os.environ.get(
+            "OPENCODE_GO_BASE_URL", OPENCODE_GO_DEFAULT_BASE_URL
+        ),
+    )
     return {
-        "vanilla": VanillaDriver(llm=llm),
+        "vanilla": VanillaDriver(llm=AnthropicClient(base_url=base_url), router=router),
         # opencode + codex + claude-code shell out to their CLI binaries
         # (no LLM client needed).
         "opencode": OpencodeDriver(),
