@@ -59,9 +59,13 @@ def _to_openai_messages(
                               "arguments": json.dumps(b.get("input", {}))}}
                 for b in content if b.get("type") == "tool_use"
             ]
-            msg: dict[str, Any] = {"role": "assistant", "content": text or None}
             if tool_calls:
-                msg["tool_calls"] = tool_calls
+                msg = {"role": "assistant", "content": text or None, "tool_calls": tool_calls}
+            else:
+                # No tool_calls: OpenAI rejects content=None without tool_calls,
+                # which would otherwise permanently break the loop's nudge
+                # recovery when a backend returns an empty completion.
+                msg = {"role": "assistant", "content": text or "(empty response)"}
             out.append(msg)
     return out
 
@@ -155,7 +159,7 @@ class OpenAICompatClient:
         finish = choice.get("finish_reason") or ""
         return LLMResponse(
             content=_to_blocks(choice.get("message") or {}),
-            tokens_in=int(usage.get("prompt_tokens", 0)),
-            tokens_out=int(usage.get("completion_tokens", 0)),
+            tokens_in=int(usage.get("prompt_tokens") or 0),
+            tokens_out=int(usage.get("completion_tokens") or 0),
             stop_reason=_FINISH_TO_STOP.get(finish, finish),
         )

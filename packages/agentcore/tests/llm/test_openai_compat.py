@@ -160,6 +160,47 @@ async def test_missing_usage_counts_zero_and_stop_maps_to_end_turn():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_null_usage_counts_zero():
+    respx.post("https://stub.test/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_envelope(
+            {"role": "assistant", "content": "all done"}, finish="stop",
+            usage={"prompt_tokens": None, "completion_tokens": None},
+        ))
+    )
+    client = OpenAICompatClient(base_url="https://stub.test/v1")
+    resp = await client.create(model="gpt-x", system="", messages=[], tools=[],
+                               max_tokens=10, credential="sk")
+    assert resp.tokens_in == 0 and resp.tokens_out == 0
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_empty_assistant_history_turn_round_trips_as_placeholder():
+    """An empty assistant turn (no text, no tool_use) must not become
+    content=None on the next request — OpenAI rejects null content without
+    tool_calls, which would kill the loop's nudge recovery."""
+    route = respx.post("https://stub.test/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=OPENAI_RESPONSE)
+    )
+    client = OpenAICompatClient(base_url="https://stub.test/v1")
+    await client.create(
+        model="gpt-x", system="",
+        messages=[
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": []},   # empty prior completion
+            {"role": "user", "content": "You must call the `done` tool to finish."},
+        ],
+        tools=[], max_tokens=10, credential="sk",
+    )
+    payload = json.loads(route.calls.last.request.content)
+    assistant = payload["messages"][1]
+    assert assistant["role"] == "assistant"
+    assert assistant["content"]            # not None / not empty
+    assert "tool_calls" not in assistant
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_length_finish_maps_to_max_tokens():
     respx.post("https://stub.test/v1/chat/completions").mock(
         return_value=httpx.Response(200, json=_envelope(

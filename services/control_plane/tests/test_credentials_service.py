@@ -102,7 +102,7 @@ def test_model_is_keyless_only_for_free_zen() -> None:
     assert model_is_keyless("openai/gpt-4o") is False
 
 
-def test_provider_prefixes_shared_with_router():
+def test_provider_prefixes_shared_with_router() -> None:
     """Every bare id the agentcore router sends to OpenAI must resolve to the
     openai credential provider — one table, no drift."""
     from agentcore.llm.router import OPENAI_MODEL_PREFIXES
