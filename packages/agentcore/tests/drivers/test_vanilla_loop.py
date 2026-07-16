@@ -669,3 +669,121 @@ async def test_tool_exception_becomes_error_result(tmp_path):
     tr = [p for t, p in events if t == "tool_result" and p["tool_use_id"] == "b1"][0]
     assert tr["ok"] is False
     assert "kaboom" in tr["content"]
+
+
+class FakeMcpRuntime:
+    """Stands in for McpRuntime: one echo adapter, records lifecycle."""
+
+    def __init__(self, fail_server: str | None = None):
+        self.errors = {}
+        self.skipped_tools = []
+        self.connected_with = None
+        self.closed = False
+        self._fail_server = fail_server
+
+    async def connect(self, servers):
+        self.connected_with = [s.name for s in servers]
+        if self._fail_server:
+            self.errors[self._fail_server] = "connection refused"
+
+    def tools(self):
+        from agentcore.tools.base import ToolResult, ToolSpec
+
+        rt = self
+
+        class EchoAdapter:
+            spec = ToolSpec(
+                name="mcp__stub__echo", description="[stub] echo",
+                input_schema={"type": "object"},
+            )
+            async def run(self, input, ctx):
+                return ToolResult(ok=True, content=f"echo:{input.get('text', '')}",
+                                  duration_ms=1)
+        return [] if rt._fail_server == "stub" else [EchoAdapter()]
+
+    async def close(self):
+        self.closed = True
+
+
+def _mcp_server(name="stub"):
+    from agentcore.models import ShimMcpServer
+    return ShimMcpServer(name=name, url="http://stub/mcp", auth_type="none")
+
+
+@pytest.mark.asyncio
+async def test_mcp_tools_join_the_loop_and_runtime_closes(tmp_path):
+    from agentcore.llm.base import LLMResponse
+
+    fake = FakeMcpRuntime()
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "m1", "name": "mcp__stub__echo",
+                      "input": {"text": "hi"}}],
+            tokens_in=1, tokens_out=1, stop_reason="tool_use",
+        ),
+        _done_response(),
+    ])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm, mcp_factory=lambda: fake)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), mcp_servers=[_mcp_server()],
+    )
+    assert result.success
+    assert fake.connected_with == ["stub"]
+    assert fake.closed  # closed on the terminal path
+    assert any(t["name"] == "mcp__stub__echo" for t in llm.calls[0]["tools"])
+    tr = [p for t, p in events if t == "tool_result" and p["tool_use_id"] == "m1"][0]
+    assert tr["ok"] and tr["content"] == "echo:hi"
+    # MCP tools never appear in the prompt text beyond the generic inventory.
+    assert "mcp__stub__echo" in llm.calls[0]["system"]  # tool inventory line only
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_failure_warns_and_task_continues(tmp_path):
+    fake = FakeMcpRuntime(fail_server="stub")
+    llm = ScriptedLLM([_done_response()])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm, mcp_factory=lambda: fake)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), mcp_servers=[_mcp_server()],
+    )
+    assert result.success
+    warns = [p for t, p in events if t == "log" and p["level"] == "warn"]
+    assert any("stub" in str(p.get("data", {})) for p in warns)
+    assert fake.closed
+
+
+@pytest.mark.asyncio
+async def test_mcp_closed_even_on_budget_failure(tmp_path):
+    fake = FakeMcpRuntime()
+    llm = ScriptedLLM([])  # endless text turns
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm, mcp_factory=lambda: fake)
+    limits = ResolvedLimits(max_iterations=2, max_tokens=10**9, timeout_seconds=60)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=limits,
+        credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), mcp_servers=[_mcp_server()],
+    )
+    assert not result.success
+    assert fake.closed
+
+
+@pytest.mark.asyncio
+async def test_no_mcp_servers_no_runtime(tmp_path):
+    created = []
+    def factory():
+        created.append(1)
+        return FakeMcpRuntime()
+    llm = ScriptedLLM([_done_response()])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm, mcp_factory=factory)
+    await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert created == []

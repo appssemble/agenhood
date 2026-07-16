@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import Callable
 from typing import Any
 
 import jsonschema
@@ -24,7 +25,14 @@ from agentcore.drivers.skill_tool import SkillTool, skills_dir
 from agentcore.drivers.skills_md import write_skills
 from agentcore.llm.base import LLMClient
 from agentcore.llm.router import LLMRouter
-from agentcore.models import AgentConfig, ResolvedLimits, ShimSkill, TaskBody, TaskResult
+from agentcore.models import (
+    AgentConfig,
+    ResolvedLimits,
+    ShimMcpServer,
+    ShimSkill,
+    TaskBody,
+    TaskResult,
+)
 from agentcore.tools.base import TOOLS, Tool, ToolContext, ToolResult, ToolSpec
 
 # ---------------------------------------------------------------------------
@@ -182,11 +190,13 @@ class VanillaDriver:
         self,
         llm: LLMClient | None = None,
         router: LLMRouter | None = None,
+        mcp_factory: "Callable[[], Any] | None" = None,
     ) -> None:
         if llm is None and router is None:
             raise ValueError("VanillaDriver needs an llm client or a router")
         self._llm = llm
         self._router = router
+        self._mcp_factory = mcp_factory
 
     def _route(self, model: str) -> tuple[LLMClient, str]:
         """(client, wire model id) — router when present, else the fixed client."""
@@ -194,6 +204,13 @@ class VanillaDriver:
             return self._router.route(model)
         assert self._llm is not None
         return self._llm, model
+
+    def _make_mcp(self) -> Any:
+        if self._mcp_factory is not None:
+            return self._mcp_factory()
+        from agentcore.mcp_runtime import McpRuntime
+
+        return McpRuntime()
 
     async def run(
         self,
@@ -208,7 +225,7 @@ class VanillaDriver:
         credential_meta: dict[str, Any] | None = None,
         workspace: str = "/workspace",
         skills: list[ShimSkill] | None = None,
-        mcp_servers: list[Any] | None = None,  # opencode/codex-only; ignored here
+        mcp_servers: list[ShimMcpServer] | None = None,
         session_id: str | None = None,
         session_is_continuation: bool = False,
         env: dict[str, str] | None = None,
@@ -256,6 +273,29 @@ class VanillaDriver:
                     names=[s.name for s in written_skills],
                 )
                 run_tools[st.spec.name] = st
+
+        mcp = None
+        if mcp_servers:
+            mcp = self._make_mcp()
+            try:
+                await mcp.connect(mcp_servers)
+            except Exception as e:  # noqa: BLE001 — MCP must never abort the task
+                await emit("log", {
+                    "level": "warn", "message": "mcp_connect_failed",
+                    "data": {"error": str(e)},
+                })
+            for server_name, reason in getattr(mcp, "errors", {}).items():
+                await emit("log", {
+                    "level": "warn", "message": "mcp_server_unavailable",
+                    "data": {"server": server_name, "error": reason},
+                })
+            for skipped in getattr(mcp, "skipped_tools", []):
+                await emit("log", {
+                    "level": "warn", "message": "mcp_tool_name_collision",
+                    "data": {"tool": skipped},
+                })
+            for adapter in mcp.tools():
+                run_tools[adapter.spec.name] = adapter
 
         specs: list[ToolSpec] = [t.spec for t in run_tools.values()] + [DONE_TOOL]
         system_prompt = assemble_system_prompt(
@@ -308,155 +348,162 @@ class VanillaDriver:
                 reason=(code if code else None),
             )
 
-        while True:
-            # Check all limits and cancellation before each iteration.
-            if cancel.is_set():
-                return await _terminal("cancelled", "cancelled")
-            if (tokens_in + tokens_out) >= limits.max_tokens:
-                return await _terminal("failed", "token_budget_exhausted")
-            if (time.monotonic() - start) >= limits.timeout_seconds:
-                return await _terminal("timed_out", "timeout")
-            if iterations >= limits.max_iterations:
-                return await _terminal("failed", "iteration_limit")
+        try:
+            while True:
+                # Check all limits and cancellation before each iteration.
+                if cancel.is_set():
+                    return await _terminal("cancelled", "cancelled")
+                if (tokens_in + tokens_out) >= limits.max_tokens:
+                    return await _terminal("failed", "token_budget_exhausted")
+                if (time.monotonic() - start) >= limits.timeout_seconds:
+                    return await _terminal("timed_out", "timeout")
+                if iterations >= limits.max_iterations:
+                    return await _terminal("failed", "iteration_limit")
 
-            await emit("iteration_started", {"iteration": iterations + 1})
-            response = await client.create(
-                model=wire_model,
-                system=system_prompt,
-                messages=messages,
-                tools=anthropic_tools,
-                max_tokens=MAX_TOKENS_PER_CALL,
-                credential=credential,
-            )
-            tokens_in += response.tokens_in
-            tokens_out += response.tokens_out
-            await emit("token_update", {"tokens_in": tokens_in, "tokens_out": tokens_out})
-            await emit("assistant_message", {"content": response.content})
-
-            tool_uses = [b for b in response.content if b.get("type") == "tool_use"]
-            messages.append({"role": "assistant", "content": response.content})
-
-            if not tool_uses:
-                # No tool call — nudge the model to call done.
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "You must call the `done` tool to finish.",
-                    }
+                await emit("iteration_started", {"iteration": iterations + 1})
+                response = await client.create(
+                    model=wire_model,
+                    system=system_prompt,
+                    messages=messages,
+                    tools=anthropic_tools,
+                    max_tokens=MAX_TOKENS_PER_CALL,
+                    credential=credential,
                 )
-                iterations += 1
-                continue
+                tokens_in += response.tokens_in
+                tokens_out += response.tokens_out
+                await emit("token_update", {"tokens_in": tokens_in, "tokens_out": tokens_out})
+                await emit("assistant_message", {"content": response.content})
 
-            tool_results: list[dict[str, Any]] = []
-            done_accepted = False
-            done_payload: Any = None
+                tool_uses = [b for b in response.content if b.get("type") == "tool_use"]
+                messages.append({"role": "assistant", "content": response.content})
 
-            for tu in tool_uses:
-                await emit(
-                    "tool_call",
-                    {
-                        "tool_use_id": tu["id"],
-                        "name": tu["name"],
-                        "input": tu["input"],
-                    },
-                )
+                if not tool_uses:
+                    # No tool call — nudge the model to call done.
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "You must call the `done` tool to finish.",
+                        }
+                    )
+                    iterations += 1
+                    continue
 
-                if tu["name"] == "done":
-                    accepted, payload = resolve_output(tu["input"], task, workspace)
-                    if accepted:
+                tool_results: list[dict[str, Any]] = []
+                done_accepted = False
+                done_payload: Any = None
+
+                for tu in tool_uses:
+                    await emit(
+                        "tool_call",
+                        {
+                            "tool_use_id": tu["id"],
+                            "name": tu["name"],
+                            "input": tu["input"],
+                        },
+                    )
+
+                    if tu["name"] == "done":
+                        accepted, payload = resolve_output(tu["input"], task, workspace)
+                        if accepted:
+                            await emit(
+                                "tool_result",
+                                {
+                                    "tool_use_id": tu["id"],
+                                    "ok": True,
+                                    "content": "accepted",
+                                    "duration_ms": 0,
+                                },
+                            )
+                            done_accepted = True
+                            done_payload = payload
+                            break  # done is always alone; stop processing tool_uses
+
+                        # Invalid structured output — feed error back, loop continues.
                         await emit(
                             "tool_result",
                             {
                                 "tool_use_id": tu["id"],
-                                "ok": True,
-                                "content": "accepted",
+                                "ok": False,
+                                "content": payload,
                                 "duration_ms": 0,
                             },
                         )
-                        done_accepted = True
-                        done_payload = payload
-                        break  # done is always alone; stop processing tool_uses
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tu["id"],
+                                "content": payload,
+                                "is_error": True,
+                            }
+                        )
+                        continue
 
-                    # Invalid structured output — feed error back, loop continues.
+                    tool = run_tools.get(tu["name"])
+                    if tool is None:
+                        msg = f"unknown tool: {tu['name']}"
+                        await emit(
+                            "tool_result",
+                            {
+                                "tool_use_id": tu["id"],
+                                "ok": False,
+                                "content": msg,
+                                "duration_ms": 0,
+                            },
+                        )
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tu["id"],
+                                "content": msg,
+                                "is_error": True,
+                            }
+                        )
+                        continue
+
+                    try:
+                        res = await tool.run(tu["input"], tool_ctx)
+                    except Exception as e:  # noqa: BLE001 — a tool crash must not kill the loop
+                        res = ToolResult(
+                            ok=False,
+                            content=f"tool {tu['name']} crashed: {e}",
+                            duration_ms=0,
+                        )
+                    content = _cap_tool_result(res.content)
                     await emit(
                         "tool_result",
                         {
                             "tool_use_id": tu["id"],
-                            "ok": False,
-                            "content": payload,
-                            "duration_ms": 0,
+                            "ok": res.ok,
+                            "content": content,
+                            "duration_ms": res.duration_ms,
                         },
                     )
                     tool_results.append(
                         {
                             "type": "tool_result",
                             "tool_use_id": tu["id"],
-                            "content": payload,
-                            "is_error": True,
+                            "content": content,
+                            "is_error": not res.ok,
                         }
                     )
-                    continue
 
-                tool = run_tools.get(tu["name"])
-                if tool is None:
-                    msg = f"unknown tool: {tu['name']}"
-                    await emit(
-                        "tool_result",
-                        {
-                            "tool_use_id": tu["id"],
-                            "ok": False,
-                            "content": msg,
-                            "duration_ms": 0,
-                        },
-                    )
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tu["id"],
-                            "content": msg,
-                            "is_error": True,
-                        }
-                    )
-                    continue
+                if done_accepted:
+                    if done_payload.get("success") is False:
+                        return await _terminal(
+                            "failed",
+                            done_payload.get("reason") or "model_reported_failure",
+                            output=done_payload,
+                        )
+                    return await _terminal("completed", None, output=done_payload)
 
+                messages.append({"role": "user", "content": tool_results})
+                iterations += 1
+        finally:
+            if mcp is not None:
                 try:
-                    res = await tool.run(tu["input"], tool_ctx)
-                except Exception as e:  # noqa: BLE001 — a tool crash must not kill the loop
-                    res = ToolResult(
-                        ok=False,
-                        content=f"tool {tu['name']} crashed: {e}",
-                        duration_ms=0,
-                    )
-                content = _cap_tool_result(res.content)
-                await emit(
-                    "tool_result",
-                    {
-                        "tool_use_id": tu["id"],
-                        "ok": res.ok,
-                        "content": content,
-                        "duration_ms": res.duration_ms,
-                    },
-                )
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tu["id"],
-                        "content": content,
-                        "is_error": not res.ok,
-                    }
-                )
-
-            if done_accepted:
-                if done_payload.get("success") is False:
-                    return await _terminal(
-                        "failed",
-                        done_payload.get("reason") or "model_reported_failure",
-                        output=done_payload,
-                    )
-                return await _terminal("completed", None, output=done_payload)
-
-            messages.append({"role": "user", "content": tool_results})
-            iterations += 1
+                    await mcp.close()
+                except Exception:  # noqa: BLE001 — teardown must never mask the result
+                    pass
 
 
 # ---------------------------------------------------------------------------
