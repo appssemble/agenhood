@@ -2,7 +2,8 @@
   "capabilities": {
     "requires_image_feature": null,
     "supports_cancel": true,
-    "supports_mcp": false,
+    "supports_mcp": true,
+    "supports_skills": true,
     "supports_structured_output": true,
     "supports_tools": true
   },

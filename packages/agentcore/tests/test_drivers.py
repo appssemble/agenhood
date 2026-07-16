@@ -89,3 +89,24 @@ def test_registered_fake_driver_runs_via_protocol():
     assert result.success is True
     assert result.output == "HELLO"
     assert seen == [("task_started", {"driver": "fake", "model": "claude-opus-4-7"})]
+
+
+def test_capability_flags_for_skills_and_mcp():
+    import importlib
+
+    from agentcore.drivers import claude_code, codex, opencode, vanilla
+    from agentcore.drivers.base import DRIVERS
+
+    # `agentcore.drivers` (and its submodules) is already imported by this
+    # point in the process — a plain `import agentcore.drivers` is a no-op
+    # and would not repopulate DRIVERS after the _clean_registry fixture
+    # clears it. Reload each driver submodule so its module-level
+    # `register(...)` call re-runs against the now-empty registry.
+    for mod in (vanilla, opencode, codex, claude_code):
+        importlib.reload(mod)
+
+    caps = {name: d.capabilities for name, d in DRIVERS.items()}
+    assert caps["vanilla"].supports_skills is True
+    assert caps["vanilla"].supports_mcp is True
+    for cli in ("opencode", "codex", "claude-code"):
+        assert caps[cli].supports_skills is True, cli

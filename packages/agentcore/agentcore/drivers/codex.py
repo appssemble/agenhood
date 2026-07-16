@@ -271,6 +271,7 @@ class CodexDriver:
         supports_cancel=True,
         requires_image_feature=None,
         supports_mcp=True,
+        supports_skills=True,
     )
     default_template = DriverTemplate(
         driver="codex",

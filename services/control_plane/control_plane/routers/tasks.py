@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import control_plane.tables as t
+from agentcore.drivers.base import DRIVERS
 from agentcore.models import (
     AgentConfig,
     Effort,
@@ -206,12 +207,18 @@ def build_task_row(
     }
 
 
+def _capabilities(driver: str):  # type: ignore[no-untyped-def]
+    d = DRIVERS.get(driver)
+    return d.capabilities if d is not None else None
+
+
 def build_task_skills(
     config: AgentConfig, skill_rows: list[dict[str, Any]]
 ) -> list[ShimSkill]:
-    """Resolve the container's selected skills — for the shell-out drivers that
-    natively discover SKILL.md (opencode, codex). Other drivers get nothing."""
-    if config.driver not in SHELL_OUT_DRIVERS or not config.skills:
+    """Resolve the container's selected skills — for drivers whose capabilities
+    support skills. Other drivers get nothing."""
+    caps = _capabilities(config.driver)
+    if caps is None or not caps.supports_skills or not config.skills:
         return []
     return resolve_skills_for_request(config.skills, skill_rows)
 
@@ -219,9 +226,10 @@ def build_task_skills(
 def build_task_mcp_servers(
     config: AgentConfig, rows: list[dict[str, Any]], master_key: bytes
 ) -> list[ShimMcpServer]:
-    """Resolve the container's selected MCP servers for the shell-out drivers
-    (opencode, codex). Other drivers get nothing — mirrors build_task_skills."""
-    if config.driver not in SHELL_OUT_DRIVERS or not config.mcp_servers:
+    """Resolve the container's selected MCP servers for drivers whose
+    capabilities support MCP. Other drivers get nothing — mirrors build_task_skills."""
+    caps = _capabilities(config.driver)
+    if caps is None or not caps.supports_mcp or not config.mcp_servers:
         return []
     return resolve_mcp_for_request(config.mcp_servers, rows, master_key)
 
@@ -638,14 +646,15 @@ async def submit_task_core(
     )
 
     task_skills: list[ShimSkill] = []
-    if config.driver in SHELL_OUT_DRIVERS and config.skills:
+    task_mcp: list[ShimMcpServer] = []
+    caps = _capabilities(config.driver)
+    if caps is not None and caps.supports_skills and config.skills:
         skill_rows = await _load_tenant_rows_by_id(
             session, skills_table, tenant_id, config.skills
         )
         task_skills = build_task_skills(config, skill_rows)
 
-    task_mcp: list[ShimMcpServer] = []
-    if config.driver in SHELL_OUT_DRIVERS and config.mcp_servers:
+    if caps is not None and caps.supports_mcp and config.mcp_servers:
         mcp_rows = await _load_tenant_rows_by_id(
             session, mcp_servers_table, tenant_id, config.mcp_servers
         )

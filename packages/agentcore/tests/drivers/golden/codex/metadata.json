@@ -3,6 +3,7 @@
     "requires_image_feature": null,
     "supports_cancel": true,
     "supports_mcp": true,
+    "supports_skills": true,
     "supports_structured_output": false,
     "supports_tools": false
   },

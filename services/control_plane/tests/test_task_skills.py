@@ -16,9 +16,12 @@ def _rows():
     ]
 
 
-def test_build_task_skills_only_for_opencode() -> None:
+def test_build_task_skills_resolves_for_vanilla() -> None:
+    # vanilla's DriverCapabilities.supports_skills is True (Task 6): the
+    # in-process driver resolves skills too, not just the shell-out CLIs.
     cfg = AgentConfig(driver="vanilla", model="m", skills=["skl_a"])
-    assert build_task_skills(cfg, _rows()) == []
+    out = build_task_skills(cfg, _rows())
+    assert [s.name for s in out] == ["a"]
 
 
 def test_build_task_skills_resolves_for_opencode() -> None:
@@ -38,8 +41,8 @@ def test_build_task_skills_resolves_for_codex() -> None:
     assert [s.name for s in out] == ["b", "a"]
 
 
-def test_build_task_skills_still_empty_for_vanilla() -> None:
-    cfg = AgentConfig(driver="vanilla", model="m", skills=["skl_a"])
+def test_build_task_skills_empty_for_unknown_driver() -> None:
+    cfg = AgentConfig(driver="not-a-real-driver", model="m", skills=["skl_a"])
     assert build_task_skills(cfg, _rows()) == []
 
 

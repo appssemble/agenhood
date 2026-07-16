@@ -34,6 +34,7 @@ class DriverCapabilities:
     supports_cancel: bool
     requires_image_feature: str | None = None
     supports_mcp: bool = False
+    supports_skills: bool = False
 
 
 @dataclass(frozen=True)
