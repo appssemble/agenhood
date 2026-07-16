@@ -237,8 +237,7 @@ def is_valid(catalog: list[ModelEntry], model_id: str, driver: str) -> bool:
 #   - opencode / codex register only the OpenAI (Codex) backend from an OAuth
 #     credential, so an *anthropic* subscription cannot drive them.
 #   - claude-code is anthropic-only and is built around the anthropic subscription.
-#   - vanilla calls the raw Anthropic API with ``x-api-key``, which an OAuth token
-#     is not — it needs an API key.
+#   - vanilla calls provider APIs with API keys; an OAuth token is not an API key.
 # A provider NOT listed for a driver requires an API key for that driver; a
 # subscription alone does not make its models runnable there.
 _DRIVER_SUBSCRIPTION_PROVIDERS: dict[str, set[str]] = {
