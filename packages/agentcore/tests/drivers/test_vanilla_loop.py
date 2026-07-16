@@ -527,3 +527,145 @@ async def test_full_loop_over_openai_wire(tmp_path):
     assert result.output == {"success": True, "output": "wrote"}
     assert (tmp_path / "a.txt").read_text() == "hi"
     assert events[-1][1]["to"] == "completed"
+
+
+def _skill(name="pdf-reports", description="Branded PDFs", body="Use helper.py"):
+    from agentcore.models import ShimSkill
+    return ShimSkill(name=name, description=description, body=body)
+
+
+def _done_response(output="ok"):
+    from agentcore.llm.base import LLMResponse
+    return LLMResponse(
+        content=[{"type": "tool_use", "id": "d", "name": "done",
+                  "input": {"success": True, "output": output}}],
+        tokens_in=1, tokens_out=1, stop_reason="tool_use",
+    )
+
+
+@pytest.mark.asyncio
+async def test_skills_materialized_prompted_and_loadable(tmp_path):
+    from agentcore.llm.base import LLMResponse
+
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "s1", "name": "skill",
+                      "input": {"name": "pdf-reports"}}],
+            tokens_in=1, tokens_out=1, stop_reason="tool_use",
+        ),
+        _done_response(),
+    ])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="make a report"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), skills=[_skill()],
+    )
+    assert result.success
+    # Materialized on disk.
+    assert (tmp_path / ".agent-runtime" / "skills" / "pdf-reports" / "SKILL.md").exists()
+    # Prompt carries the section and the skill tool spec went to the LLM.
+    assert "## Skills" in llm.calls[0]["system"]
+    assert any(t["name"] == "skill" for t in llm.calls[0]["tools"])
+    # The skill tool returned the body.
+    skill_results = [p for t, p in events if t == "tool_result" and p["tool_use_id"] == "s1"]
+    assert skill_results and skill_results[0]["ok"]
+    assert "Use helper.py" in skill_results[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_no_skills_no_skill_tool(tmp_path):
+    llm = ScriptedLLM([_done_response()])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert all(t["name"] != "skill" for t in llm.calls[0]["tools"])
+    assert "## Skills" not in llm.calls[0]["system"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_skill_skipped_with_warn(tmp_path):
+    llm = ScriptedLLM([_done_response()])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path),
+        skills=[_skill(name="Bad Name!")],  # fails valid_skill_name -> skipped
+    )
+    assert result.success  # task never aborts on skill failure
+    warns = [p for t, p in events if t == "log" and p["level"] == "warn"]
+    assert any("Bad Name!" in str(p.get("data", {})) for p in warns)
+    assert all(t["name"] != "skill" for t in llm.calls[0]["tools"])
+
+
+@pytest.mark.asyncio
+async def test_tool_result_capped_with_marker(tmp_path, monkeypatch):
+    from agentcore.llm.base import LLMResponse
+
+    monkeypatch.setenv("TOOL_RESULT_MAX_CHARS", "200")
+    big = tmp_path / "big.txt"
+    big.write_text("x" * 5000)
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "r1", "name": "read_file",
+                      "input": {"path": "big.txt"}}],
+            tokens_in=1, tokens_out=1, stop_reason="tool_use",
+        ),
+        _done_response(),
+    ])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(["read_file"]), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert result.success
+    tr = [p for t, p in events if t == "tool_result" and p["tool_use_id"] == "r1"][0]
+    assert len(tr["content"]) < 400
+    assert "truncated" in tr["content"]
+    # History got the capped version too.
+    sent = llm.calls[1]["messages"][-1]["content"][0]["content"]
+    assert "truncated" in sent and len(sent) < 400
+
+
+@pytest.mark.asyncio
+async def test_tool_exception_becomes_error_result(tmp_path):
+    from agentcore.llm.base import LLMResponse
+    from agentcore.tools.base import ToolSpec
+
+    class BoomTool:
+        spec = ToolSpec(name="write_file", description="d", input_schema={})
+        async def run(self, input, ctx):
+            raise RuntimeError("kaboom")
+
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "b1", "name": "write_file",
+                      "input": {}}],
+            tokens_in=1, tokens_out=1, stop_reason="tool_use",
+        ),
+        _done_response(),
+    ])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    import agentcore.tools.base as tb
+    original = tb.TOOLS.get("write_file")
+    tb.TOOLS["write_file"] = BoomTool()
+    try:
+        result = await driver.run(
+            task=TaskBody(prompt="x"), config=cfg(["write_file"]), limits=LIMITS,
+            credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+        )
+    finally:
+        if original is not None:
+            tb.TOOLS["write_file"] = original
+    assert result.success  # loop survived the crash; model recovered via done
+    tr = [p for t, p in events if t == "tool_result" and p["tool_use_id"] == "b1"][0]
+    assert tr["ok"] is False
+    assert "kaboom" in tr["content"]

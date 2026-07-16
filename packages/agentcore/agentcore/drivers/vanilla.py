@@ -20,10 +20,12 @@ from agentcore.drivers.base import (
     register,
 )
 from agentcore.drivers.session_state import read_session_state, write_session_state
+from agentcore.drivers.skill_tool import SkillTool, skills_dir
+from agentcore.drivers.skills_md import write_skills
 from agentcore.llm.base import LLMClient
 from agentcore.llm.router import LLMRouter
-from agentcore.models import AgentConfig, ResolvedLimits, TaskBody, TaskResult
-from agentcore.tools.base import TOOLS, ToolContext, ToolSpec
+from agentcore.models import AgentConfig, ResolvedLimits, ShimSkill, TaskBody, TaskResult
+from agentcore.tools.base import TOOLS, Tool, ToolContext, ToolResult, ToolSpec
 
 # ---------------------------------------------------------------------------
 # Done tool spec — always injected by the driver, NOT in TOOLS / config.tools
@@ -113,6 +115,20 @@ DEFAULT_SYSTEM_PROMPT = (
 
 MAX_TOKENS_PER_CALL = 4096
 
+DEFAULT_TOOL_RESULT_MAX_CHARS = 30_000
+
+
+def _cap_tool_result(content: str) -> str:
+    """Cap a tool result before it enters history/events (uniform for all tools)."""
+    limit = int(os.environ.get("TOOL_RESULT_MAX_CHARS", DEFAULT_TOOL_RESULT_MAX_CHARS))
+    if len(content) <= limit:
+        return content
+    dropped = len(content) - limit
+    return content[:limit] + (
+        f"\n[... truncated {dropped} chars — output too large; read the file "
+        "in slices or narrow the command]"
+    )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -191,7 +207,7 @@ class VanillaDriver:
         credential_kind: str = "api_key",
         credential_meta: dict[str, Any] | None = None,
         workspace: str = "/workspace",
-        skills: list[Any] | None = None,  # opencode-only; ignored here
+        skills: list[ShimSkill] | None = None,
         mcp_servers: list[Any] | None = None,  # opencode/codex-only; ignored here
         session_id: str | None = None,
         session_is_continuation: bool = False,
@@ -211,13 +227,44 @@ class VanillaDriver:
             )
             return TaskResult(success=False, reason="unroutable_model")
 
-        specs = enabled_tool_specs(config)
+        # ---- Per-run tool table: built-ins + (skill) — MCP adapters join in
+        # Task 5. `done` stays driver-dispatched, never in the table.
+        run_tools: dict[str, Tool] = {
+            name: TOOLS[name] for name in config.tools if name in TOOLS
+        }
+
+        written_skills: list[ShimSkill] = []
+        if skills:
+            try:
+                written = await write_skills(skills_dir(workspace), skills)
+            except Exception as e:  # noqa: BLE001 — skills must never abort the task
+                written = []
+                await emit("log", {
+                    "level": "warn", "message": "skill_materialization_failed",
+                    "data": {"error": str(e)},
+                })
+            skipped = [s.name for s in skills if s.name not in written]
+            if skipped:
+                await emit("log", {
+                    "level": "warn", "message": "skills_skipped",
+                    "data": {"skills": skipped},
+                })
+            written_skills = [s for s in skills if s.name in written]
+            if written_skills:
+                st = SkillTool(
+                    base_dir=skills_dir(workspace),
+                    names=[s.name for s in written_skills],
+                )
+                run_tools[st.spec.name] = st
+
+        specs: list[ToolSpec] = [t.spec for t in run_tools.values()] + [DONE_TOOL]
         system_prompt = assemble_system_prompt(
             config=config,
             driver_default_system_prompt=DEFAULT_SYSTEM_PROMPT,
             tool_specs=specs,
             task=task,
             limits=limits,
+            skills=written_skills or None,
         )
         anthropic_tools = [_tool_spec_to_anthropic(s) for s in specs]
         tool_ctx = ToolContext(workspace=workspace, cancel=cancel, env=env or {})
@@ -350,7 +397,7 @@ class VanillaDriver:
                     )
                     continue
 
-                tool = TOOLS.get(tu["name"])
+                tool = run_tools.get(tu["name"])
                 if tool is None:
                     msg = f"unknown tool: {tu['name']}"
                     await emit(
@@ -372,13 +419,21 @@ class VanillaDriver:
                     )
                     continue
 
-                res = await tool.run(tu["input"], tool_ctx)
+                try:
+                    res = await tool.run(tu["input"], tool_ctx)
+                except Exception as e:  # noqa: BLE001 — a tool crash must not kill the loop
+                    res = ToolResult(
+                        ok=False,
+                        content=f"tool {tu['name']} crashed: {e}",
+                        duration_ms=0,
+                    )
+                content = _cap_tool_result(res.content)
                 await emit(
                     "tool_result",
                     {
                         "tool_use_id": tu["id"],
                         "ok": res.ok,
-                        "content": res.content,
+                        "content": content,
                         "duration_ms": res.duration_ms,
                     },
                 )
@@ -386,7 +441,7 @@ class VanillaDriver:
                     {
                         "type": "tool_result",
                         "tool_use_id": tu["id"],
-                        "content": res.content,
+                        "content": content,
                         "is_error": not res.ok,
                     }
                 )
