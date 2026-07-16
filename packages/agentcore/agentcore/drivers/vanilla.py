@@ -21,6 +21,7 @@ from agentcore.drivers.base import (
 )
 from agentcore.drivers.session_state import read_session_state, write_session_state
 from agentcore.llm.base import LLMClient
+from agentcore.llm.router import LLMRouter
 from agentcore.models import AgentConfig, ResolvedLimits, TaskBody, TaskResult
 from agentcore.tools.base import TOOLS, ToolContext, ToolSpec
 
@@ -161,8 +162,22 @@ class VanillaDriver:
         supports_context=True,
     )
 
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(
+        self,
+        llm: LLMClient | None = None,
+        router: LLMRouter | None = None,
+    ) -> None:
+        if llm is None and router is None:
+            raise ValueError("VanillaDriver needs an llm client or a router")
         self._llm = llm
+        self._router = router
+
+    def _route(self, model: str) -> tuple[LLMClient, str]:
+        """(client, wire model id) — router when present, else the fixed client."""
+        if self._router is not None:
+            return self._router.route(model)
+        assert self._llm is not None
+        return self._llm, model
 
     async def run(
         self,
@@ -185,6 +200,16 @@ class VanillaDriver:
         from agentcore.prompt import assemble_system_prompt
 
         await emit("task_started", {"driver": self.name, "model": config.model})
+
+        try:
+            client, wire_model = self._route(config.model)
+        except ValueError as e:
+            await emit(
+                "status_change",
+                {"from": "running", "to": "failed", "result": None,
+                 "error": {"code": "unroutable_model", "message": str(e)}},
+            )
+            return TaskResult(success=False, reason="unroutable_model")
 
         specs = enabled_tool_specs(config)
         system_prompt = assemble_system_prompt(
@@ -248,8 +273,8 @@ class VanillaDriver:
                 return await _terminal("failed", "iteration_limit")
 
             await emit("iteration_started", {"iteration": iterations + 1})
-            response = await self._llm.create(
-                model=config.model,
+            response = await client.create(
+                model=wire_model,
                 system=system_prompt,
                 messages=messages,
                 tools=anthropic_tools,
@@ -388,4 +413,4 @@ class VanillaDriver:
 
 from agentcore.llm.anthropic import AnthropicClient  # noqa: E402
 
-register(VanillaDriver(llm=AnthropicClient()))
+register(VanillaDriver(llm=AnthropicClient(), router=LLMRouter()))

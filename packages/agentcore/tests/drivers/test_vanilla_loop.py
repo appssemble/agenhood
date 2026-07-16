@@ -423,3 +423,100 @@ async def test_vanilla_no_session_id_unchanged(tmp_path):
 
     assert result.success is True
     assert not os.path.isdir(os.path.join(str(tmp_path), ".agent-state", "vanilla", "sessions"))
+
+
+@pytest.mark.asyncio
+async def test_router_selects_client_and_wire_model(tmp_path):
+    """With a router, the driver calls the routed client with the wire id."""
+    from agentcore.llm.base import LLMResponse as LR
+
+    done = LR(content=[{"type": "tool_use", "id": "d", "name": "done",
+                        "input": {"success": True, "output": "ok"}}],
+              tokens_in=1, tokens_out=1, stop_reason="tool_use")
+    routed = ScriptedLLM([done])
+    unused = ScriptedLLM([])
+
+    class FakeRouter:
+        def route(self, model):
+            assert model == "opencode-go/glm-5.2"
+            return routed, "glm-5.2"
+
+    driver = VanillaDriver(llm=unused, router=FakeRouter())
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="x"),
+        config=AgentConfig(driver="vanilla", model="opencode-go/glm-5.2"),
+        limits=LIMITS, credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path),
+    )
+    assert result.success
+    assert unused.calls == []              # fallback client never used
+    assert routed.calls[0]["model"] == "glm-5.2"  # wire id, not catalog id
+
+
+@pytest.mark.asyncio
+async def test_unroutable_model_fails_task(tmp_path):
+    from agentcore.llm.router import LLMRouter
+
+    driver = VanillaDriver(router=LLMRouter())
+    events, emit = collector()
+    result = await driver.run(
+        task=TaskBody(prompt="x"),
+        config=AgentConfig(driver="vanilla", model="gemini-3.5-flash"),
+        limits=LIMITS, credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path),
+    )
+    assert not result.success
+    assert result.reason == "unroutable_model"
+    assert events[-1][1]["to"] == "failed"
+    assert events[-1][1]["error"]["code"] == "unroutable_model"
+
+
+@pytest.mark.asyncio
+async def test_full_loop_over_openai_wire(tmp_path):
+    """End-to-end: real router + real OpenAICompatClient + respx chat
+    completions backend, through tool execution to done."""
+    import httpx
+    import respx
+
+    from agentcore.llm.router import LLMRouter
+
+    def _oa(message, finish):
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "model": "gpt-x",
+            "choices": [{"index": 0, "finish_reason": finish,
+                         "message": message}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        })
+
+    responses = iter([
+        _oa({"role": "assistant", "content": None, "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "write_file",
+                          "arguments": "{\"path\": \"a.txt\", \"content\": \"hi\"}"}},
+        ]}, "tool_calls"),
+        _oa({"role": "assistant", "content": None, "tool_calls": [
+            {"id": "c2", "type": "function",
+             "function": {"name": "done",
+                          "arguments": "{\"success\": true, \"output\": \"wrote\"}"}},
+        ]}, "tool_calls"),
+    ])
+
+    with respx.mock:
+        respx.post("http://oa.stub/v1/chat/completions").mock(
+            side_effect=lambda request: next(responses)
+        )
+        driver = VanillaDriver(router=LLMRouter(openai_base_url="http://oa.stub/v1"))
+        events, emit = collector()
+        result = await driver.run(
+            task=TaskBody(prompt="write a file", output=OutputContract(type="text")),
+            config=AgentConfig(driver="vanilla", model="gpt-5.2",
+                               tools=["write_file"]),
+            limits=LIMITS, credential="sk", emit=emit, cancel=asyncio.Event(),
+            workspace=str(tmp_path),
+        )
+
+    assert result.success
+    assert result.output == {"success": True, "output": "wrote"}
+    assert (tmp_path / "a.txt").read_text() == "hi"
+    assert events[-1][1]["to"] == "completed"
