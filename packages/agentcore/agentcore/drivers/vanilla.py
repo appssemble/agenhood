@@ -192,7 +192,7 @@ class VanillaDriver:
         self,
         llm: LLMClient | None = None,
         router: LLMRouter | None = None,
-        mcp_factory: "Callable[[], Any] | None" = None,
+        mcp_factory: Callable[[], Any] | None = None,
     ) -> None:
         if llm is None and router is None:
             raise ValueError("VanillaDriver needs an llm client or a router")
