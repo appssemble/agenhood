@@ -20,6 +20,7 @@ from control_plane.errors import (
     request_validation_error_handler,
 )
 from control_plane.idle import idle_pause_sweep
+from control_plane.image_prepull import prepull_loop
 from control_plane.logging_setup import setup_logging
 from control_plane.reconciler import periodic_sweep, reconcile_all
 from control_plane.routers import admin as admin_router
@@ -290,6 +291,15 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     interval=app.state.settings.oauth_connection_sweep_interval_seconds,
                 ),
                 name="oauth-connection-sweep",
+            )
+        )
+
+    # Keep the default agent image warm so creates never pull cold (registry mode only).
+    if docker_client is not None and app.state.settings.agent_registry:
+        bg.append(
+            asyncio.create_task(
+                prepull_loop(docker_client, app.state.settings),
+                name="image-prepull",
             )
         )
 
