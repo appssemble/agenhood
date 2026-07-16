@@ -56,6 +56,7 @@ export interface ContainerConfigResponse { config: AgentConfig; assembled_prompt
 export interface DriverCapabilities {
   supports_tools: boolean; supports_structured_output: boolean;
   supports_cancel: boolean; requires_image_feature: string | null;
+  supports_mcp?: boolean; supports_skills?: boolean;
 }
 export interface DriverTemplate {
   driver: string; default_system_prompt: string; available_tools: string[];

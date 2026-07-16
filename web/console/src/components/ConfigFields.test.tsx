@@ -5,7 +5,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../test/server";
 import { renderWithProviders } from "../test/render";
 import { ConfigFields } from "./ConfigFields";
-import type { Template } from "../api/types";
+import type { DriverCapabilities, Template } from "../api/types";
 
 const vanillaMeta = {
   driver_template: { driver: "vanilla", default_system_prompt: "", available_tools: ["read_file"], tools_user_editable: true, supports_context: true },
@@ -15,6 +15,12 @@ const opencodeMeta = {
   driver_template: { driver: "opencode", default_system_prompt: "", available_tools: [], tools_user_editable: false, supports_context: false },
   available_tool_specs: [],
 } as unknown as Template;
+
+// Builds a vanillaMeta variant carrying explicit capability flags, so tests can
+// exercise the capability-driven gate independent of the legacy driver-name fallback.
+function withCapabilities(capabilities: Partial<DriverCapabilities>): Template {
+  return { ...vanillaMeta, capabilities } as unknown as Template;
+}
 
 const baseValue = {
   driver: "vanilla", model: "claude-sonnet-4-6", system_prompt: "", system_prompt_mode: "augment" as const,
@@ -77,5 +83,46 @@ describe("ConfigFields", () => {
     );
     await userEvent.click(screen.getByLabelText("linear"));
     expect(onPatch).toHaveBeenCalledWith({ mcp_servers: ["mcp_1"] });
+  });
+
+  it("shows skills and MCP pickers for vanilla when capabilities allow", async () => {
+    models();
+    renderWithProviders(
+      <ConfigFields
+        value={baseValue}
+        driverMeta={withCapabilities({ supports_skills: true, supports_mcp: true })}
+        enabledSkills={[]}
+        enabledMcpServers={[]}
+        onPatch={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText("Skills")).toBeInTheDocument();
+    expect(screen.getByText("MCP servers")).toBeInTheDocument();
+  });
+
+  it("hides skills and MCP pickers for vanilla when capabilities deny", async () => {
+    models();
+    renderWithProviders(
+      <ConfigFields
+        value={baseValue}
+        driverMeta={withCapabilities({ supports_skills: false, supports_mcp: false })}
+        enabledSkills={[]}
+        enabledMcpServers={[]}
+        onPatch={vi.fn()}
+      />,
+    );
+    await screen.findByText("Model");
+    expect(screen.queryByText("Skills")).not.toBeInTheDocument();
+    expect(screen.queryByText(/MCP servers/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the legacy driver list when capabilities are absent", async () => {
+    models();
+    const oc = { ...baseValue, driver: "opencode" };
+    renderWithProviders(
+      <ConfigFields value={oc} driverMeta={opencodeMeta} enabledSkills={[]} enabledMcpServers={[]} onPatch={vi.fn()} />,
+    );
+    expect(await screen.findByText("Skills")).toBeInTheDocument();
+    expect(screen.getByText("MCP servers")).toBeInTheDocument();
   });
 });

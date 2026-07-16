@@ -57,7 +57,10 @@ export function ConfigFields({
   const toolSpecs: ToolSpec[] = driverMeta?.available_tool_specs ?? [];
   const editableTools = driverMeta?.driver_template.tools_user_editable ?? true;
   const supportsContext = driverMeta?.driver_template.supports_context ?? true;
-  const isSkillDriver = value.driver === "opencode" || value.driver === "codex" || value.driver === "claude-code";
+  const legacySkillDriver =
+    value.driver === "opencode" || value.driver === "codex" || value.driver === "claude-code";
+  const supportsSkills = driverMeta?.capabilities?.supports_skills ?? legacySkillDriver;
+  const supportsMcp = driverMeta?.capabilities?.supports_mcp ?? legacySkillDriver;
 
   function toggleTool(name: string) {
     const has = value.tools.includes(name);
@@ -164,8 +167,8 @@ export function ConfigFields({
         </SectionCard>
       )}
 
-      {/* Skills — opencode & codex */}
-      {isSkillDriver && (
+      {/* Skills — gated on driver capability, falling back to the legacy driver list */}
+      {supportsSkills && (
         <SectionCard icon={Icons.Puzzle} title="Skills" hint={`${value.driver} · ${enabledSkills.length} available`}>
           {enabledSkills.length === 0 ? (
             <Note tone="default">
@@ -184,8 +187,8 @@ export function ConfigFields({
         </SectionCard>
       )}
 
-      {/* MCP servers — opencode & codex */}
-      {isSkillDriver && (
+      {/* MCP servers — gated on driver capability, falling back to the legacy driver list */}
+      {supportsMcp && (
         <SectionCard icon={Icons.Web} title="MCP servers" hint={`${value.driver} · ${enabledMcpServers.length} available`}>
           {enabledMcpServers.length === 0 ? (
             <Note tone="default">

@@ -17,7 +17,7 @@ export const driverLabel = (d: string) => DRIVER_LABEL[d] ?? d;
 
 // One-line description shown on the driver picker cards.
 const DRIVER_DESC: Record<string, string> = {
-  vanilla: "Minimal agent. You pick the tools and write the prompt.",
+  vanilla: "Minimal agent. You pick the tools, skills, and MCP servers, and write the prompt.",
   opencode: "Coding agent that manages its own tools and context.",
   codex: "OpenAI Codex agent with support for attached skills.",
 };
