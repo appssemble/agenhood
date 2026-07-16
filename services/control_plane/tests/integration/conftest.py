@@ -125,6 +125,25 @@ def stub_llm_host_url(stub_llm: tuple) -> str:  # type: ignore[return]
     return host_url
 
 
+STUB_MCP_NAME = "stub-mcp-test"
+
+
+@pytest.fixture(scope="session")
+def stub_mcp(docker_network: str):  # type: ignore[return]
+    """Streamable-HTTP MCP echo server on the test network."""
+    import os as _os
+    here = _os.path.dirname(__file__)
+    _run(["docker", "build", "-t", "agent-runtime-stub-mcp:test",
+          _os.path.join(here, "stub_mcp")])
+    subprocess.run(["docker", "rm", "-f", STUB_MCP_NAME],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _run(["docker", "run", "-d", "--name", STUB_MCP_NAME,
+          "--network", docker_network, "agent-runtime-stub-mcp:test"])
+    yield f"http://{STUB_MCP_NAME}:9100/mcp"
+    subprocess.run(["docker", "rm", "-f", STUB_MCP_NAME],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 @pytest.fixture(scope="session")
 def pg():  # type: ignore[return]
     """Start a throwaway Postgres container for the test session."""

@@ -8,3 +8,4 @@ trafilatura
 jsonschema
 watchfiles
 playwright
+mcp>=1.24
