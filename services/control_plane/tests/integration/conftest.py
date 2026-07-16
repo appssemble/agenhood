@@ -195,6 +195,8 @@ async def app_settings(migrated_db: str, docker_network: str, agent_image: str, 
             # base (hence the /v1 here); AnthropicClient appends /v1/messages.
             "OPENAI_BASE_URL": f"{stub_llm_container_url}/v1",
             "OPENCODE_GO_BASE_URL": stub_llm_container_url,
+            # Built-in web tools hit the stub instead of real searxng/websites.
+            "SEARCH_PROVIDER_URL": stub_llm_container_url,
             # Disable the egress proxy inside the test container — it doesn't
             # exist on the test network and httpx would fail connecting to it.
             "HTTP_PROXY": "",

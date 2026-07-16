@@ -1,9 +1,13 @@
 # services/control_plane/tests/integration/stub_llm/app.py
 # Deterministic Anthropic-Messages stub for control-plane integration tests.
 #
-# Default script (3 turns):
-#   turn 0  -> write_file(out.txt, "hello from stub")
-#   turn 1  -> done({"value": 42})
+# Two modes on POST /v1/messages:
+#   - legacy (default 3-turn script, no @@SCRIPT@@ marker in the first user
+#     message): write_file(out.txt, "hello from stub") -> done({"value": 42}).
+#     Several existing tests depend on this fixed script verbatim.
+#   - scripted (@@SCRIPT@@ {json} present in the first user message): replay
+#     the script's turns, keyed by the number of tool_result blocks already
+#     in the conversation (mirrors deploy/stub_llm/app.py).
 #
 # Slow script (first-turn delay of 5 s, triggered when system prompt contains
 # the word SLOW): same 2-turn conversation but stage 0 sleeps 5 s first.
@@ -13,9 +17,14 @@
 # Header-recording: stores the last x-api-key / Authorization header received
 # so tests can verify the decrypted credential was forwarded correctly.
 # GET /_test/last_auth_header returns {"auth_header": "..."} or null.
+#
+# GET /search and GET /page: SearXNG-shaped search results and a simple HTML
+# page, so the web_search/web_fetch built-in tools are testable end-to-end.
 from __future__ import annotations
 
 import asyncio
+import json as _json
+from typing import Any
 
 from fastapi import FastAPI, Request
 
@@ -24,6 +33,41 @@ app = FastAPI()
 # Process-global: stores the most recent auth header received from any caller.
 # Intentionally simple — the integration test resets it by re-running the task.
 _last_auth_header: str | None = None
+
+SCRIPT_MARKER = "@@SCRIPT@@"
+
+
+def extract_script(content: Any) -> dict | None:
+    """Pull the @@SCRIPT@@ {json} object out of a user message, else None."""
+    if not isinstance(content, str) or SCRIPT_MARKER not in content:
+        return None
+    raw = content.split(SCRIPT_MARKER, 1)[1].strip()
+    try:
+        return _json.loads(raw)
+    except _json.JSONDecodeError:
+        return None
+
+
+def _first_user_text(messages: list) -> Any:
+    for m in messages:
+        if m.get("role") == "user":
+            return m.get("content")
+    return None
+
+
+def _turn_to_content(turn: dict) -> list[dict]:
+    blocks: list[dict] = []
+    if isinstance(turn.get("text"), str):
+        blocks.append({"type": "text", "text": turn["text"]})
+    if "done" in turn:
+        blocks.append({"type": "tool_use", "id": "tu_done", "name": "done",
+                       "input": turn["done"]})
+    elif turn.get("tool"):
+        blocks.append({"type": "tool_use", "id": f"tu_{turn['tool']}",
+                       "name": turn["tool"], "input": turn.get("input", {})})
+    if not blocks:  # empty turn -> emit a no-op text so the loop still advances
+        blocks.append({"type": "text", "text": ""})
+    return blocks
 
 
 def _count_tool_results(messages: list) -> int:
@@ -60,21 +104,44 @@ async def messages(req: Request) -> dict:
     )
 
     body = await req.json()
-    stage = _count_tool_results(body.get("messages", []))
+    msgs = body.get("messages", [])
+    script = extract_script(_first_user_text(msgs))
 
-    if stage == 0 and _is_slow(body):
-        await asyncio.sleep(5)
+    if script is None:
+        stage = _count_tool_results(msgs)
 
-    if stage == 0:
-        content = [
-            {"type": "tool_use", "id": "tu_write", "name": "write_file",
-             "input": {"path": "out.txt", "content": "hello from stub"}},
-        ]
+        if stage == 0 and _is_slow(body):
+            await asyncio.sleep(5)
+
+        if stage == 0:
+            content = [
+                {"type": "tool_use", "id": "tu_write", "name": "write_file",
+                 "input": {"path": "out.txt", "content": "hello from stub"}},
+            ]
+        else:
+            content = [
+                {"type": "tool_use", "id": "tu_done", "name": "done",
+                 "input": {"success": True, "output": {"value": 42}}},
+            ]
+
+        return {
+            "id": "msg_stub",
+            "type": "message",
+            "role": "assistant",
+            "model": body.get("model", "stub"),
+            "stop_reason": "tool_use",
+            "content": content,
+            "usage": {"input_tokens": 100, "output_tokens": 50},
+        }
+
+    stage = _count_tool_results(msgs)
+    turns = script.get("turns", [])
+    if stage < len(turns):
+        content = _turn_to_content(turns[stage])
     else:
-        content = [
-            {"type": "tool_use", "id": "tu_done", "name": "done",
-             "input": {"success": True, "output": {"value": 42}}},
-        ]
+        # Past the script -> finish so the loop cannot hang.
+        content = [{"type": "tool_use", "id": "tu_done", "name": "done",
+                    "input": {"success": True, "output": "done"}}]
 
     return {
         "id": "msg_stub",
@@ -83,7 +150,7 @@ async def messages(req: Request) -> dict:
         "model": body.get("model", "stub"),
         "stop_reason": "tool_use",
         "content": content,
-        "usage": {"input_tokens": 100, "output_tokens": 50},
+        "usage": script.get("usage", {"input_tokens": 1, "output_tokens": 1}),
     }
 
 
@@ -108,7 +175,6 @@ async def chat_completions(req: Request) -> dict:
     _last_auth_header = req.headers.get("authorization")
 
     body = await req.json()
-    import json as _json
 
     stage = _count_tool_messages(body.get("messages", []))
     if stage == 0:
@@ -138,3 +204,24 @@ async def chat_completions(req: Request) -> dict:
         }],
         "usage": {"prompt_tokens": 100, "completion_tokens": 50},
     }
+
+
+@app.get("/search")
+async def search(q: str = "", format: str = "json") -> dict:
+    return {"results": [
+        {"title": f"Result for {q}", "url": "http://stub-llm-test:8080/page",
+         "content": f"stub snippet about {q}"},
+    ]}
+
+
+@app.get("/page")
+async def page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        "<html><head><title>Stub Page</title></head><body>"
+        "<article><h1>Stub Page</h1><p>This is the stub page body for "
+        "fetch tests. It has enough prose to satisfy readability "
+        "extraction heuristics used by trafilatura in the web_fetch tool. "
+        "The quick brown fox jumps over the lazy dog repeatedly.</p>"
+        "</article></body></html>"
+    )
