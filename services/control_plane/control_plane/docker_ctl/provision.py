@@ -62,17 +62,32 @@ class ImageUnavailable(RuntimeError):
     """Raised when the requested agent image cannot be pulled or found."""
 
 
-def pull_or_verify_image(client: docker.DockerClient, settings: Settings, image_tag: str) -> str:
-    """Make image_tag available for a container recreate, returning its ref.
+def pull_or_verify_image(
+    client: docker.DockerClient,
+    settings: Settings,
+    image_tag: str,
+    *,
+    force: bool = False,
+) -> str:
+    """Make image_tag available for a container (re)create, returning its ref.
 
-    With a registry configured, force-pull so moving tags (e.g. ``dev``/``latest``)
-    fetch the newest build. In local-only mode (no registry), verify the image is
-    already on the daemon (covers locally-built dev images). Raise
-    ``ImageUnavailable`` if the image cannot be obtained — callers MUST treat this
-    as a no-op failure and leave the container untouched.
+    Registry mode honors ``settings.agent_image_pull_policy``:
+    ``if-not-present`` (default) skips the registry when the tag is already on
+    the daemon; ``always`` force-pulls every time (moving tags refresh on every
+    provision). ``force=True`` bypasses the policy — update_image uses it so a
+    version change always fetches the tag's current content. Local-only mode
+    (no registry) verifies the image is already on the daemon. Raise
+    ``ImageUnavailable`` if the image cannot be obtained — callers MUST treat
+    this as a no-op failure and leave the container untouched.
     """
     ref = _agent_image_ref(settings.agent_registry, image_tag)
     if settings.agent_registry:
+        if not force and settings.agent_image_pull_policy == "if-not-present":
+            try:
+                client.images.get(ref)
+                return ref
+            except docker.errors.ImageNotFound:
+                pass  # not local — fall through to the pull
         auth: dict[str, str] | None = None
         if settings.agent_registry_username:
             auth = {
@@ -216,11 +231,11 @@ async def provision_container(
         return client.containers.run(**kwargs)
 
     try:
-        # Pull (registry path) is inside the cleanup scope so a pull failure also
-        # removes the volume we just created — honoring the docstring contract.
-        # Force-pulling on a configured registry means a newly created container
-        # always gets the latest image pushed under its (moving) tag rather than a
-        # stale local cache; local-only mode verifies the image is present.
+        # Pull/verify is inside the cleanup scope so a failure also removes the
+        # volume we just created — honoring the docstring contract. Whether this
+        # contacts the registry is governed by settings.agent_image_pull_policy;
+        # the background pre-pull sweep keeps the default tag warm so this is a
+        # local no-op in the common case.
         await asyncio.to_thread(pull_or_verify_image, client, settings, image_tag)
         cont: docker.models.containers.Container = await asyncio.to_thread(_run)
     except Exception:

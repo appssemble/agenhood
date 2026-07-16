@@ -50,8 +50,17 @@ class _Client:
         self.images = images
 
 
-def test_pull_with_registry_force_pulls_with_auth() -> None:
-    imgs = _Images()
+def test_registry_if_not_present_skips_pull_when_local() -> None:
+    imgs = _Images()  # get succeeds => image present
+    s = _settings(agent_registry="reg.example")
+    ref = pull_or_verify_image(_Client(imgs), s, "v2")
+    assert ref == "reg.example/agent-runtime:v2"
+    assert imgs.got == ["reg.example/agent-runtime:v2"]
+    assert imgs.pulled == []
+
+
+def test_registry_if_not_present_pulls_when_absent_with_auth() -> None:
+    imgs = _Images(get_exc=docker.errors.ImageNotFound("missing"))
     s = _settings(
         agent_registry="reg.example",
         agent_registry_username="u",
@@ -60,11 +69,29 @@ def test_pull_with_registry_force_pulls_with_auth() -> None:
     ref = pull_or_verify_image(_Client(imgs), s, "v2")
     assert ref == "reg.example/agent-runtime:v2"
     assert imgs.pulled == [("reg.example/agent-runtime:v2", {"username": "u", "password": "p"})]
-    assert imgs.got == []  # registry mode never checks local-only presence
+
+
+def test_registry_policy_always_force_pulls_without_local_check() -> None:
+    imgs = _Images()
+    s = _settings(agent_registry="reg.example", agent_image_pull_policy="always")
+    pull_or_verify_image(_Client(imgs), s, "v2")
+    assert imgs.pulled == [("reg.example/agent-runtime:v2", None)]
+    assert imgs.got == []
+
+
+def test_registry_force_overrides_if_not_present() -> None:
+    imgs = _Images()  # image present locally
+    s = _settings(agent_registry="reg.example")
+    pull_or_verify_image(_Client(imgs), s, "v2", force=True)
+    assert imgs.pulled == [("reg.example/agent-runtime:v2", None)]
+    assert imgs.got == []
 
 
 def test_pull_failure_raises_image_unavailable() -> None:
-    imgs = _Images(pull_exc=docker.errors.APIError("no such tag"))
+    imgs = _Images(
+        pull_exc=docker.errors.APIError("no such tag"),
+        get_exc=docker.errors.ImageNotFound("missing"),
+    )
     s = _settings(agent_registry="reg.example", agent_registry_username="u")
     with pytest.raises(ImageUnavailable):
         pull_or_verify_image(_Client(imgs), s, "nope")
@@ -77,7 +104,10 @@ def test_pull_docker_exception_raises_image_unavailable() -> None:
     Catching it means a registry that is unreachable during images.pull yields a
     422 (image_unavailable) rather than leaking a 500 from an uncaught exception.
     """
-    imgs = _Images(pull_exc=docker.errors.DockerException("connection refused"))
+    imgs = _Images(
+        pull_exc=docker.errors.DockerException("connection refused"),
+        get_exc=docker.errors.ImageNotFound("missing"),
+    )
     s = _settings(agent_registry="reg.example")
     with pytest.raises(ImageUnavailable):
         pull_or_verify_image(_Client(imgs), s, "v2")
