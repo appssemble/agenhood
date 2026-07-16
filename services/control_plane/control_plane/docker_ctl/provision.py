@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
+import time
 from dataclasses import dataclass
 
 import docker
@@ -11,6 +13,8 @@ from control_plane.config import Settings
 from control_plane.docker_ctl import host_shim_url_from_ports
 from control_plane.ids import docker_name_for, volume_name_for
 from control_plane.shim_client import ShimClient
+
+log = logging.getLogger("provision")
 
 _CPU_PERIOD_US = 100_000  # matches docker_ctl/__init__.py's _CPU_PERIOD_US — must stay in sync (Docker's --cpus/nano_cpus conversion)
 
@@ -230,6 +234,7 @@ async def provision_container(
             kwargs["ports"] = {f"{shim_port}/tcp": None}
         return client.containers.run(**kwargs)
 
+    t_start = time.monotonic()
     try:
         # Pull/verify is inside the cleanup scope so a failure also removes the
         # volume we just created — honoring the docstring contract. Whether this
@@ -237,7 +242,14 @@ async def provision_container(
         # the background pre-pull sweep keeps the default tag warm so this is a
         # local no-op in the common case.
         await asyncio.to_thread(pull_or_verify_image, client, settings, image_tag)
+        log.info(
+            "provision %s: image ready in %.2fs", container_id, time.monotonic() - t_start
+        )
+        t_run = time.monotonic()
         cont: docker.models.containers.Container = await asyncio.to_thread(_run)
+        log.info(
+            "provision %s: container started in %.2fs", container_id, time.monotonic() - t_run
+        )
     except Exception:
         if created_volume:
             await _safe_remove_volume(client, volume_name)
@@ -253,7 +265,15 @@ async def provision_container(
     else:
         base_url = f"http://{docker_name}:{shim_port}"
 
+    t_ready = time.monotonic()
     ready = await _poll_readyz(base_url, shim_token, settings.readyz_timeout_seconds)
+    log.info(
+        "provision %s: ready=%s in %.2fs (total %.2fs)",
+        container_id,
+        ready,
+        time.monotonic() - t_ready,
+        time.monotonic() - t_start,
+    )
     if not ready:
         await _teardown(client, docker_name, volume_name if created_volume else None)
         raise ReadinessFailed(
