@@ -142,6 +142,50 @@ async def test_delete_refuses_directory(tmp_path):
     assert "directory" in res.content.lower()
 
 
+@pytest.mark.asyncio
+async def test_write_file_on_directory_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    (tmp_path / "adir").mkdir()
+    res = await WriteFileTool().run({"path": "adir", "content": "x"}, c)
+    assert not res.ok  # must not raise IsADirectoryError
+
+
+@pytest.mark.asyncio
+async def test_read_file_missing_path_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await ReadFileTool().run({}, c)
+    assert not res.ok  # must not raise KeyError
+
+
+@pytest.mark.asyncio
+async def test_write_file_missing_content_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await WriteFileTool().run({"path": "a.txt"}, c)
+    assert not res.ok  # must not raise KeyError
+
+
+@pytest.mark.asyncio
+async def test_edit_file_missing_old_string_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    await WriteFileTool().run({"path": "f.txt", "content": "hello"}, c)
+    res = await EditFileTool().run({"path": "f.txt"}, c)
+    assert not res.ok  # must not raise KeyError
+
+
+@pytest.mark.asyncio
+async def test_delete_file_missing_path_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await DeleteFileTool().run({}, c)
+    assert not res.ok  # must not raise KeyError
+
+
+@pytest.mark.asyncio
+async def test_list_files_bad_max_depth_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await ListFilesTool().run({"max_depth": "not-a-number"}, c)
+    assert not res.ok  # must not raise ValueError
+
+
 def test_tools_self_register():
     import agentcore.tools.files  # noqa: F401 — import for side-effect registration
     from agentcore.tools.base import TOOLS

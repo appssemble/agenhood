@@ -67,6 +67,34 @@ async def test_python_reports_traceback(tmp_path):
     assert "boom" in res.content
 
 
+@pytest.mark.asyncio
+async def test_bash_missing_command_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await BashTool().run({}, c)
+    assert not res.ok  # must not raise KeyError
+
+
+@pytest.mark.asyncio
+async def test_bash_bad_timeout_type_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await BashTool().run({"command": "echo hi", "timeout": "soon"}, c)
+    assert not res.ok  # must not raise ValueError
+
+
+@pytest.mark.asyncio
+async def test_python_missing_code_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await PythonTool().run({}, c)
+    assert not res.ok  # must not raise KeyError
+
+
+@pytest.mark.asyncio
+async def test_python_bad_timeout_type_is_error_result(tmp_path):
+    c = ctx(tmp_path)
+    res = await PythonTool().run({"code": "print(1)", "timeout": "soon"}, c)
+    assert not res.ok  # must not raise ValueError
+
+
 def test_shell_tools_self_register():
     import agentcore.tools.shell  # noqa: F401
     from agentcore.tools.base import TOOLS

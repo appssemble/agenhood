@@ -66,10 +66,21 @@ class BashTool:
 
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
-        timeout = min(int(input.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT)
+        try:
+            command = input["command"]
+        except KeyError:
+            return ToolResult(
+                ok=False, content="missing required field: command", duration_ms=_ms(start)
+            )
+        try:
+            timeout = min(int(input.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT)
+        except (TypeError, ValueError):
+            return ToolResult(
+                ok=False, content="timeout must be an integer", duration_ms=_ms(start)
+            )
         cwd = os.path.realpath(ctx.workspace)
         code, out, err, timed_out = await _run_subprocess(
-            ["bash", "-lc", input["command"]], cwd, timeout, env=ctx.env
+            ["bash", "-lc", command], cwd, timeout, env=ctx.env
         )
         body_parts = []
         if out:
@@ -105,10 +116,21 @@ class PythonTool:
 
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
-        timeout = min(int(input.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT)
+        try:
+            code_arg = input["code"]
+        except KeyError:
+            return ToolResult(
+                ok=False, content="missing required field: code", duration_ms=_ms(start)
+            )
+        try:
+            timeout = min(int(input.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT)
+        except (TypeError, ValueError):
+            return ToolResult(
+                ok=False, content="timeout must be an integer", duration_ms=_ms(start)
+            )
         cwd = os.path.realpath(ctx.workspace)
         code, out, err, timed_out = await _run_subprocess(
-            [sys.executable, "-c", input["code"]], cwd, timeout, env=ctx.env
+            [sys.executable, "-c", code_arg], cwd, timeout, env=ctx.env
         )
         body_parts = []
         if out:

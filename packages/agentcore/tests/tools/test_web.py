@@ -1,6 +1,8 @@
 # packages/agentcore/tests/tools/test_web.py
 import asyncio
 import pathlib
+import sys
+import types
 
 import httpx
 import pytest
@@ -96,6 +98,61 @@ def test_web_fetch_declares_no_driver_feature_but_rendered_needs_chromium():
     # The tool itself is enabled on slim too (text mode); the rendered-mode
     # requirement is enforced at call time, and the spec marks the feature.
     assert WebFetchTool().spec.requires_image_feature == "chromium"
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_missing_url_is_error_result(tmp_path):
+    res = await WebFetchTool().run({}, ctx(tmp_path))
+    assert not res.ok  # must not raise KeyError
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_rendered_truncates_with_marker(tmp_path, monkeypatch):
+    # Simulate the full image variant (chromium present) with a fake playwright
+    # module so the rendered path can be exercised without a real browser.
+    monkeypatch.setattr("agentcore.tools.web._chromium_path", lambda: "/usr/bin/chromium")
+
+    huge_html = "<html><body>" + ("hello world " * 500_000) + "</body></html>"
+
+    class FakePage:
+        async def goto(self, url, **kwargs):
+            pass
+
+        async def content(self):
+            return huge_html
+
+    class FakeBrowser:
+        async def new_page(self):
+            return FakePage()
+
+        async def close(self):
+            pass
+
+    class FakeChromiumLauncher:
+        async def launch(self, executable_path, args):
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromiumLauncher()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    fake_async_api = types.ModuleType("playwright.async_api")
+    fake_async_api.async_playwright = lambda: FakePlaywright()  # type: ignore[attr-defined]
+    fake_playwright = types.ModuleType("playwright")
+    monkeypatch.setitem(sys.modules, "playwright", fake_playwright)
+    monkeypatch.setitem(sys.modules, "playwright.async_api", fake_async_api)
+
+    res = await WebFetchTool().run(
+        {"url": "https://example.test/huge", "mode": "rendered"}, ctx(tmp_path)
+    )
+    assert res.ok
+    assert len(res.content.encode("utf-8")) <= 5 * 1024 * 1024 + 200
+    assert "truncated" in res.content.lower()
 
 
 def test_web_tools_self_register():

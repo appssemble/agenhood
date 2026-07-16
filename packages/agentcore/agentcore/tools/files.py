@@ -34,11 +34,15 @@ class ReadFileTool:
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         try:
-            target = safe_resolve(ctx.workspace, input["path"], allow_skills_read=True)
+            path = input["path"]
+        except KeyError:
+            return _err("missing required field: path", start)
+        try:
+            target = safe_resolve(ctx.workspace, path, allow_skills_read=True)
         except PathError as e:
             return _err(str(e), start)
         if not os.path.isfile(target):
-            return _err(f"file not found: {input['path']}", start)
+            return _err(f"file not found: {path}", start)
         with open(target, "rb") as f:
             data = f.read(MAX_READ_BYTES + 1)
         truncated = len(data) > MAX_READ_BYTES
@@ -65,14 +69,21 @@ class WriteFileTool:
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         try:
-            target = safe_resolve(ctx.workspace, input["path"])
+            path = input["path"]
+            content = input["content"]
+        except KeyError as e:
+            return _err(f"missing required field: {e}", start)
+        try:
+            target = safe_resolve(ctx.workspace, path)
         except PathError as e:
             return _err(str(e), start)
+        if os.path.isdir(target):
+            return _err(f"path is a directory: {path}", start)
         sandbox.makedirs_agent(os.path.dirname(target))
         with open(target, "w", encoding="utf-8") as f:
-            f.write(input["content"])
+            f.write(content)
         sandbox.chown_to_agent(target)
-        return _ok(f"wrote {len(input['content'])} bytes to {input['path']}", start)
+        return _ok(f"wrote {len(content)} bytes to {path}", start)
 
 
 class EditFileTool:
@@ -96,14 +107,20 @@ class EditFileTool:
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         try:
-            target = safe_resolve(ctx.workspace, input["path"])
+            path = input["path"]
+            old_string = input["old_string"]
+            new_string = input["new_string"]
+        except KeyError as e:
+            return _err(f"missing required field: {e}", start)
+        try:
+            target = safe_resolve(ctx.workspace, path)
         except PathError as e:
             return _err(str(e), start)
         if not os.path.isfile(target):
-            return _err(f"file not found: {input['path']}", start)
+            return _err(f"file not found: {path}", start)
         with open(target, encoding="utf-8") as f:
             text = f.read()
-        count = text.count(input["old_string"])
+        count = text.count(old_string)
         if count == 0:
             return _err("old_string not found in file", start)
         if count > 1:
@@ -111,11 +128,11 @@ class EditFileTool:
                 f"old_string matched {count} times; it must match exactly once",
                 start,
             )
-        new_text = text.replace(input["old_string"], input["new_string"], 1)
+        new_text = text.replace(old_string, new_string, 1)
         with open(target, "w", encoding="utf-8") as f:
             f.write(new_text)
         sandbox.chown_to_agent(target)
-        return _ok(f"edited {input['path']}", start)
+        return _ok(f"edited {path}", start)
 
 
 class ListFilesTool:
@@ -146,7 +163,10 @@ class ListFilesTool:
                 root = os.path.realpath(ctx.workspace)
         except PathError as e:
             return _err(str(e), start)
-        max_depth = int(input.get("max_depth", 10))
+        try:
+            max_depth = int(input.get("max_depth", 10))
+        except (TypeError, ValueError):
+            return _err("max_depth must be an integer", start)
         ws = os.path.realpath(ctx.workspace)
         lines: list[str] = []
         for dirpath, dirnames, filenames in os.walk(root):
@@ -179,15 +199,19 @@ class DeleteFileTool:
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         try:
-            target = safe_resolve(ctx.workspace, input["path"])
+            path = input["path"]
+        except KeyError:
+            return _err("missing required field: path", start)
+        try:
+            target = safe_resolve(ctx.workspace, path)
         except PathError as e:
             return _err(str(e), start)
         if os.path.isdir(target):
             return _err("path is a directory; use bash to remove directories", start)
         if not os.path.isfile(target):
-            return _err(f"file not found: {input['path']}", start)
+            return _err(f"file not found: {path}", start)
         os.remove(target)
-        return _ok(f"deleted {input['path']}", start)
+        return _ok(f"deleted {path}", start)
 
 
 register(ReadFileTool())

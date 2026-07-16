@@ -81,8 +81,13 @@ class WebFetchTool:
 
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
+        try:
+            url = input["url"]
+        except KeyError:
+            return ToolResult(
+                ok=False, content="missing required field: url", duration_ms=_ms(start)
+            )
         mode = input.get("mode", "text")
-        url = input["url"]
         if mode == "rendered":
             return await self._rendered(url, start)
         return await self._text(url, start)
@@ -147,9 +152,10 @@ class WebFetchTool:
                 ok=False, content=f"rendered fetch failed: {e}", duration_ms=_ms(start)
             )
         extracted = trafilatura.extract(html, output_format="markdown") or html
-        return ToolResult(
-            ok=True, content=extracted[:MAX_FETCH_BYTES], duration_ms=_ms(start)
-        )
+        content = extracted[:MAX_FETCH_BYTES]
+        if len(extracted) > MAX_FETCH_BYTES:
+            content += "\n[...response truncated at 5 MiB...]"
+        return ToolResult(ok=True, content=content, duration_ms=_ms(start))
 
 
 register(WebSearchTool())
