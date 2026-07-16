@@ -413,6 +413,14 @@ async def create_container(
     max_workers = int(limits.get("max_concurrent_tasks_per_container", 4))
     reuse_volume = body.volume_id
 
+    # All statements so far are reads (limits, caps, external_id). Commit ends the
+    # transaction and returns this session's connection to the pool for the
+    # duration of the Docker work below — a cold provision can take minutes, and
+    # holding a checked-out connection across it starves the pool under
+    # concurrency (16 parallel cold creates exhausted the default 5+10 pool and
+    # 500'd unrelated requests). The insert below begins a fresh transaction.
+    await session.commit()
+
     try:
         result = await provision_container(
             settings=settings,
