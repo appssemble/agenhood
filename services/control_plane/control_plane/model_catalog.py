@@ -41,9 +41,9 @@ _API_KEY_METHOD = {
 # full-name anthropic models.
 _PROVIDER_DRIVERS = {
     "opencode": ["opencode"],          # Zen: free (-free suffix) or keyed
-    "opencode-go": ["opencode"],       # Go plan: keyed (same key as Zen)
+    "opencode-go": ["opencode", "vanilla"],  # Go plan: keyed (same key as Zen)
     "anthropic": ["opencode", "vanilla"],
-    "openai": ["opencode", "codex"],
+    "openai": ["opencode", "codex", "vanilla"],
 }
 
 # The only model ids the claude-code driver offers. The `claude` CLI resolves
@@ -165,13 +165,21 @@ def build_catalog_entries(
             else:
                 category, creds = "api_key", ["openai_api_key"]
 
+        drivers = _drivers_for(provider, entry_id, codex_set)
+        if provider == "openai" and "vanilla" in drivers and (
+            "openai_api_key" not in creds or "codex" in entry_id.lower()
+        ):
+            # vanilla's chat-completions adapter cannot run Responses-only
+            # codex-family models, and a subscription-only model has no API
+            # key to hand it.
+            drivers.remove("vanilla")
         out.append({
             "id": entry_id,
             "provider": provider,
             "label": _label(model_id),
             "category": category,
             "credentials": creds,
-            "drivers": _drivers_for(provider, entry_id, codex_set),
+            "drivers": drivers,
         })
     # claude-code is offered only via family aliases (see _CLAUDE_CODE_ALIASES).
     out.extend(_claude_code_alias_entries())

@@ -28,7 +28,7 @@ def test_classifies_free_anthropic_openai_subscription() -> None:
     gpt4o = entries["gpt-4o"]
     assert gpt4o["category"] == "api_key"
     assert set(gpt4o["credentials"]) == {"openai_api_key", "openai_subscription"}
-    assert gpt4o["drivers"] == ["opencode"]
+    assert gpt4o["drivers"] == ["opencode", "vanilla"]
 
     # openai only in sub → subscription. A *-codex* model keeps the codex driver.
     codex = entries["gpt-5.3-codex-spark"]
@@ -110,7 +110,7 @@ def test_go_ids_classified_as_opencode_api_key() -> None:
     for e in go:
         assert e["category"] == "api_key"
         assert e["credentials"] == ["opencode_api_key"]
-        assert e["drivers"] == ["opencode"]
+        assert e["drivers"] == ["opencode", "vanilla"]
 
 
 def test_paid_zen_requires_opencode_key_free_zen_stays_keyless() -> None:
@@ -142,3 +142,45 @@ def test_go_ids_duplicated_in_base_are_not_double_counted() -> None:
 def test_methods_includes_opencode_api_key() -> None:
     rows = [{"provider": "opencode", "auth_method": "api_key"}]
     assert "opencode_api_key" in methods_from_credential_rows(rows)
+
+
+def test_openai_api_key_models_gain_vanilla():
+    entries = build_catalog_entries(["openai/gpt-5.2"], [])
+    e = next(m for m in entries if m["id"] == "gpt-5.2")
+    assert "vanilla" in e["drivers"]
+    assert "opencode" in e["drivers"]
+
+
+def test_openai_codex_family_excluded_from_vanilla():
+    entries = build_catalog_entries(["openai/gpt-5.2-codex"], [])
+    e = next(m for m in entries if m["id"] == "gpt-5.2-codex")
+    assert "vanilla" not in e["drivers"]
+
+
+def test_openai_subscription_only_models_excluded_from_vanilla():
+    # In sub_ids only (not base) -> subscription-only -> no API key for vanilla.
+    entries = build_catalog_entries([], ["openai/gpt-6-preview"])
+    e = next(m for m in entries if m["id"] == "gpt-6-preview")
+    assert e["category"] == "subscription"
+    assert "vanilla" not in e["drivers"]
+
+
+def test_opencode_go_models_gain_vanilla():
+    entries = build_catalog_entries([], [], go_ids=["opencode-go/glm-5.2",
+                                                    "opencode-go/qwen3.7-max"])
+    for mid in ("opencode-go/glm-5.2", "opencode-go/qwen3.7-max"):
+        e = next(m for m in entries if m["id"] == mid)
+        assert e["drivers"] == ["opencode", "vanilla"]
+        assert e["credentials"] == ["opencode_api_key"]
+
+
+def test_paid_zen_models_do_not_gain_vanilla():
+    entries = build_catalog_entries(["opencode/grok-code-4"], [])
+    e = next(m for m in entries if m["id"] == "opencode/grok-code-4")
+    assert e["drivers"] == ["opencode"]
+
+
+def test_vanilla_subscription_support_stays_empty():
+    from control_plane.model_catalog import driver_can_use_subscription
+    assert not driver_can_use_subscription("vanilla", "openai")
+    assert not driver_can_use_subscription("vanilla", "anthropic")
