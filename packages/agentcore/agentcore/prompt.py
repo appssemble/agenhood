@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agentcore.models import AgentConfig, ResolvedLimits, TaskBody
+from agentcore.models import AgentConfig, ResolvedLimits, ShimSkill, TaskBody
 from agentcore.tools.base import ToolSpec
 
 WORKSPACE_SECTION = (
@@ -26,6 +26,7 @@ def assemble_system_prompt(
     tool_specs: list[ToolSpec],
     task: TaskBody,
     limits: ResolvedLimits,
+    skills: list[ShimSkill] | None = None,
 ) -> str:
     """Assemble the system prompt per spec §3.7.
 
@@ -48,6 +49,20 @@ def assemble_system_prompt(
             f"  input schema: {json.dumps(spec.input_schema)}"
         )
     sections.append("## Tools\n" + "\n".join(tool_lines))
+
+    # Skills (names + descriptions only — content loads via the `skill` tool)
+    if skills:
+        skill_lines = [
+            "Specialized instruction sets are available. Before performing a "
+            "task a skill covers, load it with the `skill` tool — its "
+            "description alone is not enough.",
+        ]
+        for s in skills:
+            skill_lines.append(f"- {s.name}: {s.description}")
+        skill_lines.append(
+            "Skill files live under /workspace/.agent-runtime/skills/<name>/."
+        )
+        sections.append("## Skills\n" + "\n".join(skill_lines))
 
     # Output contract
     output_body = "Call `done` with `{ success, output?, reason? }`."
