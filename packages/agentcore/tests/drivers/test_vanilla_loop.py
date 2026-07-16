@@ -391,8 +391,15 @@ async def test_vanilla_session_missing_state_fails_fast(tmp_path):
     assert result.success is False
     assert result.reason == "session_state_lost"
     assert llm.calls == []  # the LLM must never be called
-    assert ("status_change", {"from": "running", "to": "failed", "result": None,
-             "error": {"code": "session_state_lost", "message": "session state file missing"}}) in events
+    assert (
+        "status_change",
+        {
+            "from": "running",
+            "to": "failed",
+            "result": None,
+            "error": {"code": "session_state_lost", "message": "session state file missing"},
+        },
+    ) in events
 
 
 @pytest.mark.asyncio
