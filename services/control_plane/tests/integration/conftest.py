@@ -190,6 +190,11 @@ async def app_settings(migrated_db: str, docker_network: str, agent_image: str, 
         bind_shim_port_to_host=True,
         agent_extra_env={
             "ANTHROPIC_BASE_URL": stub_llm_container_url,
+            # Vanilla multi-provider: route the OpenAI and opencode-go paths to
+            # the same stub. OpenAICompatClient appends /chat/completions to its
+            # base (hence the /v1 here); AnthropicClient appends /v1/messages.
+            "OPENAI_BASE_URL": f"{stub_llm_container_url}/v1",
+            "OPENCODE_GO_BASE_URL": stub_llm_container_url,
             # Disable the egress proxy inside the test container — it doesn't
             # exist on the test network and httpx would fail connecting to it.
             "HTTP_PROXY": "",

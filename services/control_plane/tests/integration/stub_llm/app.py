@@ -95,3 +95,46 @@ async def last_auth_header() -> dict:
     key reached the LLM without being persisted in the DB.
     """
     return {"auth_header": _last_auth_header}
+
+
+def _count_tool_messages(messages: list) -> int:
+    return sum(1 for m in messages if m.get("role") == "tool")
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(req: Request) -> dict:
+    """OpenAI-format twin of /v1/messages: write_file(out.txt) then done."""
+    global _last_auth_header
+    _last_auth_header = req.headers.get("authorization")
+
+    body = await req.json()
+    import json as _json
+
+    stage = _count_tool_messages(body.get("messages", []))
+    if stage == 0:
+        tool_calls = [{
+            "id": "call_write", "type": "function",
+            "function": {"name": "write_file",
+                         "arguments": _json.dumps(
+                             {"path": "out.txt", "content": "hello from stub"})},
+        }]
+    else:
+        tool_calls = [{
+            "id": "call_done", "type": "function",
+            "function": {"name": "done",
+                         "arguments": _json.dumps(
+                             {"success": True, "output": {"value": 42}})},
+        }]
+
+    return {
+        "id": "chatcmpl_stub",
+        "object": "chat.completion",
+        "model": body.get("model", "stub"),
+        "choices": [{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {"role": "assistant", "content": None,
+                        "tool_calls": tool_calls},
+        }],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+    }
