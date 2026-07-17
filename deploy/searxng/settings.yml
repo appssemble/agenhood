@@ -1,7 +1,19 @@
 # SearXNG settings for the agent runtime.
 # JSON output is REQUIRED — the shim's web_search tool calls
 # http://searxng:8080/search?format=json (spec §3.6, §8.1).
-use_default_settings: true
+#
+# `keep_only` actually restricts the engine set: a plain `engines:` list under
+# `use_default_settings: true` only OVERRIDES the named engines and silently
+# leaves every other default engine active (startpage & co. then CAPTCHA/429
+# on every query and poison results — observed 2026-07-17).
+use_default_settings:
+  engines:
+    keep_only:
+      - brave
+      - bing
+      - mojeek
+      - qwant
+      - wikipedia
 
 general:
   instance_name: "agent-runtime-search"
@@ -14,6 +26,21 @@ search:
     - json
   safe_search: 0
   autocomplete: ""
+  # Engine suspension after errors, in seconds. Defaults (180/3600/180) let a
+  # single burst of agent searches suspend every engine for minutes, turning
+  # one 429 into a stretch of guaranteed-empty responses. Recover fast from
+  # rate limits; CAPTCHAs genuinely persist, so keep those longer.
+  suspended_times:
+    SearxEngineAccessDenied: 600
+    SearxEngineCaptcha: 1800
+    SearxEngineTooManyRequests: 60
+
+outgoing:
+  # Default 3.0s is tighter than a cold DNS lookup through Docker's embedded
+  # resolver (>3s observed), which marked reachable engines "unresponsive"
+  # and got them suspended.
+  request_timeout: 8.0
+  max_request_timeout: 15.0
 
 server:
   # secret_key is overridden at runtime from the SEARXNG_SECRET env var
@@ -27,11 +54,17 @@ server:
 ui:
   static_use_hash: true
 
-# Keep a small, fast set of engines for v1; expand later.
+# Engine tweaks for the kept set. duckduckgo (TCP-blackholed for server IPs)
+# and startpage (permanent CAPTCHA) are deliberately excluded via keep_only.
+# mojeek and qwant ship disabled by default and must be switched on.
 engines:
-  - name: duckduckgo
-    disabled: false
   - name: brave
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: qwant
     disabled: false
   - name: wikipedia
     disabled: false
