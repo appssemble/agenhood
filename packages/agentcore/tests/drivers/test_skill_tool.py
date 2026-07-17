@@ -58,3 +58,76 @@ async def test_skill_tool_missing_file_is_error_result(tmp_path):
     tool = SkillTool(base_dir=skills_dir(str(tmp_path)), names=["pdf-reports"])
     res = await tool.run({"name": "pdf-reports"}, _ctx(tmp_path))
     assert not res.ok  # accepted name but file vanished -> error result, no raise
+
+
+@pytest.mark.asyncio
+async def test_frontmatter_stripped_from_result(tmp_path):
+    _materialize(tmp_path, body="Do the thing.")
+    tool = SkillTool(base_dir=skills_dir(str(tmp_path)), names=["pdf-reports"])
+    res = await tool.run({"name": "pdf-reports"}, _ctx(tmp_path))
+    assert res.ok
+    assert "---" not in res.content
+    assert "name: pdf-reports" not in res.content
+    assert "Do the thing." in res.content
+    assert res.content.startswith("Base directory for this skill:")
+
+
+@pytest.mark.asyncio
+async def test_no_frontmatter_passthrough(tmp_path):
+    d = tmp_path / ".agent-runtime" / "skills" / "plain"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("Just instructions, no frontmatter.")
+    tool = SkillTool(base_dir=skills_dir(str(tmp_path)), names=["plain"])
+    res = await tool.run({"name": "plain"}, _ctx(tmp_path))
+    assert res.ok
+    assert "Just instructions, no frontmatter." in res.content
+
+
+@pytest.mark.asyncio
+async def test_unterminated_frontmatter_returns_raw(tmp_path):
+    d = tmp_path / ".agent-runtime" / "skills" / "broken"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: broken\nno terminator here")
+    tool = SkillTool(base_dir=skills_dir(str(tmp_path)), names=["broken"])
+    res = await tool.run({"name": "broken"}, _ctx(tmp_path))
+    assert res.ok
+    assert "no terminator here" in res.content  # raw fallback, never raises
+
+
+@pytest.mark.asyncio
+async def test_claude_skill_dir_substituted(tmp_path):
+    _materialize(tmp_path, body="Run ${CLAUDE_SKILL_DIR}/helper.py now.")
+    base = skills_dir(str(tmp_path))
+    tool = SkillTool(base_dir=base, names=["pdf-reports"])
+    res = await tool.run({"name": "pdf-reports"}, _ctx(tmp_path))
+    assert "${CLAUDE_SKILL_DIR}" not in res.content
+    assert f"Run {base}/pdf-reports/helper.py now." in res.content
+
+
+@pytest.mark.asyncio
+async def test_second_call_returns_already_loaded_note(tmp_path):
+    _materialize(tmp_path, body="Body once.")
+    tool = SkillTool(base_dir=skills_dir(str(tmp_path)), names=["pdf-reports"])
+    first = await tool.run({"name": "pdf-reports"}, _ctx(tmp_path))
+    second = await tool.run({"name": "pdf-reports"}, _ctx(tmp_path))
+    assert first.ok and "Body once." in first.content
+    assert second.ok
+    assert second.content == "Skill 'pdf-reports' is already loaded in this conversation."
+    # A failed load must NOT mark the skill as served:
+    tool2 = SkillTool(base_dir=skills_dir(str(tmp_path)), names=["ghost"])
+    missing = await tool2.run({"name": "ghost"}, _ctx(tmp_path))
+    assert not missing.ok  # file absent
+    # (no dedup assertion for the failure — it simply must not record)
+
+
+@pytest.mark.asyncio
+async def test_skill_cap_truncates_with_path_marker(tmp_path, monkeypatch):
+    monkeypatch.setenv("SKILL_CONTENT_MAX_CHARS", "100")
+    _materialize(tmp_path, body="x" * 5000)
+    base = skills_dir(str(tmp_path))
+    tool = SkillTool(base_dir=base, names=["pdf-reports"])
+    res = await tool.run({"name": "pdf-reports"}, _ctx(tmp_path))
+    assert res.ok
+    assert len(res.content) < 600  # accounts for path length variations in test environment
+    assert "truncated" in res.content
+    assert f"{base}/pdf-reports/SKILL.md" in res.content
