@@ -474,7 +474,13 @@ class VanillaDriver:
                             content=f"tool {tu['name']} crashed: {e}",
                             duration_ms=0,
                         )
-                    content = _cap_tool_result(res.content)
+                    # Skill content is standing instructions and enforces its
+                    # own cap (SKILL_CONTENT_MAX_CHARS) — exempt from the
+                    # generic result cap so skills can't be silently gutted.
+                    if tu["name"] == "skill":
+                        content = res.content
+                    else:
+                        content = _cap_tool_result(res.content)
                     await emit(
                         "tool_result",
                         {

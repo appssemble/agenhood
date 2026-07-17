@@ -840,3 +840,38 @@ async def test_malformed_cap_env_falls_back_to_default(tmp_path, monkeypatch):
         credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
     )
     assert result.success  # no ValueError escaped
+
+
+@pytest.mark.asyncio
+async def test_skill_content_exempt_from_generic_cap(tmp_path, monkeypatch):
+    from agentcore.llm.base import LLMResponse
+
+    monkeypatch.setenv("TOOL_RESULT_MAX_CHARS", "200")
+    big_body = "S" * 3000
+    llm = ScriptedLLM([
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "s1", "name": "skill",
+                      "input": {"name": "pdf-reports"}}],
+            tokens_in=1, tokens_out=1, stop_reason="tool_use",
+        ),
+        LLMResponse(
+            content=[{"type": "tool_use", "id": "r1", "name": "read_file",
+                      "input": {"path": "big.txt"}}],
+            tokens_in=1, tokens_out=1, stop_reason="tool_use",
+        ),
+        _done_response(),
+    ])
+    (tmp_path / "big.txt").write_text("x" * 3000)
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="use the skill"), config=cfg(["read_file"]),
+        limits=LIMITS, credential="sk", emit=emit, cancel=asyncio.Event(),
+        workspace=str(tmp_path), skills=[_skill(body=big_body)],
+    )
+    assert result.success
+    tr = {p["tool_use_id"]: p for t, p in events if t == "tool_result"}
+    # Skill content arrived whole — exempt from the 200-char generic cap.
+    assert big_body in tr["s1"]["content"]
+    # An ordinary tool result still truncates.
+    assert "truncated" in tr["r1"]["content"] and len(tr["r1"]["content"]) < 400
