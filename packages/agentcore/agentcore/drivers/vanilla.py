@@ -196,6 +196,7 @@ class VanillaDriver:
         available_tools=[
             "read_file", "write_file", "edit_file", "list_files",
             "delete_file", "bash", "python", "web_search", "web_fetch",
+            "web_read",
         ],
         tools_user_editable=True,
         supports_context=True,

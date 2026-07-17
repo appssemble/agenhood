@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from agentcore.tools.base import ToolContext, ToolResult, ToolSpec, _ms, register
-from agentcore.tools.exa import ExaError, exa_api_key, exa_search
+from agentcore.tools.exa import ExaError, exa_api_key, exa_contents, exa_search
 
 DEFAULT_SEARCH_URL = "http://searxng:8080"
 MAX_FETCH_BYTES = 5 * 1024 * 1024  # 5 MiB
@@ -167,6 +167,31 @@ def _chromium_path() -> str | None:
     return shutil.which("chromium") or shutil.which("chromium-browser")
 
 
+async def _fetch_text(url: str, start: float) -> ToolResult:
+    """httpx + trafilatura extraction (shared by web_fetch text mode and
+    web_read's local fallback)."""
+    import trafilatura
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as http:
+            resp = await http.get(url)
+        resp.raise_for_status()
+        raw = resp.content[:MAX_FETCH_BYTES]
+        html = raw.decode(resp.encoding or "utf-8", errors="replace")
+    except Exception as e:  # noqa: BLE001
+        return ToolResult(ok=False, content=f"fetch failed: {e}", duration_ms=_ms(start))
+    extracted = trafilatura.extract(html, output_format="markdown")
+    if not extracted:
+        return ToolResult(
+            ok=False,
+            content="could not extract readable content; try mode='rendered'",
+            duration_ms=_ms(start),
+        )
+    if len(resp.content) > MAX_FETCH_BYTES:
+        extracted += "\n[...response truncated at 5 MiB...]"
+    return ToolResult(ok=True, content=extracted, duration_ms=_ms(start))
+
+
 class WebFetchTool:
     spec = ToolSpec(
         name="web_fetch",
@@ -200,30 +225,7 @@ class WebFetchTool:
         return await self._text(url, start)
 
     async def _text(self, url: str, start: float) -> ToolResult:
-        import trafilatura
-
-        try:
-            async with httpx.AsyncClient(
-                timeout=60.0, follow_redirects=True
-            ) as http:
-                resp = await http.get(url)
-            resp.raise_for_status()
-            raw = resp.content[:MAX_FETCH_BYTES]
-            html = raw.decode(resp.encoding or "utf-8", errors="replace")
-        except Exception as e:  # noqa: BLE001
-            return ToolResult(
-                ok=False, content=f"fetch failed: {e}", duration_ms=_ms(start)
-            )
-        extracted = trafilatura.extract(html, output_format="markdown")
-        if not extracted:
-            return ToolResult(
-                ok=False,
-                content="could not extract readable content; try mode='rendered'",
-                duration_ms=_ms(start),
-            )
-        if len(resp.content) > MAX_FETCH_BYTES:
-            extracted += "\n[...response truncated at 5 MiB...]"
-        return ToolResult(ok=True, content=extracted, duration_ms=_ms(start))
+        return await _fetch_text(url, start)
 
     async def _rendered(self, url: str, start: float) -> ToolResult:
         if _chromium_path() is None:
@@ -265,5 +267,50 @@ class WebFetchTool:
         return ToolResult(ok=True, content=content, duration_ms=_ms(start))
 
 
+class WebReadTool:
+    spec = ToolSpec(
+        name="web_read",
+        description=(
+            "Read a URL as clean text via a hosted reader (Exa). Handles "
+            "JS-heavy pages and works in all container variants — prefer this "
+            "over web_fetch for articles and dynamic sites. Falls back to a "
+            "plain local fetch when the hosted reader is unavailable."
+        ),
+        input_schema={
+            "type": "object",
+            "required": ["url"],
+            "properties": {"url": {"type": "string"}},
+        },
+    )
+
+    async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        start = time.monotonic()
+        try:
+            url = input["url"]
+        except KeyError:
+            return ToolResult(
+                ok=False, content="missing required field: url", duration_ms=_ms(start)
+            )
+        key = exa_api_key(ctx)
+        if not key:
+            return await _fetch_text(url, start)
+        try:
+            text = await exa_contents(url, key)
+        except ExaError as e:
+            local = await _fetch_text(url, start)
+            return ToolResult(
+                ok=local.ok,
+                content=(
+                    f"note: hosted read (exa) failed — {e}; degraded local fetch:\n"
+                    + local.content
+                ),
+                duration_ms=local.duration_ms,
+            )
+        if len(text) > MAX_FETCH_BYTES:
+            text = text[:MAX_FETCH_BYTES] + "\n[...response truncated at 5 MiB...]"
+        return ToolResult(ok=True, content=text, duration_ms=_ms(start))
+
+
 register(WebSearchTool())
 register(WebFetchTool())
+register(WebReadTool())

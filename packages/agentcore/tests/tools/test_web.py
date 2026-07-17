@@ -9,7 +9,7 @@ import pytest
 import respx
 
 from agentcore.tools.base import ToolContext
-from agentcore.tools.web import WebFetchTool, WebSearchTool
+from agentcore.tools.web import WebFetchTool, WebReadTool, WebSearchTool
 
 pytestmark = pytest.mark.unit
 
@@ -445,3 +445,71 @@ async def test_web_search_ctx_env_key_wins(tmp_path, monkeypatch):
     res = await WebSearchTool().run({"query": "x"}, context)
     assert res.ok
     assert exa.calls.last.request.headers["x-api-key"] == "ctx-key"
+
+
+EXA_CONTENTS_JSON = {
+    "results": [{"url": "https://a.example/p", "title": "P", "text": "# Title\n\nClean article body."}]
+}
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_read_uses_exa_when_keyed(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "k-123")
+    exa = respx.post("https://api.exa.ai/contents").mock(
+        return_value=httpx.Response(200, json=EXA_CONTENTS_JSON)
+    )
+    res = await WebReadTool().run({"url": "https://a.example/p"}, ctx(tmp_path))
+    assert res.ok
+    assert res.content == "# Title\n\nClean article body."
+    assert exa.called
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_read_unkeyed_falls_back_to_local_fetch(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    html = (FIXTURES / "article.html").read_text()
+    exa = respx.post("https://api.exa.ai/contents").mock(
+        return_value=httpx.Response(200, json=EXA_CONTENTS_JSON)
+    )
+    respx.get("https://example.test/article").mock(
+        return_value=httpx.Response(200, html=html, headers={"content-type": "text/html"})
+    )
+    res = await WebReadTool().run({"url": "https://example.test/article"}, ctx(tmp_path))
+    assert res.ok
+    assert "Listmonk" in res.content
+    assert "note:" not in res.content
+    assert not exa.called
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_read_exa_failure_degrades_to_local_fetch_with_note(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "k-123")
+    html = (FIXTURES / "article.html").read_text()
+    respx.post("https://api.exa.ai/contents").mock(return_value=httpx.Response(500))
+    respx.get("https://example.test/article").mock(
+        return_value=httpx.Response(200, html=html, headers={"content-type": "text/html"})
+    )
+    res = await WebReadTool().run({"url": "https://example.test/article"}, ctx(tmp_path))
+    assert res.ok
+    assert res.content.startswith("note: hosted read (exa) failed")
+    assert "Listmonk" in res.content
+
+
+@pytest.mark.asyncio
+async def test_web_read_missing_url_is_error_result(tmp_path):
+    res = await WebReadTool().run({}, ctx(tmp_path))
+    assert not res.ok
+
+
+def test_web_read_spec_slim_safe_and_registered():
+    from agentcore.tools.base import TOOLS
+    assert WebReadTool().spec.requires_image_feature is None
+    assert "web_read" in TOOLS
+
+
+def test_web_read_in_vanilla_template():
+    from agentcore.drivers.vanilla import VanillaDriver
+    assert "web_read" in VanillaDriver.default_template.available_tools
