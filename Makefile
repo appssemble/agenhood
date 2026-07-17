@@ -1,4 +1,4 @@
-VERSION    ?= 1.3.1
+VERSION    ?= 1.5.0
 REGISTRY   ?=
 IMAGE      := $(REGISTRY)agent-runtime
 
