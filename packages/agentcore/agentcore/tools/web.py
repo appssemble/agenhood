@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import time
 from typing import Any
@@ -12,6 +13,9 @@ from agentcore.tools.base import ToolContext, ToolResult, ToolSpec, _ms, registe
 DEFAULT_SEARCH_URL = "http://searxng:8080"
 MAX_FETCH_BYTES = 5 * 1024 * 1024  # 5 MiB
 SEARCH_RESULT_LIMIT = 8
+WIKIPEDIA_SEARCH_URL = "https://en.wikipedia.org/w/rest.php/v1/search/page"
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _unresponsive_engines(data: dict[str, Any]) -> list[str]:
@@ -45,17 +49,18 @@ class WebSearchTool:
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         base = os.environ.get("SEARCH_PROVIDER_URL", DEFAULT_SEARCH_URL).rstrip("/")
+        query = input["query"]
         try:
             async with httpx.AsyncClient(timeout=30.0) as http:
                 resp = await http.get(
                     f"{base}/search",
-                    params={"q": input["query"], "format": "json"},
+                    params={"q": query, "format": "json"},
                 )
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:  # noqa: BLE001 — surface network/parse errors to the model
-            return ToolResult(
-                ok=False, content=f"search failed: {e}", duration_ms=_ms(start)
+            return await self._wikipedia_floor_or_error(
+                query, f"search failed: {e}", f"search failed: {e}", start
             )
 
         results = data.get("results", [])[:SEARCH_RESULT_LIMIT]
@@ -66,14 +71,14 @@ class WebSearchTool:
             # loop's failure breaker) can tell "backend down" from "no hits".
             engines = _unresponsive_engines(data)
             if engines:
-                return ToolResult(
-                    ok=False,
-                    content=(
-                        "search backend degraded — engines unresponsive: "
-                        + ", ".join(engines)
-                        + "; retrying the same search will not help"
-                    ),
-                    duration_ms=_ms(start),
+                reason = "engines unresponsive: " + ", ".join(engines)
+                return await self._wikipedia_floor_or_error(
+                    query,
+                    reason,
+                    "search backend degraded — "
+                    + reason
+                    + "; retrying the same search will not help",
+                    start,
                 )
             return ToolResult(ok=True, content="(no results)", duration_ms=_ms(start))
         lines = []
@@ -83,6 +88,56 @@ class WebSearchTool:
             snippet = r.get("content", "")
             lines.append(f"{i}. {title}\n   {url}\n   {snippet}")
         return ToolResult(ok=True, content="\n".join(lines), duration_ms=_ms(start))
+
+    async def _wikipedia_floor_or_error(
+        self, query: str, reason: str, error_msg: str, start: float
+    ) -> ToolResult:
+        """SearXNG gave nothing usable — try the keyless Wikipedia search API.
+
+        Wikipedia is the only truly free source that never bot-blocks us, but
+        it only covers encyclopedic queries, so label the response honestly.
+        On any fallback failure, surface the original error unchanged so the
+        loop's failure breaker still sees the streak.
+        """
+        try:
+            async with httpx.AsyncClient(
+                timeout=10.0,
+                # Wikimedia 403s default library User-Agents (API etiquette
+                # requires a descriptive one with a contact URL).
+                headers={
+                    "User-Agent": (
+                        "agenhood-web-search/1.0 "
+                        "(https://github.com/appssemble/agenhood-public)"
+                    )
+                },
+            ) as http:
+                resp = await http.get(
+                    WIKIPEDIA_SEARCH_URL,
+                    params={"q": query, "limit": str(SEARCH_RESULT_LIMIT)},
+                )
+            resp.raise_for_status()
+            pages = resp.json().get("pages") or []
+        except Exception:  # noqa: BLE001 — fallback is best-effort
+            pages = []
+        lines = []
+        for i, p in enumerate(pages[:SEARCH_RESULT_LIMIT], 1):
+            if not isinstance(p, dict):
+                continue
+            title = p.get("title", "")
+            key = p.get("key", "")
+            url = f"https://en.wikipedia.org/wiki/{key}" if key else ""
+            snippet = _HTML_TAG_RE.sub("", p.get("excerpt") or p.get("description") or "")
+            lines.append(f"{i}. {title}\n   {url}\n   {snippet}")
+        if not lines:
+            return ToolResult(ok=False, content=error_msg, duration_ms=_ms(start))
+        return ToolResult(
+            ok=True,
+            content=(
+                f"web search degraded ({reason}); showing Wikipedia-only results — "
+                "non-encyclopedic queries may be poorly served:\n" + "\n".join(lines)
+            ),
+            duration_ms=_ms(start),
+        )
 
 
 def _chromium_path() -> str | None:

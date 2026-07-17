@@ -11,9 +11,11 @@ use_default_settings:
     keep_only:
       - brave
       - bing
+      - google
       - mojeek
       - qwant
       - wikipedia
+      - yep
 
 general:
   instance_name: "agent-runtime-search"
@@ -56,15 +58,21 @@ ui:
 
 # Engine tweaks for the kept set. duckduckgo (TCP-blackholed for server IPs)
 # and startpage (permanent CAPTCHA) are deliberately excluded via keep_only.
-# mojeek and qwant ship disabled by default and must be switched on.
+# mojeek, qwant and yep ship disabled by default and must be switched on.
+# google CAPTCHAs from datacenter IPs but usually works from residential
+# egress; when it trips, the suspension above benches it without collateral.
 engines:
   - name: brave
     disabled: false
   - name: bing
+    disabled: false
+  - name: google
     disabled: false
   - name: mojeek
     disabled: false
   - name: qwant
     disabled: false
   - name: wikipedia
+    disabled: false
+  - name: yep
     disabled: false

@@ -162,6 +162,26 @@ def test_web_tools_self_register():
     assert "web_fetch" in TOOLS
 
 
+WIKIPEDIA_JSON = {
+    "pages": [
+        {
+            "id": 41940,
+            "key": "Bucharest",
+            "title": "Bucharest",
+            "excerpt": '<span class="searchmatch">Bucharest</span> is the capital of Romania.',
+            "description": "capital and largest city of Romania",
+        },
+        {
+            "id": 25445,
+            "key": "Romania",
+            "title": "Romania",
+            "excerpt": "Romania is a country in Europe.",
+            "description": "country in Europe",
+        },
+    ]
+}
+
+
 @respx.mock
 @pytest.mark.asyncio
 async def test_web_search_empty_with_unresponsive_engines_is_error(tmp_path, monkeypatch):
@@ -172,12 +192,112 @@ async def test_web_search_empty_with_unresponsive_engines_is_error(tmp_path, mon
             "unresponsive_engines": [["duckduckgo", "CAPTCHA"], ["brave", "too many requests"]],
         })
     )
+    # Wikipedia floor is also down → the original degraded error must surface.
+    respx.get("https://en.wikipedia.org/w/rest.php/v1/search/page").mock(
+        return_value=httpx.Response(500)
+    )
     res = await WebSearchTool().run({"query": "calories"}, ctx(tmp_path))
     assert not res.ok
     assert "degraded" in res.content
     assert "duckduckgo (CAPTCHA)" in res.content
     assert "brave (too many requests)" in res.content
     assert "retrying the same search will not help" in res.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_degraded_falls_back_to_wikipedia(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json={
+            "results": [],
+            "unresponsive_engines": [["brave", "too many requests"]],
+        })
+    )
+    wiki = respx.get("https://en.wikipedia.org/w/rest.php/v1/search/page").mock(
+        return_value=httpx.Response(200, json=WIKIPEDIA_JSON)
+    )
+    res = await WebSearchTool().run({"query": "bucharest"}, ctx(tmp_path))
+    assert res.ok
+    # honest degradation header so the model can adapt
+    assert "degraded" in res.content
+    assert "Wikipedia" in res.content
+    assert "brave (too many requests)" in res.content
+    # formatted like normal results: title, url built from page key, excerpt
+    assert "Bucharest" in res.content
+    assert "https://en.wikipedia.org/wiki/Bucharest" in res.content
+    assert "is the capital of Romania" in res.content
+    # HTML stripped from excerpts
+    assert "searchmatch" not in res.content
+    assert wiki.calls.last.request.url.params["q"] == "bucharest"
+    # Wikimedia 403s default library User-Agents; a descriptive one is required.
+    ua = wiki.calls.last.request.headers["user-agent"]
+    assert "agenhood" in ua and "python-httpx" not in ua
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_searxng_error_falls_back_to_wikipedia(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    respx.get("https://en.wikipedia.org/w/rest.php/v1/search/page").mock(
+        return_value=httpx.Response(200, json=WIKIPEDIA_JSON)
+    )
+    res = await WebSearchTool().run({"query": "bucharest"}, ctx(tmp_path))
+    assert res.ok
+    assert "degraded" in res.content
+    assert "Wikipedia" in res.content
+    assert "https://en.wikipedia.org/wiki/Bucharest" in res.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_searxng_error_and_wiki_error_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    respx.get("https://en.wikipedia.org/w/rest.php/v1/search/page").mock(
+        return_value=httpx.Response(500)
+    )
+    res = await WebSearchTool().run({"query": "x"}, ctx(tmp_path))
+    assert not res.ok
+    assert "search failed" in res.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_genuine_no_results_does_not_hit_wikipedia(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json={"results": [], "unresponsive_engines": []})
+    )
+    wiki = respx.get("https://en.wikipedia.org/w/rest.php/v1/search/page").mock(
+        return_value=httpx.Response(200, json=WIKIPEDIA_JSON)
+    )
+    res = await WebSearchTool().run({"query": "zxqv-no-hit"}, ctx(tmp_path))
+    assert res.ok
+    assert res.content == "(no results)"
+    assert not wiki.called
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_healthy_does_not_hit_wikipedia(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json=SEARXNG_JSON)
+    )
+    wiki = respx.get("https://en.wikipedia.org/w/rest.php/v1/search/page").mock(
+        return_value=httpx.Response(200, json=WIKIPEDIA_JSON)
+    )
+    res = await WebSearchTool().run({"query": "self-hosted email"}, ctx(tmp_path))
+    assert res.ok
+    assert "Listmonk" in res.content
+    assert "degraded" not in res.content
+    assert not wiki.called
 
 
 @respx.mock
