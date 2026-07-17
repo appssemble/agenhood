@@ -33,5 +33,7 @@ def test_skills_section_lists_names_and_descriptions_only():
     assert "- pdf-reports: Branded PDF reports" in out
     assert "- crm-sync: Sync contacts" in out
     assert "skill` tool" in out  # instructs lazy loading
-    assert "/workspace/.agent-runtime/skills/" in out
+    assert "/workspace/.agent-runtime/skills/" not in out  # no disk path advertised
+    assert "FIRST action" in out
+    assert "do not search the filesystem for skill files" in out
     assert "SECRET-BODY" not in out and "ALSO-SECRET" not in out  # progressive disclosure

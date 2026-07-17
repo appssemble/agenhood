@@ -53,15 +53,14 @@ def assemble_system_prompt(
     # Skills (names + descriptions only — content loads via the `skill` tool)
     if skills:
         skill_lines = [
-            "Specialized instruction sets are available. Before performing a "
-            "task a skill covers, load it with the `skill` tool — its "
-            "description alone is not enough.",
+            "Named skills carry detailed instructions for specific kinds of "
+            "work. When a request matches a skill's description, your FIRST "
+            "action is to load it with the `skill` tool — do not attempt the "
+            "work from the description alone, and do not search the "
+            "filesystem for skill files.",
         ]
         for s in skills:
             skill_lines.append(f"- {s.name}: {s.description}")
-        skill_lines.append(
-            "Skill files live under /workspace/.agent-runtime/skills/<name>/."
-        )
         sections.append("## Skills\n" + "\n".join(skill_lines))
 
     # Output contract
