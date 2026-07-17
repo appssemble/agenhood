@@ -7,6 +7,7 @@ Self-registers into DRIVERS via register().
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from collections.abc import Callable
@@ -124,6 +125,15 @@ DEFAULT_SYSTEM_PROMPT = (
 MAX_TOKENS_PER_CALL = 4096
 
 DEFAULT_TOOL_RESULT_MAX_CHARS = 30_000
+
+# Loop breakers: identical (tool, input) invocations allowed before the task
+# fails stuck_in_loop, and consecutive failing tool results before a
+# change-approach nudge / a tool_failure_loop failure. Hard stops
+# (iterations/tokens/timeout/cancel) are unchanged; these only shorten the
+# path through futile loops.
+DUP_CALL_LIMIT = 5
+CONSECUTIVE_FAILURES_NUDGE = 5
+CONSECUTIVE_FAILURES_LIMIT = 8
 
 
 def _cap_tool_result(content: str) -> str:
@@ -329,6 +339,8 @@ class VanillaDriver:
         anthropic_tools = [_tool_spec_to_anthropic(s) for s in specs]
         tool_ctx = ToolContext(workspace=workspace, cancel=cancel, env=env or {})
 
+        call_counts: dict[tuple[str, str], int] = {}
+        consecutive_failures = 0
         iterations = 0
         tokens_in = 0
         tokens_out = 0
@@ -447,6 +459,13 @@ class VanillaDriver:
                     tool = run_tools.get(tu["name"])
                     if tool is None:
                         msg = f"unknown tool: {tu['name']}"
+                        consecutive_failures += 1
+                        if consecutive_failures == CONSECUTIVE_FAILURES_NUDGE:
+                            msg += (
+                                f"\n[{CONSECUTIVE_FAILURES_NUDGE} consecutive tool "
+                                "failures — change approach, or call done with "
+                                "success=false and a reason]"
+                            )
                         await emit(
                             "tool_result",
                             {
@@ -464,7 +483,43 @@ class VanillaDriver:
                                 "is_error": True,
                             }
                         )
+                        if consecutive_failures >= CONSECUTIVE_FAILURES_LIMIT:
+                            return await _terminal("failed", "tool_failure_loop")
                         continue
+
+                    # Duplicate-call breaker: byte-identical invocations get an
+                    # escalating note and, at the limit, stop the task without
+                    # executing again.
+                    dup_key = (
+                        tu["name"],
+                        json.dumps(tu["input"], sort_keys=True, default=str),
+                    )
+                    call_counts[dup_key] = call_counts.get(dup_key, 0) + 1
+                    dup_n = call_counts[dup_key]
+                    if dup_n >= DUP_CALL_LIMIT:
+                        msg = (
+                            f"duplicate call limit: this exact {tu['name']} "
+                            f"invocation was already made {dup_n - 1} times — "
+                            "stopping the task"
+                        )
+                        await emit(
+                            "tool_result",
+                            {
+                                "tool_use_id": tu["id"],
+                                "ok": False,
+                                "content": msg,
+                                "duration_ms": 0,
+                            },
+                        )
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tu["id"],
+                                "content": msg,
+                                "is_error": True,
+                            }
+                        )
+                        return await _terminal("failed", "stuck_in_loop")
 
                     try:
                         res = await tool.run(tu["input"], tool_ctx)
@@ -481,6 +536,21 @@ class VanillaDriver:
                         content = res.content
                     else:
                         content = _cap_tool_result(res.content)
+                    if dup_n >= 2:
+                        content += (
+                            f"\n[repeat #{dup_n} of an identical call — if "
+                            "nothing changed, change approach]"
+                        )
+                    if res.ok:
+                        consecutive_failures = 0
+                    else:
+                        consecutive_failures += 1
+                        if consecutive_failures == CONSECUTIVE_FAILURES_NUDGE:
+                            content += (
+                                f"\n[{CONSECUTIVE_FAILURES_NUDGE} consecutive tool "
+                                "failures — change approach, or call done with "
+                                "success=false and a reason]"
+                            )
                     await emit(
                         "tool_result",
                         {
@@ -498,6 +568,8 @@ class VanillaDriver:
                             "is_error": not res.ok,
                         }
                     )
+                    if consecutive_failures >= CONSECUTIVE_FAILURES_LIMIT:
+                        return await _terminal("failed", "tool_failure_loop")
 
                 if done_accepted:
                     if done_payload.get("success") is False:

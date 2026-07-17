@@ -875,3 +875,90 @@ async def test_skill_content_exempt_from_generic_cap(tmp_path, monkeypatch):
     assert big_body in tr["s1"]["content"]
     # An ordinary tool result still truncates.
     assert "truncated" in tr["r1"]["content"] and len(tr["r1"]["content"]) < 400
+
+
+def _tool_use(id_, name, input_):
+    from agentcore.llm.base import LLMResponse
+    return LLMResponse(
+        content=[{"type": "tool_use", "id": id_, "name": name, "input": input_}],
+        tokens_in=1, tokens_out=1, stop_reason="tool_use",
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_call_notes_then_stuck_in_loop(tmp_path):
+    """Identical (tool, input) repeats get a note from #2 and terminate the
+    task with stuck_in_loop at the 5th."""
+    calls = [_tool_use(f"d{i}", "list_files", {}) for i in range(10)]
+    llm = ScriptedLLM(calls)
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(["list_files"]), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert not result.success
+    assert result.reason == "stuck_in_loop"
+    assert events[-1][1]["error"]["code"] == "stuck_in_loop"
+    trs = [p for t, p in events if t == "tool_result"]
+    assert len(trs) == 5  # 4 executed + the final refused one
+    assert "repeat #2" in trs[1]["content"]
+    assert trs[4]["ok"] is False  # 5th not executed, error result
+    # Exactly 5 LLM calls were made (not the full 10-script).
+    assert len(llm.calls) == 5
+
+
+@pytest.mark.asyncio
+async def test_distinct_inputs_do_not_trip_duplicate_breaker(tmp_path):
+    calls = [_tool_use(f"d{i}", "list_files", {"path": f"p{i}"}) for i in range(6)]
+    llm = ScriptedLLM(calls + [_done_response()])
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(["list_files"]), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert result.success
+
+
+@pytest.mark.asyncio
+async def test_consecutive_failures_nudge_then_tool_failure_loop(tmp_path):
+    """8 consecutive failing tool results terminate with tool_failure_loop;
+    the 5th failure carries the change-approach nudge."""
+    calls = [_tool_use(f"u{i}", "no_such_tool", {"n": i}) for i in range(12)]
+    llm = ScriptedLLM(calls)
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert not result.success
+    assert result.reason == "tool_failure_loop"
+    assert events[-1][1]["error"]["code"] == "tool_failure_loop"
+    trs = [p for t, p in events if t == "tool_result"]
+    assert len(trs) == 8
+    assert "5 consecutive tool failures" in trs[4]["content"]
+    assert all(p["ok"] is False for p in trs)
+
+
+@pytest.mark.asyncio
+async def test_ok_result_resets_consecutive_failure_counter(tmp_path):
+
+    calls = []
+    for i in range(6):
+        calls.append(_tool_use(f"f{i}", "no_such_tool", {"n": i}))
+    calls.append(_tool_use("ok1", "list_files", {}))
+    for i in range(6):
+        calls.append(_tool_use(f"g{i}", "no_such_tool", {"m": i}))
+    calls.append(_done_response())
+    llm = ScriptedLLM(calls)
+    events, emit = collector()
+    driver = VanillaDriver(llm=llm)
+    wide = ResolvedLimits(max_iterations=30, max_tokens=10**6, timeout_seconds=60)
+    result = await driver.run(
+        task=TaskBody(prompt="x"), config=cfg(["list_files"]), limits=wide,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    # 6 failures, reset by an ok call, 6 more failures -> never hits 8; done succeeds.
+    assert result.success

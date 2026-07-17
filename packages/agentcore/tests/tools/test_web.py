@@ -160,3 +160,60 @@ def test_web_tools_self_register():
     from agentcore.tools.base import TOOLS
     assert "web_search" in TOOLS
     assert "web_fetch" in TOOLS
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_empty_with_unresponsive_engines_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json={
+            "results": [],
+            "unresponsive_engines": [["duckduckgo", "CAPTCHA"], ["brave", "too many requests"]],
+        })
+    )
+    res = await WebSearchTool().run({"query": "calories"}, ctx(tmp_path))
+    assert not res.ok
+    assert "degraded" in res.content
+    assert "duckduckgo (CAPTCHA)" in res.content
+    assert "brave (too many requests)" in res.content
+    assert "retrying the same search will not help" in res.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_empty_without_unresponsive_engines_stays_ok(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json={"results": [], "unresponsive_engines": []})
+    )
+    res = await WebSearchTool().run({"query": "zxqv-no-hit"}, ctx(tmp_path))
+    assert res.ok
+    assert res.content == "(no results)"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_results_with_partial_engine_failure_stays_ok(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    payload = dict(SEARXNG_JSON)
+    payload["unresponsive_engines"] = [["brave", "too many requests"]]
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    res = await WebSearchTool().run({"query": "self-hosted email"}, ctx(tmp_path))
+    assert res.ok
+    assert "Listmonk" in res.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_malformed_unresponsive_engines_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json={"results": [], "unresponsive_engines": "weird"})
+    )
+    res = await WebSearchTool().run({"query": "x"}, ctx(tmp_path))
+    # Malformed metadata must not crash; treat as degraded-unknown or no-results,
+    # but NEVER raise. Accept either verdict as long as it returns cleanly.
+    assert isinstance(res.content, str)

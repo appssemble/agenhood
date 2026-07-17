@@ -14,6 +14,20 @@ MAX_FETCH_BYTES = 5 * 1024 * 1024  # 5 MiB
 SEARCH_RESULT_LIMIT = 8
 
 
+def _unresponsive_engines(data: dict[str, Any]) -> list[str]:
+    """Format SearXNG's ``unresponsive_engines`` pairs; [] on anything odd."""
+    raw = data.get("unresponsive_engines")
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for entry in raw:
+        if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            out.append(f"{entry[0]} ({entry[1]})")
+        elif isinstance(entry, str):
+            out.append(entry)
+    return out
+
+
 class WebSearchTool:
     spec = ToolSpec(
         name="web_search",
@@ -46,6 +60,21 @@ class WebSearchTool:
 
         results = data.get("results", [])[:SEARCH_RESULT_LIMIT]
         if not results:
+            # SearXNG answers 200 with an empty list even when every upstream
+            # engine is CAPTCHA'd/rate-limited; `unresponsive_engines` is the
+            # only signal. Surface that as a failure so the model (and the
+            # loop's failure breaker) can tell "backend down" from "no hits".
+            engines = _unresponsive_engines(data)
+            if engines:
+                return ToolResult(
+                    ok=False,
+                    content=(
+                        "search backend degraded — engines unresponsive: "
+                        + ", ".join(engines)
+                        + "; retrying the same search will not help"
+                    ),
+                    duration_ms=_ms(start),
+                )
             return ToolResult(ok=True, content="(no results)", duration_ms=_ms(start))
         lines = []
         for i, r in enumerate(results, 1):
