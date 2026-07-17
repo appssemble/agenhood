@@ -30,10 +30,10 @@ def exa_api_key(ctx: ToolContext) -> str:
 
 
 async def _post(
-    path: str, payload: dict[str, Any], api_key: str, timeout: float
+    path: str, payload: dict[str, Any], api_key: str, http_timeout: float
 ) -> dict[str, Any]:
     try:
-        async with httpx.AsyncClient(timeout=timeout) as http:
+        async with httpx.AsyncClient(timeout=http_timeout) as http:
             resp = await http.post(
                 f"{EXA_BASE_URL}{path}", json=payload, headers={"x-api-key": api_key}
             )
