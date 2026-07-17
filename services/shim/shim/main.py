@@ -38,6 +38,24 @@ def build_drivers() -> dict[str, Driver]:
     }
 
 
+def prepare_runtime_dirs(workspace: str) -> None:
+    """Create the .agent-runtime layout with sandbox-aware modes.
+
+    The base dir is 711 (traverse-by-name, no listing) so uid-dropped
+    subprocesses (bash/python tools) can reach the world-readable skills
+    subtree, while the shim-private children — event logs, task metadata,
+    the transfer spool — are 700. Modes are (re)applied on every boot so
+    volumes created by older images are corrected too.
+    """
+    base = os.path.join(workspace, ".agent-runtime")
+    os.makedirs(base, exist_ok=True)
+    os.chmod(base, 0o711)
+    for child in ("events", "tasks", "tmp"):
+        path = os.path.join(base, child)
+        os.makedirs(path, exist_ok=True)
+        os.chmod(path, 0o700)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="agent-runtime shim")
     parser.add_argument("--port", type=int, default=8080)
@@ -46,7 +64,7 @@ def main() -> None:
 
     token = os.environ.get("SHIM_TOKEN", "")
 
-    os.makedirs(os.path.join(args.workspace, ".agent-runtime"), exist_ok=True)
+    prepare_runtime_dirs(args.workspace)
 
     # Workspace repo init is best-effort at boot; every git op also lazily
     # ensures the repo, so a failure here only delays initialization.

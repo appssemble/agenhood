@@ -27,10 +27,12 @@ mkdir -p "$WS"
 chown "0:0" "$WS"
 chmod 1777 "$WS"
 
-# Shim-private (root-only): event logs, status, task metadata.
+# Root-owned, traverse-only (711): the agent uid can reach the world-readable
+# skills subtree by name but cannot list or modify the tree. The shim-private
+# children (events/tasks/tmp) are locked to 700 by shim.main.prepare_runtime_dirs.
 mkdir -p "$WS/.agent-runtime"
 chown -R "0:0" "$WS/.agent-runtime"
-chmod 700 "$WS/.agent-runtime"
+chmod 711 "$WS/.agent-runtime"
 
 # Per-task agent-writable: driver homes, credentials, skills, git askpass.
 # Take root ownership first so root can chmod it (CHOWN cap only, no CAP_FOWNER),

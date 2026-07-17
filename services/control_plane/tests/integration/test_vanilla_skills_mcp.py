@@ -122,19 +122,29 @@ async def test_skill_loads_end_to_end(seeded_app):
         r = await client.post("/v1/containers", headers=_HEADERS, json={
             "name": "skills-e2e",
             "config": {"driver": "vanilla", "model": "claude-opus-4-7",
-                       "tools": ["read_file"], "skills": [skill_id]},
+                       "tools": ["read_file", "bash"], "skills": [skill_id]},
         })
         assert r.status_code == 201, r.text
         cid = r.json()["id"]
         try:
             terminal, results = await _run_scripted(client, cid, {"turns": [
                 {"tool": "skill", "input": {"name": "greeting-format"}},
+                # Bundled skill files must be reachable from SANDBOXED
+                # subprocesses (uid-dropped bash/python), not just the shim's
+                # in-process file tools — regression test for the root-700
+                # .agent-runtime traversal bug.
+                {"tool": "bash", "input": {"command":
+                    "cat /workspace/.agent-runtime/skills/greeting-format/SKILL.md"}},
                 {"done": {"success": True, "output": "used skill"}},
             ]})
             assert terminal == "completed"
             assert results and results[0]["ok"]
             assert "SKILL-BODY-MARKER" in results[0]["content"]
             assert "Base directory for this skill:" in results[0]["content"]
+            assert results[1]["ok"], (
+                f"sandboxed bash could not read skill file: {results[1]['content']}"
+            )
+            assert "SKILL-BODY-MARKER" in results[1]["content"]
         finally:
             await client.request("DELETE", f"/v1/containers/{cid}", headers=_HEADERS)
 
