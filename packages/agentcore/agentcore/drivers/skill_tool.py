@@ -17,14 +17,21 @@ DEFAULT_SKILL_CONTENT_MAX_CHARS = 100_000
 
 
 def _strip_frontmatter(text: str) -> str:
-    """Drop a leading ---…--- YAML block; on any malformed shape return raw."""
-    if not text.startswith("---"):
+    """Drop a leading frontmatter block delimited by bare ``---`` lines;
+    anything malformed (no opener line, no bare closer) returns raw."""
+    if not text.startswith("---\n"):
         return text
-    end = text.find("\n---", 3)
-    if end == -1:
-        return text
-    rest = text[end + len("\n---"):]
-    return rest.lstrip("\n")
+    pos = 3
+    while True:
+        end = text.find("\n---", pos)
+        if end == -1:
+            return text
+        after = end + len("\n---")
+        if after == len(text):
+            return ""
+        if text[after] == "\n":
+            return text[after + 1:].lstrip("\n")
+        pos = after  # matched e.g. "\n----" or "\n--- x" — keep scanning
 
 
 def skills_dir(workspace: str) -> str:

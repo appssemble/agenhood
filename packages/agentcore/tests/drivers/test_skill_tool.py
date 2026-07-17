@@ -131,3 +131,61 @@ async def test_skill_cap_truncates_with_path_marker(tmp_path, monkeypatch):
     assert len(res.content) < 600  # accounts for path length variations in test environment
     assert "truncated" in res.content
     assert f"{base}/pdf-reports/SKILL.md" in res.content
+
+
+def test_strip_frontmatter_bare_delimiters():
+    """Test that frontmatter is only stripped when delimited by bare --- lines."""
+    from agentcore.drivers.skill_tool import _strip_frontmatter
+
+    # Standard case: body with proper frontmatter
+    result = _strip_frontmatter("---\nname: x\n---\nBody")
+    assert result == "Body"
+
+    # Body starting with horizontal rule (not proper frontmatter) -> return raw
+    result = _strip_frontmatter("--- Horizontal rule intro\ntext\n----\nmore")
+    assert result == "--- Horizontal rule intro\ntext\n----\nmore"
+
+    # Frontmatter with non-bare closer in body: scanner skips non-bare --- and finds real closer
+    result = _strip_frontmatter("---\nname: x\n--- xx\nreal\n---\nBody")
+    assert result == "Body"
+
+    # No frontmatter at all
+    result = _strip_frontmatter("Just body content")
+    assert result == "Just body content"
+
+    # Frontmatter with no closer -> return raw
+    result = _strip_frontmatter("---\nname: x\nno closer")
+    assert result == "---\nname: x\nno closer"
+
+    # Frontmatter at end of string (no body after)
+    result = _strip_frontmatter("---\nname: x\n---")
+    assert result == ""
+
+    # Frontmatter followed by empty lines and body
+    result = _strip_frontmatter("---\nname: x\n---\n\n\nBody")
+    assert result == "Body"
+
+
+@pytest.mark.asyncio
+async def test_failed_load_does_not_mark_skill_served(tmp_path):
+    """Failed load should not mark skill as served; subsequent file creation
+    should return full content, not the 'already loaded' message."""
+    base = skills_dir(str(tmp_path))
+    tool = SkillTool(base_dir=base, names=["late"])
+
+    # First call: skill name is accepted but file doesn't exist yet -> fails
+    res1 = await tool.run({"name": "late"}, _ctx(tmp_path))
+    assert not res1.ok
+    assert "could not load skill" in res1.content
+
+    # Now create the skill file
+    d = tmp_path / ".agent-runtime" / "skills" / "late"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("Late body.")
+
+    # Second call: file now exists -> should return full content, NOT "already loaded"
+    res2 = await tool.run({"name": "late"}, _ctx(tmp_path))
+    assert res2.ok
+    assert "Late body." in res2.content
+    assert "already loaded" not in res2.content
+    assert res2.content.startswith(f"Base directory for this skill: {base}/late")
