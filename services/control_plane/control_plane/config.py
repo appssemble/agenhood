@@ -15,6 +15,16 @@ def _parse_kv(raw: str) -> dict[str, str]:
     return out
 
 
+def _agent_extra_env_from_environ() -> dict[str, str]:
+    extra = _parse_kv(os.environ.get("AGENT_EXTRA_ENV", ""))
+    exa_key = (os.environ.get("EXA_API_KEY") or "").strip()
+    if exa_key:
+        # Deployment-wide Exa key for the agents' web_search/web_read tools.
+        # An explicit AGENT_EXTRA_ENV entry wins.
+        extra.setdefault("EXA_API_KEY", exa_key)
+    return extra
+
+
 def _asyncpg_url(url: str) -> str:
     """Coerce any Postgres URL to SQLAlchemy's async (asyncpg) dialect.
 
@@ -176,7 +186,7 @@ class Settings:
             internal_network=os.environ.get("INTERNAL_NETWORK", "agent-runtime-internal"),
             readyz_timeout_seconds=float(os.environ.get("READYZ_TIMEOUT_SECONDS", "30")),
             shim_port=int(os.environ.get("SHIM_PORT", "8080")),
-            agent_extra_env=_parse_kv(os.environ.get("AGENT_EXTRA_ENV", "")),
+            agent_extra_env=_agent_extra_env_from_environ(),
             bind_shim_port_to_host=os.environ.get("BIND_SHIM_PORT_TO_HOST", "").lower()
                 in ("1", "true", "yes"),
             admin_api_key=os.environ.get("ADMIN_API_KEY") or None,

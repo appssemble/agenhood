@@ -10,6 +10,7 @@
   `AGENT_IMAGE_TAG` every `IMAGE_PREPULL_INTERVAL_SECONDS` (600) so version bumps are
   downloaded outside user-facing requests. Set `AGENT_IMAGE_PULL_POLICY=always` only if
   you deliberately ride a moving tag and want every create to force-pull.
+- `EXA_API_KEY` (optional) — hosted web search/reading for agents; unset = SearXNG-only.
 
 ## Create the app resource
 - New Resource → Docker Compose.

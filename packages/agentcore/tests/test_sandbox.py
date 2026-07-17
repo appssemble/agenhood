@@ -19,6 +19,9 @@ def test_build_child_env_strips_secrets(monkeypatch):
     assert "SHIM_MAX_WORKERS" not in env
     assert env["PATH"] == "/usr/bin"
     assert env["HTTPS_PROXY"] == "http://egress-proxy:8888"
+    monkeypatch.setenv("EXA_API_KEY", "leaky")
+    env = sandbox.build_child_env()
+    assert "EXA_API_KEY" not in env
 
 
 def test_build_child_env_forwards_all_proxy(monkeypatch):

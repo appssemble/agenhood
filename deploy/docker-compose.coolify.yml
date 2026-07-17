@@ -56,6 +56,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
       AGENT_IMAGE_TAG: ${AGENT_IMAGE_TAG}
+      EXA_API_KEY: ${EXA_API_KEY:-}
       # Pull the agent image from the self-hosted registry (Phase 1/2).
       AGENT_REGISTRY: ${AGENT_REGISTRY}
       AGENT_REGISTRY_USERNAME: ${AGENT_REGISTRY_USERNAME:-}
