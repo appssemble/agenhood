@@ -37,8 +37,9 @@ class WebSearchTool:
     spec = ToolSpec(
         name="web_search",
         description=(
-            "Search the web via the internal SearXNG service. "
-            "Returns title, URL, and snippet for the top results."
+            "Search the web. Uses a hosted search provider when configured, "
+            "with a local meta-search fallback. Returns title, URL, and "
+            "snippet for the top results."
         ),
         input_schema={
             "type": "object",
@@ -271,10 +272,11 @@ class WebReadTool:
     spec = ToolSpec(
         name="web_read",
         description=(
-            "Read a URL as clean text via a hosted reader (Exa). Handles "
-            "JS-heavy pages and works in all container variants — prefer this "
-            "over web_fetch for articles and dynamic sites. Falls back to a "
-            "plain local fetch when the hosted reader is unavailable."
+            "Read a URL as clean text via a hosted reader (Exa). Works in all "
+            "container variants and handles JS-heavy pages when the hosted "
+            "reader is configured — prefer this over web_fetch for articles "
+            "and dynamic sites. Falls back to a plain local fetch when the "
+            "hosted reader is unavailable."
         ),
         input_schema={
             "type": "object",

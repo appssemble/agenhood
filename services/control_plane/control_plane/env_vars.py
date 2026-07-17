@@ -28,7 +28,7 @@ _NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 # the egress-proxy vars (a security boundary), and sandbox-controlled paths.
 RESERVED_ENV_NAMES = frozenset({
     "SHIM_TOKEN", "CONTAINER_ID", "TENANT_ID", "SHIM_MAX_WORKERS",
-    "SEARCH_PROVIDER_URL",
+    "SEARCH_PROVIDER_URL", "EXA_API_KEY",
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
     "HOME", "PATH",
 })

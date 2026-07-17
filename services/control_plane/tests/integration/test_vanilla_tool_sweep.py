@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 _HEADERS = {"Authorization": "Bearer tk_live_seedkey"}
 
 ALL_TOOLS = ["read_file", "write_file", "edit_file", "list_files",
-             "delete_file", "bash", "python", "web_search", "web_fetch"]
+             "delete_file", "bash", "python", "web_search", "web_fetch", "web_read"]
 
 
 async def _run_scripted(app, script: dict, tools: list[str]) -> tuple[str, list[dict]]:
@@ -103,6 +103,10 @@ CASES = [
     ("web_fetch", {"turns": [
         {"tool": "web_fetch", "input": {"url": "http://stub-llm-test:8080/page"}},
         {"done": {"success": True, "output": "fetched"}}]},
+     lambda results: results[0]["ok"] and "Stub Page" in results[0]["content"]),
+    ("web_read", {"turns": [
+        {"tool": "web_read", "input": {"url": "http://stub-llm-test:8080/page"}},
+        {"done": {"success": True, "output": "read"}}]},
      lambda results: results[0]["ok"] and "Stub Page" in results[0]["content"]),
 ]
 

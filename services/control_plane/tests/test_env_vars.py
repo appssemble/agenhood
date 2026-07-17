@@ -68,7 +68,7 @@ def test_name_too_long_rejected() -> None:
 
 @pytest.mark.parametrize(
     "reserved",
-    ["SHIM_TOKEN", "HOME", "PATH", "HTTP_PROXY", "NO_PROXY", "TENANT_ID"],
+    ["SHIM_TOKEN", "HOME", "PATH", "HTTP_PROXY", "NO_PROXY", "TENANT_ID", "EXA_API_KEY"],
 )
 def test_reserved_name_rejected(reserved: str) -> None:
     with pytest.raises(APIError) as exc:
