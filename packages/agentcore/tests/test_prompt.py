@@ -78,9 +78,10 @@ def test_augment_mode_exact_string():
         "Your filesystem root for output is `/workspace`. Anything you want to "
         "persist must be under this path. The rest of the filesystem is read-only.",
         "## Tools\n"
-        "You have these tools:\n"
-        f"- read_file: Read a file.\n  input schema: {json.dumps(READ_SPEC.input_schema)}\n"
-        f"- done: Signal task completion.\n  input schema: {json.dumps(DONE_SPEC.input_schema)}",
+        "You have these tools (parameter schemas are provided via the API "
+        "tools parameter):\n"
+        "- read_file: Read a file.\n"
+        "- done: Signal task completion.",
         "## Output\n"
         "Call `done` with `{ success, output?, reason? }`. On success, put an object "
         "matching this schema in `output`:\n"
@@ -110,6 +111,30 @@ def test_augment_uses_driver_default_when_no_system_prompt():
         limits=LIMITS,
     )
     assert out.startswith("DRIVER DEFAULT PROMPT")
+
+
+def test_tool_inventory_omits_input_schemas():
+    # Input schemas already travel in the API `tools` parameter; embedding
+    # them in the system prompt doubled the per-call baseline (18.6k vs 1.8k
+    # tokens with an MCP server attached).
+    big_schema = {
+        "type": "object",
+        "required": ["url"],
+        "properties": {"url": {"type": "string", "description": "x" * 200}},
+    }
+    spec = ToolSpec(name="scrape", description="Scrape a page.", input_schema=big_schema)
+    config = AgentConfig(driver="vanilla", model="claude-x", system_prompt="P")
+    out = assemble_system_prompt(
+        config=config,
+        driver_default_system_prompt="D",
+        tool_specs=[spec, DONE_SPEC],
+        task=TaskBody(prompt="x"),
+        limits=LIMITS,
+    )
+    assert "- scrape: Scrape a page." in out
+    assert "input schema" not in out
+    assert json.dumps(big_schema) not in out
+    assert "x" * 200 not in out
 
 
 def test_augment_text_output_has_no_schema_clause():

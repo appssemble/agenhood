@@ -41,13 +41,15 @@ def assemble_system_prompt(
 
     sections: list[str] = [base, WORKSPACE_SECTION]
 
-    # Tool inventory
-    tool_lines = ["You have these tools:"]
+    # Tool inventory — names and descriptions only. Input schemas travel in
+    # the API `tools` parameter; embedding them here too doubled the per-call
+    # baseline (18.6k vs 1.8k tokens with an MCP server attached).
+    tool_lines = [
+        "You have these tools (parameter schemas are provided via the API "
+        "tools parameter):"
+    ]
     for spec in tool_specs:
-        tool_lines.append(
-            f"- {spec.name}: {spec.description}\n"
-            f"  input schema: {json.dumps(spec.input_schema)}"
-        )
+        tool_lines.append(f"- {spec.name}: {spec.description}")
     sections.append("## Tools\n" + "\n".join(tool_lines))
 
     # Skills (names + descriptions only — content loads via the `skill` tool)
