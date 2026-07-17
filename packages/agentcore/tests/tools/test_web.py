@@ -36,6 +36,11 @@ def ctx(tmp_path):
     return ToolContext(workspace=str(tmp_path), cancel=asyncio.Event())
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_exa_key(monkeypatch):
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+
+
 @respx.mock
 @pytest.mark.asyncio
 async def test_web_search_parses_searxng_json(tmp_path, monkeypatch):
@@ -337,3 +342,106 @@ async def test_web_search_malformed_unresponsive_engines_falls_back(tmp_path, mo
     # Malformed metadata must not crash; treat as degraded-unknown or no-results,
     # but NEVER raise. Accept either verdict as long as it returns cleanly.
     assert isinstance(res.content, str)
+
+
+EXA_SEARCH_JSON = {
+    "results": [
+        {
+            "title": "Calorii paine cu pate",
+            "url": "https://calorii.example/paine-pate",
+            "highlights": ["250 kcal per 100g"],
+        }
+    ]
+}
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_uses_exa_when_keyed(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "k-123")
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    exa = respx.post("https://api.exa.ai/search").mock(
+        return_value=httpx.Response(200, json=EXA_SEARCH_JSON)
+    )
+    searx = respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json=SEARXNG_JSON)
+    )
+    res = await WebSearchTool().run({"query": "paine cu pate calorii"}, ctx(tmp_path))
+    assert res.ok
+    assert "Calorii paine cu pate" in res.content
+    assert "https://calorii.example/paine-pate" in res.content
+    assert "250 kcal per 100g" in res.content
+    assert "note:" not in res.content
+    assert exa.called
+    assert not searx.called
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_exa_failure_falls_back_to_searxng_with_note(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "k-123")
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.post("https://api.exa.ai/search").mock(return_value=httpx.Response(500))
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json=SEARXNG_JSON)
+    )
+    res = await WebSearchTool().run({"query": "self-hosted email"}, ctx(tmp_path))
+    assert res.ok
+    assert res.content.startswith("note: primary search (exa) failed")
+    assert "results from fallback search:" in res.content
+    assert "Listmonk" in res.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_unkeyed_never_calls_exa(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    exa = respx.post("https://api.exa.ai/search").mock(
+        return_value=httpx.Response(200, json=EXA_SEARCH_JSON)
+    )
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json=SEARXNG_JSON)
+    )
+    res = await WebSearchTool().run({"query": "self-hosted email"}, ctx(tmp_path))
+    assert res.ok
+    assert "Listmonk" in res.content
+    assert "note:" not in res.content
+    assert not exa.called
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_exa_fails_searxng_degraded_reaches_wikipedia(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "k-123")
+    monkeypatch.setenv("SEARCH_PROVIDER_URL", "http://searxng.test:8080")
+    respx.post("https://api.exa.ai/search").mock(return_value=httpx.Response(500))
+    respx.get("http://searxng.test:8080/search").mock(
+        return_value=httpx.Response(200, json={
+            "results": [],
+            "unresponsive_engines": [["brave", "too many requests"]],
+        })
+    )
+    respx.get("https://en.wikipedia.org/w/rest.php/v1/search/page").mock(
+        return_value=httpx.Response(200, json=WIKIPEDIA_JSON)
+    )
+    res = await WebSearchTool().run({"query": "bucharest"}, ctx(tmp_path))
+    assert res.ok
+    assert res.content.startswith("note: primary search (exa) failed")
+    assert "Wikipedia" in res.content
+    assert "https://en.wikipedia.org/wiki/Bucharest" in res.content
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_web_search_ctx_env_key_wins(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    exa = respx.post("https://api.exa.ai/search").mock(
+        return_value=httpx.Response(200, json=EXA_SEARCH_JSON)
+    )
+    context = ToolContext(
+        workspace=str(tmp_path), cancel=asyncio.Event(), env={"EXA_API_KEY": "ctx-key"}
+    )
+    res = await WebSearchTool().run({"query": "x"}, context)
+    assert res.ok
+    assert exa.calls.last.request.headers["x-api-key"] == "ctx-key"

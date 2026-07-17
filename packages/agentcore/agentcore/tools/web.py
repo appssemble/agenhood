@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from agentcore.tools.base import ToolContext, ToolResult, ToolSpec, _ms, register
+from agentcore.tools.exa import ExaError, exa_api_key, exa_search
 
 DEFAULT_SEARCH_URL = "http://searxng:8080"
 MAX_FETCH_BYTES = 5 * 1024 * 1024  # 5 MiB
@@ -48,8 +49,30 @@ class WebSearchTool:
 
     async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
-        base = os.environ.get("SEARCH_PROVIDER_URL", DEFAULT_SEARCH_URL).rstrip("/")
         query = input["query"]
+        key = exa_api_key(ctx)
+        if not key:
+            return await self._searxng_search(query, start)
+        try:
+            results = await exa_search(query, key, limit=SEARCH_RESULT_LIMIT)
+        except ExaError as e:
+            fallback = await self._searxng_search(query, start)
+            return ToolResult(
+                ok=fallback.ok,
+                content=(
+                    f"note: primary search (exa) failed — {e}; "
+                    "results from fallback search:\n" + fallback.content
+                ),
+                duration_ms=fallback.duration_ms,
+            )
+        lines = [
+            f"{i}. {r['title']}\n   {r['url']}\n   {r['snippet']}"
+            for i, r in enumerate(results, 1)
+        ]
+        return ToolResult(ok=True, content="\n".join(lines), duration_ms=_ms(start))
+
+    async def _searxng_search(self, query: str, start: float) -> ToolResult:
+        base = os.environ.get("SEARCH_PROVIDER_URL", DEFAULT_SEARCH_URL).rstrip("/")
         try:
             async with httpx.AsyncClient(timeout=30.0) as http:
                 resp = await http.get(
