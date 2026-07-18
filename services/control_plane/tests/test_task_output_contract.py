@@ -25,9 +25,9 @@ def test_text_task_passes_any_driver():
 
 def test_structured_task_passes_supported_driver():
     body = _body(OutputContract(type="structured", schema=SCHEMA))
-    # Task 6 Step 5 extends this tuple to all five drivers once the CLI
-    # drivers' capability flips land (Tasks 4-6).
-    for driver in ("vanilla", "api"):
+    # All five drivers now support structured output (Tasks 4-6 landed the
+    # CLI drivers' capability flips on top of the vanilla/api baseline).
+    for driver in ("vanilla", "api", "codex", "claude-code", "opencode"):
         validate_output_contract(body, driver)
 
 

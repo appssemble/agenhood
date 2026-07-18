@@ -53,6 +53,7 @@ from agentcore.models import (
     TaskBody,
     TaskResult,
 )
+from agentcore.structured_output import run_structured_attempts
 
 _OPENCODE_PROMPT = (
     "You are an autonomous coding agent (opencode). Complete the task in the "
@@ -426,7 +427,7 @@ class OpencodeDriver:
     name = "opencode"
     capabilities = DriverCapabilities(
         supports_tools=False,
-        supports_structured_output=False,
+        supports_structured_output=True,
         supports_cancel=True,
         requires_image_feature=None,
         supports_mcp=True,
@@ -472,13 +473,43 @@ class OpencodeDriver:
             resume_session_id = state.get("opencode_session_id")
 
         latest_session_id: dict[str, str | None] = {"id": resume_session_id}
-        result = await self._run_opencode(
-            task=task, config=config, limits=limits, credential=credential, emit=emit,
-            cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
-            workspace=workspace, skills=skills, mcp_servers=mcp_servers,
-            resume_session_id=resume_session_id, latest_session_id=latest_session_id,
-            env=env,
+
+        schema = (
+            task.output.json_schema
+            if task.output.type == "structured" and task.output.json_schema is not None
+            else None
         )
+
+        if schema is None:
+            result = await self._run_opencode(
+                task=task, config=config, limits=limits, credential=credential, emit=emit,
+                cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
+                workspace=workspace, skills=skills, mcp_servers=mcp_servers,
+                resume_session_id=resume_session_id, latest_session_id=latest_session_id,
+                env=env, prompt=task.prompt, structured=False, emit_running=True,
+            )
+        else:
+            async def attempt(
+                prompt: str, resume_id: str | None,
+                timeout_seconds: int, emit_running: bool,
+            ) -> TaskResult:
+                return await self._run_opencode(
+                    task=task, config=config,
+                    limits=limits.model_copy(
+                        update={"timeout_seconds": timeout_seconds}
+                    ),
+                    credential=credential, emit=emit, cancel=cancel,
+                    credential_kind=credential_kind, credential_meta=credential_meta,
+                    workspace=workspace, skills=skills, mcp_servers=mcp_servers,
+                    resume_session_id=resume_id, latest_session_id=latest_session_id,
+                    env=env, prompt=prompt, structured=True, emit_running=emit_running,
+                )
+
+            result = await run_structured_attempts(
+                schema=schema, task_prompt=task.prompt,
+                timeout_seconds=limits.timeout_seconds, emit=emit,
+                latest_id=latest_session_id, run_attempt=attempt,
+            )
         if session_id is not None and latest_session_id["id"]:
             write_session_state(
                 workspace, self.name, session_id,
@@ -503,17 +534,21 @@ class OpencodeDriver:
         resume_session_id: str | None,
         latest_session_id: dict[str, str | None],
         env: dict[str, str] | None = None,
+        prompt: str,
+        structured: bool = False,
+        emit_running: bool = True,
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
-        await emit(
-            "status_change",
-            {"from": "pending", "to": "running", "result": None, "error": None},
-        )
+        if emit_running:
+            await emit(
+                "status_change",
+                {"from": "pending", "to": "running", "result": None, "error": None},
+            )
 
         provider = provider_for_model(config.model)
         cmd = build_command(
-            workspace=workspace, model_ref=model_ref(config.model), prompt=task.prompt,
+            workspace=workspace, model_ref=model_ref(config.model), prompt=prompt,
             resume_session_id=resume_session_id, effort=config.effort,
         )
         child_env = build_env(
@@ -764,6 +799,9 @@ class OpencodeDriver:
             return TaskResult(success=False, reason="opencode_error")
 
         if rc == 0:
+            if structured:
+                # run()'s structured loop validates and emits the terminal event.
+                return TaskResult(success=True, output=last_text or "")
             result = {"success": True, "output": last_text or ""}
             await emit(
                 "status_change",

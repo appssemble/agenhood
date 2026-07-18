@@ -24,7 +24,7 @@ def test_registers_under_name_opencode():
 def test_capabilities():
     d = DRIVERS["opencode"]
     assert d.capabilities.supports_tools is False
-    assert d.capabilities.supports_structured_output is False
+    assert d.capabilities.supports_structured_output is True
     assert d.capabilities.supports_cancel is True
     assert d.capabilities.requires_image_feature is None
 
