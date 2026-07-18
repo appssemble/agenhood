@@ -25,7 +25,7 @@ def task_body(task_id, driver, *, turns=None, output=None, tools=None,
             "prompt": script_prompt(turns=turns, **flags),
             "output": output or {"type": "text"},
         },
-        "config": {"driver": driver, "model": "stub-model",
+        "config": {"driver": driver, "model": "claude-stub-model",
                    "tools": tools if tools is not None
                    else ["write_file", "read_file", "list_files"]},
         "limits": limits or {"max_iterations": 8, "max_tokens": 1_000_000,
