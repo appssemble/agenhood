@@ -63,6 +63,7 @@ One identical API, multiple execution engines, hot-swappable per agent via a dri
 | **Opencode** | An embedded coding harness that manages its own tools and context. |
 | **Codex** | OpenAI's Codex agent, with skill support. |
 | **Claude Code** | Anthropic's agent via `claude -p`, including subscription OAuth ("Connect Claude Code"). |
+| **API** | A single direct LLM call per task — no tools, no workspace writes. Built for pure-inference workloads (classify/extract/rewrite) at high parallelism (worker cap 32). |
 
 New brains drop in without changing the public API.
 
