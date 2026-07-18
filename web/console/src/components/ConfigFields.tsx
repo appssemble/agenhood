@@ -55,12 +55,13 @@ export function ConfigFields({
   variantWarning?: ReactNode;
 }) {
   const toolSpecs: ToolSpec[] = driverMeta?.available_tool_specs ?? [];
+  const isApiDriver = value.driver === "api";
   const editableTools = driverMeta?.driver_template.tools_user_editable ?? true;
   const supportsContext = driverMeta?.driver_template.supports_context ?? true;
   const legacySkillDriver =
     value.driver === "opencode" || value.driver === "codex" || value.driver === "claude-code";
-  const supportsSkills = driverMeta?.capabilities?.supports_skills ?? legacySkillDriver;
-  const supportsMcp = driverMeta?.capabilities?.supports_mcp ?? legacySkillDriver;
+  const supportsSkills = !isApiDriver && (driverMeta?.capabilities?.supports_skills ?? legacySkillDriver);
+  const supportsMcp = !isApiDriver && (driverMeta?.capabilities?.supports_mcp ?? legacySkillDriver);
 
   function toggleTool(name: string) {
     const has = value.tools.includes(name);
@@ -127,8 +128,8 @@ export function ConfigFields({
         )}
       </SectionCard>
 
-      {/* Tools — driver-aware */}
-      {editableTools ? (
+      {/* Tools — driver-aware; hidden outright for the api driver, which has no tools */}
+      {!isApiDriver && (editableTools ? (
         <SectionCard icon={Icons.Wrench} title="Tools" hint={`${value.driver} driver · ${toolSpecs.length} available`}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
             {toolSpecs.map((t) => (
@@ -152,7 +153,7 @@ export function ConfigFields({
         <Note tone="default">
           The <span className="mono">{value.driver}</span> driver manages its own tools and context, so the tool picker is hidden.
         </Note>
-      )}
+      ))}
 
       {/* Standing context — only when driver supports it */}
       {supportsContext && (
