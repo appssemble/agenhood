@@ -11,7 +11,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -25,7 +26,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -39,7 +41,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -53,7 +56,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -67,7 +71,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -81,7 +86,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -95,7 +101,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -109,7 +116,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -123,7 +131,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -137,7 +146,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -151,7 +161,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -165,7 +176,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -179,7 +191,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -193,7 +206,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -207,7 +221,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -220,7 +235,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -233,7 +249,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -246,7 +263,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -259,7 +277,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -272,7 +291,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -285,7 +305,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -298,7 +319,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -311,7 +333,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -324,7 +347,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -337,7 +361,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -350,7 +375,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -363,7 +389,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -375,7 +402,9 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode"
+        "opencode",
+        "codex",
+        "api"
       ]
     },
     {
@@ -388,7 +417,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -401,7 +431,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -414,7 +445,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -427,7 +459,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -440,7 +473,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -452,7 +486,9 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode"
+        "opencode",
+        "codex",
+        "api"
       ]
     },
     {
@@ -464,7 +500,9 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode"
+        "opencode",
+        "codex",
+        "api"
       ]
     },
     {
@@ -476,7 +514,9 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode"
+        "opencode",
+        "codex",
+        "api"
       ]
     },
     {
@@ -489,7 +529,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -502,7 +543,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -514,7 +556,9 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode"
+        "opencode",
+        "codex",
+        "api"
       ]
     },
     {
@@ -527,7 +571,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -540,7 +585,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -552,7 +598,9 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode"
+        "opencode",
+        "codex",
+        "api"
       ]
     },
     {
@@ -566,7 +614,8 @@
       ],
       "drivers": [
         "opencode",
-        "codex"
+        "codex",
+        "api"
       ]
     },
     {
@@ -580,8 +629,8 @@
       ],
       "drivers": [
         "opencode",
-        "codex",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -590,12 +639,12 @@
       "label": "gpt-5.4-fast",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -604,13 +653,12 @@
       "label": "gpt-5.4-mini",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "codex",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -619,12 +667,12 @@
       "label": "gpt-5.4-mini-fast",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -637,7 +685,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -650,7 +699,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -659,13 +709,12 @@
       "label": "gpt-5.5",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "codex",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -674,12 +723,12 @@
       "label": "gpt-5.5-fast",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -688,11 +737,13 @@
       "label": "gpt-5.5-pro",
       "category": "api_key",
       "credentials": [
-        "openai_api_key"
+        "openai_api_key",
+        "openai_subscription"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -701,12 +752,12 @@
       "label": "gpt-5.6",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -715,12 +766,12 @@
       "label": "gpt-5.6-fast",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -729,13 +780,12 @@
       "label": "gpt-5.6-luna",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "codex",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -744,12 +794,12 @@
       "label": "gpt-5.6-luna-fast",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -758,12 +808,12 @@
       "label": "gpt-5.6-luna-pro",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -772,12 +822,12 @@
       "label": "gpt-5.6-pro",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -786,13 +836,12 @@
       "label": "gpt-5.6-sol",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "codex",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -801,12 +850,12 @@
       "label": "gpt-5.6-sol-fast",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -815,12 +864,12 @@
       "label": "gpt-5.6-sol-pro",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -829,13 +878,12 @@
       "label": "gpt-5.6-terra",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "codex",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -844,12 +892,12 @@
       "label": "gpt-5.6-terra-fast",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -858,12 +906,12 @@
       "label": "gpt-5.6-terra-pro",
       "category": "api_key",
       "credentials": [
-        "openai_api_key",
-        "openai_subscription"
+        "openai_api_key"
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -889,7 +937,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -902,7 +951,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -915,7 +965,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -928,7 +979,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -941,7 +993,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -954,7 +1007,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -967,7 +1021,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -980,7 +1035,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -993,7 +1049,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1006,7 +1063,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1019,7 +1077,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1032,7 +1091,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1045,7 +1105,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1058,7 +1119,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1071,7 +1133,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1084,7 +1147,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1097,7 +1161,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1110,7 +1175,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1123,7 +1189,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1136,7 +1203,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
@@ -1149,7 +1217,8 @@
       ],
       "drivers": [
         "opencode",
-        "vanilla"
+        "vanilla",
+        "api"
       ]
     },
     {
