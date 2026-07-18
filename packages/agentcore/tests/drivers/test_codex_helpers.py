@@ -300,3 +300,21 @@ def test_write_agents_md_removes_stale_file_when_prompt_empty(tmp_path):
     import pathlib
     assert write_agents_md(str(tmp_path), "") is None
     assert not pathlib.Path(first).exists()
+
+
+def test_stdin_prompt_prefixes_standing_instructions():
+    from agentcore.drivers.codex import stdin_prompt
+
+    out = stdin_prompt("summarize the file", "You are a security auditor.")
+    assert out.startswith("<standing_instructions>\n")
+    assert "You are a security auditor." in out
+    assert out.index("You are a security auditor.") < out.index("summarize the file")
+    assert out.endswith("summarize the file")
+    assert "</standing_instructions>" in out
+
+
+def test_stdin_prompt_without_system_prompt_is_task_prompt_verbatim():
+    from agentcore.drivers.codex import stdin_prompt
+
+    assert stdin_prompt("just the task", "") == "just the task"
+    assert stdin_prompt("just the task", None) == "just the task"

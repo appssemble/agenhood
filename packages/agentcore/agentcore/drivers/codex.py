@@ -121,6 +121,24 @@ def write_agents_md(workspace: str, system_prompt: str) -> str | None:
     return str(path)
 
 
+def stdin_prompt(task_prompt: str, system_prompt: str | None) -> str:
+    """Compose the stdin payload, reinforcing the configured system prompt.
+
+    AGENTS.md (write_agents_md) is codex's official channel but lands as
+    user-level context below the harness system prompt; prefixing the same
+    instructions on every task's prompt doubles their salience so they are
+    not drowned out on long tasks. No prompt → task prompt verbatim.
+    """
+    if not system_prompt:
+        return task_prompt
+    return (
+        "<standing_instructions>\n"
+        f"{system_prompt}\n"
+        "</standing_instructions>\n\n"
+        f"{task_prompt}"
+    )
+
+
 def build_command(
     *, workspace: str, model: str, ephemeral: bool = True, effort: str | None = None
 ) -> list[str]:
@@ -492,7 +510,8 @@ class CodexDriver:
         try:
             # Feed the prompt on stdin, then close so codex can start.
             if proc.stdin is not None:
-                proc.stdin.write(task.prompt.encode("utf-8"))
+                payload = stdin_prompt(task.prompt, config.system_prompt)
+                proc.stdin.write(payload.encode("utf-8"))
                 await proc.stdin.drain()
                 proc.stdin.close()
 

@@ -131,7 +131,9 @@ async def test_success_emits_result_and_tokens(monkeypatch, tmp_path):
 
     assert result.success
     assert result.output == "all done"
-    assert proc.stdin.data == b"do it"
+    # cfg() sets system_prompt="P", which now rides stdin as standing
+    # instructions above the task prompt (codex hardening).
+    assert proc.stdin.data == b"<standing_instructions>\nP\n</standing_instructions>\n\ndo it"
     types = [t for t, _ in events]
     assert types[0] == "status_change"
     assert "codex_event" in types
@@ -446,3 +448,38 @@ async def test_run_materializes_configured_system_prompt(monkeypatch, tmp_path):
     import pathlib
     agents = pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md"
     assert agents.read_text() == "You are a security auditor."
+
+
+@pytest.mark.asyncio
+async def test_run_prefixes_system_prompt_on_stdin(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    proc = FakeProc([])
+    patch_proc(monkeypatch, proc)
+    events, emit = collector()
+    config = AgentConfig(
+        driver="codex", model="gpt-5-codex",
+        system_prompt="Answer tersely.", tools=[],
+    )
+    await CodexDriver().run(
+        task=TaskBody(prompt="what is DNS?"), config=config, limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    sent = proc.stdin.data.decode()
+    assert sent.startswith("<standing_instructions>\nAnswer tersely.")
+    assert sent.endswith("what is DNS?")
+
+
+@pytest.mark.asyncio
+async def test_run_stdin_is_bare_prompt_without_system_prompt(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    proc = FakeProc([])
+    patch_proc(monkeypatch, proc)
+    events, emit = collector()
+    config = AgentConfig(driver="codex", model="gpt-5-codex", system_prompt="", tools=[])
+    await CodexDriver().run(
+        task=TaskBody(prompt="what is DNS?"), config=config, limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert proc.stdin.data.decode() == "what is DNS?"
