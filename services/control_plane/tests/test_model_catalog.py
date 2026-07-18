@@ -30,11 +30,13 @@ def test_classifies_free_anthropic_openai_subscription() -> None:
     assert set(gpt4o["credentials"]) == {"openai_api_key", "openai_subscription"}
     assert gpt4o["drivers"] == ["opencode", "vanilla", "api"]
 
-    # openai only in sub → subscription. A *-codex* model keeps the codex driver.
+    # openai only in sub → subscription. A *-codex* model keeps the codex driver,
+    # but loses vanilla and api — both use the chat-completions adapter, which
+    # can't run this Responses-only codex-family model.
     codex = entries["gpt-5.3-codex-spark"]
     assert codex["category"] == "subscription"
     assert codex["credentials"] == ["openai_subscription"]
-    assert codex["drivers"] == ["opencode", "codex", "api"]
+    assert codex["drivers"] == ["opencode", "codex"]
 
 
 def test_label_is_derived_from_id() -> None:

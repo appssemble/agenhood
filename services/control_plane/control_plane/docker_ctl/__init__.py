@@ -203,13 +203,30 @@ async def run_from_volume(
         # failed with EPERM, crashing the container on boot.
         from control_plane.config import Settings  # noqa: PLC0415
         from control_plane.docker_ctl.provision import build_run_kwargs  # noqa: PLC0415
+        from control_plane.tenant_defaults import (  # noqa: PLC0415
+            default_limits,
+            worker_cap_for_driver,
+        )
 
         # build_run_kwargs needs Settings for the registry prefix + resource caps so
         # recovered/rehydrated agents resolve the SAME (registry-prefixed) image ref
         # as initial provisioning. Fall back to env defaults when a caller did not
         # thread settings — preserves the legacy bare-local "agent-runtime:<tag>".
         _settings = settings if settings is not None else Settings.from_env()
-        max_workers = int(row.get("max_concurrent_tasks") or 1)
+        # The containers table has no max_concurrent_tasks column, so the worker
+        # cap can't be read back off the row directly. Derive it the same way
+        # initial provisioning does: driver-aware, via worker_cap_for_driver.
+        # NOTE: this uses PLATFORM defaults, not the tenant's *persisted*
+        # overrides (e.g. a tenant-specific api_driver_max_workers) — those
+        # live in the tenants table and are not reachable from this function's
+        # callers (rehydrate/recover/bring_to_running in lifecycle.py) without
+        # threading a DB session through. That's strictly better than the prior
+        # unconditional fallback to 1, but a tenant with a frozen override
+        # narrower/wider than the platform default will see the platform
+        # default on rehydrate/recover instead of their override.
+        config = row.get("config") or {}
+        driver = str(config.get("driver", "")) if isinstance(config, dict) else ""
+        max_workers = worker_cap_for_driver(default_limits(), driver)
         kwargs: dict[str, object] = build_run_kwargs(
             settings=_settings,
             docker_name=docker_name,

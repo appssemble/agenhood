@@ -15,6 +15,10 @@ const opencodeMeta = {
   driver_template: { driver: "opencode", default_system_prompt: "", available_tools: [], tools_user_editable: false, supports_context: false },
   available_tool_specs: [],
 } as unknown as Template;
+const apiMeta = {
+  driver_template: { driver: "api", default_system_prompt: "", available_tools: [], tools_user_editable: false, supports_context: false },
+  available_tool_specs: [],
+} as unknown as Template;
 
 // Builds a vanillaMeta variant carrying explicit capability flags, so tests can
 // exercise the capability-driven gate independent of the legacy driver-name fallback.
@@ -66,6 +70,21 @@ describe("ConfigFields", () => {
     await waitFor(() => expect(screen.getByText(/manages its own tools and context/i)).toBeInTheDocument());
     expect(screen.queryByLabelText("read_file")).not.toBeInTheDocument();
     expect(screen.getByLabelText("git-release")).toBeInTheDocument();
+  });
+
+  it("hides tools, skills, and MCP sections for the api driver", async () => {
+    models();
+    const api = { ...baseValue, driver: "api" };
+    renderWithProviders(
+      <ConfigFields value={api} driverMeta={apiMeta} enabledSkills={[{ id: "skl_1", name: "git-release", description: "", enabled: true, source_type: "inline", created_at: null, updated_at: null }]} enabledMcpServers={[{ id: "mcp_1", name: "linear", description: "Linear MCP", url: "https://m", auth_type: "bearer" as const, auth_header_name: null, secret_set: true, enabled: true, created_at: null, updated_at: null }]} onPatch={vi.fn()} />,
+    );
+    await screen.findByText("Model");
+    expect(screen.queryByText("Tools")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("read_file")).not.toBeInTheDocument();
+    expect(screen.queryByText("Skills")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("git-release")).not.toBeInTheDocument();
+    expect(screen.queryByText("MCP servers")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("linear")).not.toBeInTheDocument();
   });
 
   it("toggles an MCP server into config.mcp_servers", async () => {

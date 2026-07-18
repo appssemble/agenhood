@@ -402,8 +402,7 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode",
-        "api"
+        "opencode"
       ]
     },
     {
@@ -485,8 +484,7 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode",
-        "api"
+        "opencode"
       ]
     },
     {
@@ -498,8 +496,7 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode",
-        "api"
+        "opencode"
       ]
     },
     {
@@ -511,8 +508,7 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode",
-        "api"
+        "opencode"
       ]
     },
     {
@@ -552,8 +548,7 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode",
-        "api"
+        "opencode"
       ]
     },
     {
@@ -593,8 +588,7 @@
         "openai_api_key"
       ],
       "drivers": [
-        "opencode",
-        "api"
+        "opencode"
       ]
     },
     {
@@ -608,8 +602,7 @@
       ],
       "drivers": [
         "opencode",
-        "codex",
-        "api"
+        "codex"
       ]
     },
     {

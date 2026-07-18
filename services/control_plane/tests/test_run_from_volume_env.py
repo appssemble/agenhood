@@ -84,6 +84,52 @@ async def test_run_from_volume_extra_env_overrides() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_from_volume_derives_worker_cap_from_driver_api() -> None:
+    """Rehydrated/recovered containers must get the driver-aware worker cap,
+    not a hardcoded 1. The containers table has no max_concurrent_tasks
+    column, so the previous `int(row.get("max_concurrent_tasks") or 1)` always
+    fell back to 1 — catastrophic for the api driver, whose whole point is a
+    much higher concurrency cap (32)."""
+    client = _CapturingClient()
+    row = {
+        "id": "con_api",
+        "docker_name": "agent-c-api",
+        "volume_name": "vol_api",
+        "image_tag": "v0.2.0",
+        "shim_token": "tok",
+        "tenant_id": "ten_api",
+        "config": {"driver": "api"},
+    }
+
+    await docker_ctl.run_from_volume(client, row, network="agent-runtime-internal")
+
+    env = client.containers.kwargs["environment"]
+    assert env["SHIM_MAX_WORKERS"] == "32"
+
+
+@pytest.mark.asyncio
+async def test_run_from_volume_derives_worker_cap_from_driver_vanilla() -> None:
+    """A non-api driver row rehydrates with the default per-container cap (4),
+    derived the same way — via worker_cap_for_driver — rather than the
+    previous silent fallback to 1."""
+    client = _CapturingClient()
+    row = {
+        "id": "con_vanilla",
+        "docker_name": "agent-c-vanilla",
+        "volume_name": "vol_vanilla",
+        "image_tag": "v0.2.0",
+        "shim_token": "tok",
+        "tenant_id": "ten_vanilla",
+        "config": {"driver": "vanilla"},
+    }
+
+    await docker_ctl.run_from_volume(client, row, network="agent-runtime-internal")
+
+    env = client.containers.kwargs["environment"]
+    assert env["SHIM_MAX_WORKERS"] == "4"
+
+
+@pytest.mark.asyncio
 async def test_run_from_volume_uses_registry_prefixed_image() -> None:
     """Recovered/rehydrated agents must resolve the SAME registry-prefixed image
     ref as fresh provisioning (build_run_kwargs sources the prefix from settings),

@@ -166,13 +166,16 @@ def build_catalog_entries(
                 category, creds = "api_key", ["openai_api_key"]
 
         drivers = _drivers_for(provider, entry_id, codex_set)
-        if provider == "openai" and "vanilla" in drivers and (
+        if provider == "openai" and (
             "openai_api_key" not in creds or "codex" in entry_id.lower()
         ):
-            # vanilla's chat-completions adapter cannot run Responses-only
-            # codex-family models, and a subscription-only model has no API
-            # key to hand it.
-            drivers.remove("vanilla")
+            # vanilla's and api's chat-completions adapters cannot run
+            # Responses-only codex-family models, and a subscription-only
+            # model has no API key to hand either driver.
+            if "vanilla" in drivers:
+                drivers.remove("vanilla")
+            if "api" in drivers:
+                drivers.remove("api")
         out.append({
             "id": entry_id,
             "provider": provider,

@@ -22,7 +22,9 @@ def test_codex_driver_uses_authoritative_list_not_substring():
     by_id = {e["id"]: e for e in entries}
 
     assert "codex" not in by_id["gpt-5.3-codex"]["drivers"]
-    assert by_id["gpt-5.3-codex"]["drivers"] == ["opencode", "api"]
+    # api's chat-completions adapter can't run this Responses-only
+    # codex-family model either — same restriction as vanilla.
+    assert by_id["gpt-5.3-codex"]["drivers"] == ["opencode"]
     for mid in ("gpt-5.4", "gpt-5.5", "gpt-5.3-codex-spark"):
         assert "codex" in by_id[mid]["drivers"]
         assert "opencode" in by_id[mid]["drivers"]
