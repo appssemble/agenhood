@@ -11,11 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from typing import Any
-
-import jsonschema
 
 from agentcore.drivers.base import (
     DriverCapabilities,
@@ -34,6 +31,7 @@ from agentcore.models import (
     TaskBody,
     TaskResult,
 )
+from agentcore.structured_output import MAX_ATTEMPTS, parse_and_validate
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a fast, precise assistant. Answer the request directly and "
@@ -41,27 +39,6 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 MAX_TOKENS_PER_CALL = 4096
-MAX_ATTEMPTS = 3  # 1 initial call + 2 structured-output retries
-
-_FENCE_RE = re.compile(r"^```[a-zA-Z]*\n|\n?```$")
-
-
-def _parse_json_object(text: str) -> tuple[Any, str | None]:
-    """Extract and parse the first JSON object in ``text``.
-
-    Returns (parsed, None) on success or (None, error) on failure. Tolerates
-    code fences and prose around the object: parses from the first ``{`` to
-    the last ``}``.
-    """
-    cleaned = _FENCE_RE.sub("", text.strip()).strip()
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end <= start:
-        return None, "no JSON object found in the response"
-    try:
-        return json.loads(cleaned[start : end + 1]), None
-    except ValueError as e:
-        return None, f"invalid JSON: {e}"
 
 
 def _system_prompt(config: AgentConfig, task: TaskBody) -> str:
@@ -245,20 +222,11 @@ class ApiDriver:
                     "completed", None, output={"success": True, "output": text}
                 )
 
-            parsed, parse_err = _parse_json_object(text)
+            parsed, parse_err = parse_and_validate(text, task.output.json_schema or {})
             if parse_err is None:
-                try:
-                    jsonschema.validate(
-                        instance=parsed, schema=task.output.json_schema or {}
-                    )
-                except jsonschema.ValidationError as e:
-                    parse_err = (
-                        f"output does not match the required schema: {e.message}"
-                    )
-                else:
-                    return await _terminal(
-                        "completed", None, output={"success": True, "output": parsed}
-                    )
+                return await _terminal(
+                    "completed", None, output={"success": True, "output": parsed}
+                )
             messages.append(
                 {
                     "role": "user",

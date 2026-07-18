@@ -13,8 +13,6 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-import jsonschema
-
 from agentcore.drivers.base import (
     DriverCapabilities,
     DriverTemplate,
@@ -34,6 +32,7 @@ from agentcore.models import (
     TaskBody,
     TaskResult,
 )
+from agentcore.structured_output import validate_value
 from agentcore.tools.base import TOOLS, Tool, ToolContext, ToolResult, ToolSpec
 
 # ---------------------------------------------------------------------------
@@ -95,10 +94,9 @@ def resolve_output(
 
     if task.output.type == "structured":
         schema = task.output.json_schema or {}
-        try:
-            jsonschema.validate(instance=output, schema=schema)
-        except jsonschema.ValidationError as e:
-            return False, f"output does not match the required schema: {e.message}"
+        err = validate_value(output, schema)
+        if err is not None:
+            return False, err
         return True, {"success": True, "output": output}
 
     if task.output.type == "files":
