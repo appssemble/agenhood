@@ -83,6 +83,18 @@ def test_parse_valid_json_failing_schema():
     assert err is not None and "does not match the required schema" in err
 
 
+def test_parse_object_after_bracketed_citation():
+    parsed, err = parse_and_validate('Sources: [1] {"name": "x"}', OBJ_SCHEMA)
+    assert err is None
+    assert parsed == {"name": "x"}
+
+
+def test_parse_object_after_bracketed_log_prefix():
+    parsed, err = parse_and_validate('[INFO] done. {"name": "x"}', OBJ_SCHEMA)
+    assert err is None
+    assert parsed == {"name": "x"}
+
+
 # ---- native_subset_compatible ----------------------------------------------
 
 def test_native_subset_accepts_strict_object():
@@ -158,6 +170,29 @@ def test_native_subset_tolerates_format_annotation():
         "additionalProperties": False,
     }
     assert native_subset_compatible(schema) is True
+
+
+def test_native_subset_rejects_type_list():
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": ["object", "null"],
+                             "properties": {"b": {"type": "string"}},
+                             "required": ["b"], "additionalProperties": False}},
+        "required": ["a"],
+        "additionalProperties": False,
+    }
+    assert native_subset_compatible(schema) is False
+
+
+def test_native_subset_rejects_typeless_properties_node():
+    schema = {
+        "type": "object",
+        "properties": {"a": {"properties": {"b": {"type": "string"}},
+                             "required": ["b"], "additionalProperties": False}},
+        "required": ["a"],
+        "additionalProperties": False,
+    }
+    assert native_subset_compatible(schema) is False
 
 
 # ---- prompt helpers --------------------------------------------------------

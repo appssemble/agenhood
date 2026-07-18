@@ -50,25 +50,59 @@ def validate_value(value: Any, schema: dict[str, Any]) -> str | None:
     return None
 
 
+def _extract_region(cleaned: str, open_ch: str, close_ch: str) -> str | None:
+    """Slice ``cleaned`` from the first ``open_ch`` to the last ``close_ch``.
+
+    Returns ``None`` when ``open_ch`` isn't present at all. When ``close_ch``
+    is missing, falls back to the end of the string (so a truncated value
+    still reaches ``json.loads`` and produces an "invalid JSON" error rather
+    than being silently dropped).
+    """
+    start = cleaned.find(open_ch)
+    if start == -1:
+        return None
+    end = cleaned.rfind(close_ch)
+    if end == -1:
+        end = len(cleaned) - 1
+    return cleaned[start : end + 1]
+
+
 def parse_and_validate(text: str, schema: dict[str, Any]) -> tuple[Any, str | None]:
     """Extract the first JSON value in ``text`` and validate it.
 
     Tolerates code fences and prose around the value; handles both object
-    (``{...}``) and array (``[...]``) roots. Returns ``(parsed, None)`` on
-    success or ``(None, error)`` on failure.
+    (``{...}``) and array (``[...]``) roots. Object extraction is tried
+    first (first ``{`` to last ``}``) so bracketed prose ahead of the JSON —
+    citations like ``[1]``, log prefixes like ``[INFO]`` — doesn't hijack
+    extraction; only when that yields no region or invalid JSON does this
+    fall back to array extraction (first ``[`` to last ``]``). Returns
+    ``(parsed, None)`` on success or ``(None, error)`` on failure.
     """
     cleaned = _FENCE_RE.sub("", text.strip()).strip()
-    starts = [i for i in (cleaned.find("{"), cleaned.find("[")) if i != -1]
-    if not starts:
-        return None, "no JSON value found in the response"
-    start = min(starts)
-    end = cleaned.rfind("}" if cleaned[start] == "{" else "]")
-    if end == -1:
-        end = len(cleaned) - 1
-    try:
-        parsed = json.loads(cleaned[start : end + 1])
-    except ValueError as e:
-        return None, f"invalid JSON: {e}"
+
+    obj_region = _extract_region(cleaned, "{", "}")
+    parsed: Any = None
+    err: str | None = None
+    if obj_region is not None:
+        try:
+            parsed = json.loads(obj_region)
+        except ValueError as e:
+            err = f"invalid JSON: {e}"
+
+    if parsed is None:
+        arr_region = _extract_region(cleaned, "[", "]")
+        if arr_region is not None:
+            try:
+                parsed = json.loads(arr_region)
+                err = None
+            except ValueError as e:
+                if err is None:
+                    err = f"invalid JSON: {e}"
+        elif obj_region is None:
+            return None, "no JSON value found in the response"
+
+    if parsed is None:
+        return None, err
     err = validate_value(parsed, schema)
     if err is not None:
         return None, err
@@ -82,7 +116,13 @@ def _node_ok(node: Any) -> bool:
         return True
     if any(key not in _NATIVE_ALLOWED_KEYS for key in node):
         return False
-    if node.get("type") == "object":
+    object_like = node.get("type") == "object" or "properties" in node
+    if object_like:
+        if node.get("type") != "object":
+            # A list type (e.g. ["object", "null"]) or a missing "type" key
+            # next to "properties" is unsure, not confirmed non-object —
+            # treat conservatively as not native-compatible.
+            return False
         props = node.get("properties", {})
         if node.get("additionalProperties") is not False:
             return False

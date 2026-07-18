@@ -357,5 +357,5 @@ def test_write_output_schema(tmp_path):
     from agentcore.drivers.codex import write_output_schema
 
     path = write_output_schema(str(tmp_path), {"type": "object"})
-    assert json.loads(open(path).read()) == {"type": "object"}
+    assert json.loads(Path(path).read_text()) == {"type": "object"}
     assert path.endswith("output-schema.json")
