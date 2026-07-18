@@ -21,20 +21,20 @@ def test_classifies_free_anthropic_openai_subscription() -> None:
     assert ant["category"] == "api_key"
     assert ant["credentials"] == ["anthropic_api_key", "anthropic_subscription"]
     # Full-name anthropic models never offer claude-code (alias-only; see below).
-    assert ant["drivers"] == ["opencode", "vanilla"]
+    assert ant["drivers"] == ["opencode", "vanilla", "api"]
 
     # openai in BOTH base and sub → api_key category, both credential methods.
     # gpt-4o is NOT a Codex-tuned model, so codex is filtered out of its drivers.
     gpt4o = entries["gpt-4o"]
     assert gpt4o["category"] == "api_key"
     assert set(gpt4o["credentials"]) == {"openai_api_key", "openai_subscription"}
-    assert gpt4o["drivers"] == ["opencode", "vanilla"]
+    assert gpt4o["drivers"] == ["opencode", "vanilla", "api"]
 
     # openai only in sub → subscription. A *-codex* model keeps the codex driver.
     codex = entries["gpt-5.3-codex-spark"]
     assert codex["category"] == "subscription"
     assert codex["credentials"] == ["openai_subscription"]
-    assert codex["drivers"] == ["opencode", "codex"]
+    assert codex["drivers"] == ["opencode", "codex", "api"]
 
 
 def test_label_is_derived_from_id() -> None:
@@ -110,7 +110,7 @@ def test_go_ids_classified_as_opencode_api_key() -> None:
     for e in go:
         assert e["category"] == "api_key"
         assert e["credentials"] == ["opencode_api_key"]
-        assert e["drivers"] == ["opencode", "vanilla"]
+        assert e["drivers"] == ["opencode", "vanilla", "api"]
 
 
 def test_paid_zen_requires_opencode_key_free_zen_stays_keyless() -> None:
@@ -170,7 +170,7 @@ def test_opencode_go_models_gain_vanilla():
                                                     "opencode-go/qwen3.7-max"])
     for mid in ("opencode-go/glm-5.2", "opencode-go/qwen3.7-max"):
         e = next(m for m in entries if m["id"] == mid)
-        assert e["drivers"] == ["opencode", "vanilla"]
+        assert e["drivers"] == ["opencode", "vanilla", "api"]
         assert e["credentials"] == ["opencode_api_key"]
 
 

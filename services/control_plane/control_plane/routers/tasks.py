@@ -66,6 +66,7 @@ from control_plane.schemas import SessionOut, TaskOut, TaskSubmitResponse
 from control_plane.shim_client import ShimClient, ShimError, ShimTooManyTasks
 from control_plane.skills_service import resolve_skills_for_request
 from control_plane.sse import format_sse, parse_event_line, should_forward
+from control_plane.tenant_defaults import worker_cap_for_driver
 
 router = APIRouter(tags=["Tasks"])
 
@@ -609,7 +610,7 @@ async def submit_task_core(
             )
         )
     ).scalar_one()
-    if inflight >= tenant_limits.get("max_concurrent_tasks_per_container", 4):
+    if inflight >= worker_cap_for_driver(tenant_limits, config.driver):
         raise too_many_tasks()
 
     # Credential lookup + decrypt (spec §4.5). Never persisted.

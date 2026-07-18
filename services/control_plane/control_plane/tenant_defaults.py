@@ -8,6 +8,9 @@ _DEFAULTS: dict = {  # type: ignore[type-arg]
     "max_running_containers": 30,
     "max_users": 25,
     "max_concurrent_tasks_per_container": 4,
+    # Worker cap for containers running the `api` driver (single-call, no
+    # tools/subprocesses — safe at much higher concurrency than the default).
+    "api_driver_max_workers": 32,
     "max_workspace_volume_size_mb": 10240,
     "default_task_timeout_seconds": 1800,
     "default_max_iterations": 30,
@@ -15,7 +18,7 @@ _DEFAULTS: dict = {  # type: ignore[type-arg]
     "idle_pause_minutes": 20,
     "archive_after_hours": 72,
     "reclaim_after_days": 30,
-    "allowed_drivers": ["vanilla", "opencode", "codex", "claude-code"],
+    "allowed_drivers": ["vanilla", "opencode", "codex", "claude-code", "api"],
 }
 
 
@@ -50,3 +53,14 @@ def persisted_limits(overrides: dict | None) -> dict:  # type: ignore[type-arg]
     if not (overrides and "allowed_drivers" in overrides):
         stored.pop("allowed_drivers", None)
     return stored
+
+
+def worker_cap_for_driver(limits: dict, driver: str) -> int:  # type: ignore[type-arg]
+    """Per-container concurrent-task cap, driver-aware.
+
+    The api driver runs single-call tasks with no subprocesses or workspace
+    writes, so it gets its own (much higher) default cap.
+    """
+    if driver == "api":
+        return int(limits.get("api_driver_max_workers", 32))
+    return int(limits.get("max_concurrent_tasks_per_container", 4))

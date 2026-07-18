@@ -41,9 +41,9 @@ _API_KEY_METHOD = {
 # full-name anthropic models.
 _PROVIDER_DRIVERS = {
     "opencode": ["opencode"],          # Zen: free (-free suffix) or keyed
-    "opencode-go": ["opencode", "vanilla"],  # Go plan: keyed (same key as Zen)
-    "anthropic": ["opencode", "vanilla"],
-    "openai": ["opencode", "codex", "vanilla"],
+    "opencode-go": ["opencode", "vanilla", "api"],  # Go plan: keyed (same key as Zen)
+    "anthropic": ["opencode", "vanilla", "api"],
+    "openai": ["opencode", "codex", "vanilla", "api"],
 }
 
 # The only model ids the claude-code driver offers. The `claude` CLI resolves

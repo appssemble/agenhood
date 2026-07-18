@@ -52,7 +52,7 @@ from control_plane.schemas import (
     ResourceLimitsIn,
 )
 from control_plane.skills_service import filter_known_skill_ids
-from control_plane.tenant_defaults import merge_limits
+from control_plane.tenant_defaults import merge_limits, worker_cap_for_driver
 from control_plane.variants import assert_config_runnable_on_variant
 
 
@@ -410,7 +410,7 @@ async def create_container(
 
     cid = new_container_id()
     image_tag = body.image_tag or settings.agent_image_tag
-    max_workers = int(limits.get("max_concurrent_tasks_per_container", 4))
+    max_workers = worker_cap_for_driver(limits, config.driver)
     reuse_volume = body.volume_id
 
     # All statements so far are reads (limits, caps, external_id). Commit ends the

@@ -26,6 +26,7 @@ SEED_TENANT_LIMITS: dict[str, Any] = {
     "max_running_containers": 30,
     "max_users": 25,
     "max_concurrent_tasks_per_container": 4,
+    "api_driver_max_workers": 32,
     "max_workspace_volume_size_mb": 10240,
     "default_task_timeout_seconds": 1800,
     "default_max_iterations": 30,
