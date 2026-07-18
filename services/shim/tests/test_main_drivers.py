@@ -9,9 +9,17 @@ def test_build_drivers_includes_all_launch_drivers() -> None:
     from shim.main import build_drivers
 
     drivers = build_drivers()
-    assert set(drivers) == {"vanilla", "opencode", "codex", "claude-code"}
+    assert set(drivers) == {"vanilla", "opencode", "codex", "claude-code", "api"}
     assert drivers["codex"].name == "codex"
     assert drivers["claude-code"].name == "claude-code"
+
+
+def test_build_drivers_includes_api():
+    from shim.main import build_drivers
+
+    drivers = build_drivers()
+    assert "api" in drivers
+    assert drivers["api"].name == "api"
 
 
 def test_build_drivers_vanilla_router_honors_env(monkeypatch) -> None:

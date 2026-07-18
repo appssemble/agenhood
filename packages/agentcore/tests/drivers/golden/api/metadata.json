@@ -1,0 +1,18 @@
+{
+  "capabilities": {
+    "requires_image_feature": null,
+    "supports_cancel": true,
+    "supports_mcp": false,
+    "supports_skills": false,
+    "supports_structured_output": true,
+    "supports_tools": false
+  },
+  "default_template": {
+    "available_tools": [],
+    "default_system_prompt": "You are a fast, precise assistant. Answer the request directly and completely in a single response. Do not narrate your process.",
+    "driver": "api",
+    "supports_context": true,
+    "tools_user_editable": false
+  },
+  "name": "api"
+}

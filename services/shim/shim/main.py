@@ -7,6 +7,7 @@ import os
 import uvicorn
 
 import agentcore.tools  # noqa: F401 — side-effect: registers all built-in tools
+from agentcore.drivers.api import ApiDriver
 from agentcore.drivers.base import Driver
 from agentcore.drivers.claude_code import ClaudeCodeDriver
 from agentcore.drivers.codex import CodexDriver
@@ -30,6 +31,7 @@ def build_drivers() -> dict[str, Driver]:
     )
     return {
         "vanilla": VanillaDriver(llm=AnthropicClient(base_url=base_url), router=router),
+        "api": ApiDriver(llm=AnthropicClient(base_url=base_url), router=router),
         # opencode + codex + claude-code shell out to their CLI binaries
         # (no LLM client needed).
         "opencode": OpencodeDriver(),

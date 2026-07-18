@@ -1,0 +1,29 @@
+[
+  [
+    "task_started",
+    {
+      "driver": "api",
+      "model": "m-test"
+    }
+  ],
+  [
+    "log",
+    {
+      "data": {},
+      "level": "warn",
+      "message": "cancelled"
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": {
+        "code": "cancelled",
+        "message": "cancelled"
+      },
+      "from": "running",
+      "result": null,
+      "to": "cancelled"
+    }
+  ]
+]

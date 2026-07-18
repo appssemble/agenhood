@@ -1,0 +1,50 @@
+[
+  [
+    "task_started",
+    {
+      "driver": "api",
+      "model": "m-test"
+    }
+  ],
+  [
+    "iteration_started",
+    {
+      "iteration": 1
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 10,
+      "tokens_out": 3
+    }
+  ],
+  [
+    "assistant_message",
+    {
+      "content": [
+        {
+          "id": "tu1",
+          "input": {
+            "output": "all done",
+            "success": true
+          },
+          "name": "done",
+          "type": "tool_use"
+        }
+      ]
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "running",
+      "result": {
+        "output": "",
+        "success": true
+      },
+      "to": "completed"
+    }
+  ]
+]

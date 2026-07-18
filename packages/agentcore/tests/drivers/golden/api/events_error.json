@@ -1,0 +1,45 @@
+[
+  [
+    "task_started",
+    {
+      "driver": "api",
+      "model": "m-test"
+    }
+  ],
+  [
+    "iteration_started",
+    {
+      "iteration": 1
+    }
+  ],
+  [
+    "token_update",
+    {
+      "tokens_in": 10,
+      "tokens_out": 10
+    }
+  ],
+  [
+    "assistant_message",
+    {
+      "content": [
+        {
+          "text": "thinking",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  [
+    "status_change",
+    {
+      "error": null,
+      "from": "running",
+      "result": {
+        "output": "thinking",
+        "success": true
+      },
+      "to": "completed"
+    }
+  ]
+]

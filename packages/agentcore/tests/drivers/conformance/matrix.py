@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from agentcore.drivers.api import ApiDriver
 from agentcore.drivers.claude_code import ClaudeCodeDriver
 from agentcore.drivers.codex import CodexDriver
 from agentcore.drivers.opencode import OpencodeDriver
@@ -36,6 +37,7 @@ class DriverEntry:
 
 ALL_DRIVERS: list[DriverEntry] = [
     DriverEntry("vanilla", VanillaDriver(llm=ScriptedLLM([])), subprocess=False),
+    DriverEntry("api", ApiDriver(llm=ScriptedLLM([])), subprocess=False),
     DriverEntry("opencode", OpencodeDriver(), subprocess=True),
     DriverEntry("codex", CodexDriver(), subprocess=True),
     DriverEntry("claude-code", ClaudeCodeDriver(), subprocess=True),
@@ -169,7 +171,7 @@ def _events_for(
     # ------------------------------------------------------------------
     if case in ("cancel", "timeout", "missing_binary"):
         if case == "missing_binary" and not entry.subprocess:
-            pytest.skip("missing_binary n/a for vanilla (no subprocess)")
+            pytest.skip(f"missing_binary n/a for {entry.name} (no subprocess)")
 
         limits = (
             ResolvedLimits(max_iterations=2, max_tokens=100_000, timeout_seconds=0)
