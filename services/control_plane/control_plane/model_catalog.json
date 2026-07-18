@@ -940,8 +940,7 @@
         "anthropic_subscription"
       ],
       "drivers": [
-        "claude-code",
-        "api"
+        "claude-code"
       ]
     },
     {
@@ -1872,8 +1871,7 @@
         "anthropic_subscription"
       ],
       "drivers": [
-        "claude-code",
-        "api"
+        "claude-code"
       ]
     },
     {
@@ -1886,8 +1884,7 @@
         "anthropic_subscription"
       ],
       "drivers": [
-        "claude-code",
-        "api"
+        "claude-code"
       ]
     }
   ]
