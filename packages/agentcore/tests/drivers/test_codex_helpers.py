@@ -279,3 +279,24 @@ def test_build_resume_command_appends_reasoning_effort():
         "-c", "model_reasoning_effort=max",
         "--dangerously-bypass-approvals-and-sandbox", "t-1", "-",
     ]
+
+
+def test_write_agents_md_creates_file_with_prompt(tmp_path):
+    from agentcore.drivers.codex import codex_home, write_agents_md
+
+    path = write_agents_md(str(tmp_path), "You are a data analyst.")
+    assert path is not None
+    import pathlib
+    p = pathlib.Path(path)
+    assert p == pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md"
+    assert p.read_text() == "You are a data analyst."
+
+
+def test_write_agents_md_removes_stale_file_when_prompt_empty(tmp_path):
+    from agentcore.drivers.codex import write_agents_md
+
+    first = write_agents_md(str(tmp_path), "old prompt")
+    assert first is not None
+    import pathlib
+    assert write_agents_md(str(tmp_path), "") is None
+    assert not pathlib.Path(first).exists()

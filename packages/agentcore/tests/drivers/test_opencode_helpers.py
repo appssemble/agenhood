@@ -57,3 +57,38 @@ def test_build_command_no_variant_when_unset():
 
     cmd = build_command(workspace="/ws", model_ref="openai/gpt-5.6", prompt="hi")
     assert "--variant" not in cmd
+
+
+def test_write_system_prompt_instructions_wires_config(tmp_path):
+    import json
+    import pathlib
+
+    from agentcore.drivers.opencode import (
+        opencode_config_path,
+        write_system_prompt_instructions,
+    )
+
+    ws = str(tmp_path)
+    path = write_system_prompt_instructions(ws, "Answer in French.")
+    assert path is not None
+    assert pathlib.Path(path).read_text() == "Answer in French."
+    cfg = json.loads(pathlib.Path(opencode_config_path(ws)).read_text())
+    assert cfg["instructions"] == [path]
+
+
+def test_write_system_prompt_instructions_clears_when_empty(tmp_path):
+    import json
+    import pathlib
+
+    from agentcore.drivers.opencode import (
+        opencode_config_path,
+        write_system_prompt_instructions,
+    )
+
+    ws = str(tmp_path)
+    first = write_system_prompt_instructions(ws, "old")
+    assert first is not None
+    assert write_system_prompt_instructions(ws, "") is None
+    assert not pathlib.Path(first).exists()
+    cfg = json.loads(pathlib.Path(opencode_config_path(ws)).read_text())
+    assert "instructions" not in cfg or cfg["instructions"] == []

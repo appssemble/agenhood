@@ -372,6 +372,45 @@ def write_opencode_mcp(workspace: str, servers: list[ShimMcpServer]) -> int:
     return len(mcp_block)
 
 
+def write_system_prompt_instructions(workspace: str, system_prompt: str) -> str | None:
+    """Materialize the configured system prompt via opencode's ``instructions``.
+
+    opencode has no system-prompt flag; its config supports an
+    ``instructions`` list of files merged into the system prompt (spec §3.7
+    layer 1; both prompt modes behave as augment — the CLI's own harness
+    prompt cannot be replaced). Writes the prompt file next to opencode.json
+    and points ``instructions`` at it; an empty prompt removes the file and
+    clears the key. Non-``instructions`` keys are preserved; recreate-not-
+    rewrite for the same CAP_FOWNER reason as write_opencode_mcp.
+    """
+    cfg_path = Path(opencode_config_path(workspace))
+    prompt_path = cfg_path.parent / "system-prompt.md"
+    existing: dict[str, Any] = {}
+    file_exists = cfg_path.exists()
+    if file_exists:
+        try:
+            existing = json.loads(cfg_path.read_text())
+        except (ValueError, OSError):
+            existing = {}
+    if not system_prompt:
+        prompt_path.unlink(missing_ok=True)
+        if not file_exists or "instructions" not in existing:
+            return None
+        existing.pop("instructions", None)
+        cfg_path.unlink(missing_ok=True)
+        cfg_path.write_text(json.dumps(existing))
+        os.chmod(cfg_path, 0o600)
+        return None
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.unlink(missing_ok=True)
+    prompt_path.write_text(system_prompt)
+    existing["instructions"] = [str(prompt_path)]
+    cfg_path.unlink(missing_ok=True)
+    cfg_path.write_text(json.dumps(existing))
+    os.chmod(cfg_path, 0o600)
+    return str(prompt_path)
+
+
 async def materialize_skills(
     workspace: str, skills: list[ShimSkill]
 ) -> list[str]:
@@ -514,6 +553,24 @@ class OpencodeDriver:
                     "skills_error",
                     level="warn",
                     message=str(exc),
+                    data={"error": str(exc)},
+                ),
+            )
+
+        # Configured system prompt → instructions file wired into opencode.json
+        # (spec §3.7 layer 1; best-effort, surfaced as a warn so a dropped
+        # prompt is never silent).
+        try:
+            prompt_path = write_system_prompt_instructions(
+                workspace, config.system_prompt or ""
+            )
+            if prompt_path:
+                sandbox.chown_to_agent(prompt_path)
+        except Exception as exc:  # noqa: BLE001 — prompt materialization is best-effort
+            await emit(
+                "log",
+                log_payload(
+                    "system_prompt_error", level="warn", message=str(exc),
                     data={"error": str(exc)},
                 ),
             )

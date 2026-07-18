@@ -503,3 +503,30 @@ async def test_claude_no_session_id_unchanged(monkeypatch, tmp_path):
     assert result.success is True
     assert "-r" not in captured_cmd["argv"]
     assert not os.path.isdir(os.path.join(str(tmp_path), ".agent-state", "claude-code", "sessions"))
+
+
+@pytest.mark.asyncio
+async def test_run_passes_configured_system_prompt_flag(monkeypatch, tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    captured = {}
+
+    async def fake_exec(*args, **kwargs):
+        captured["args"] = args
+        proc = FakeProc([])
+        proc.returncode = None
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    events, emit = collector()
+    config = AgentConfig(
+        driver="claude-code", model="claude-opus-4-8",
+        system_prompt="Answer tersely.",
+    )
+    await ClaudeCodeDriver().run(
+        task=TaskBody(prompt="x"), config=config, limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    args = list(captured["args"])
+    i = args.index("--append-system-prompt")
+    assert args[i + 1] == "Answer tersely."

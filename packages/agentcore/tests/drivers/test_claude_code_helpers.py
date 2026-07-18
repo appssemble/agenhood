@@ -171,3 +171,35 @@ def test_build_command_no_effort_flag_when_unset():
 
     cmd = build_command(workspace="/ws", model="opus")
     assert "--effort" not in cmd
+
+
+def test_build_command_appends_configured_system_prompt():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(
+        workspace="/ws", model="opus",
+        system_prompt="You are a security auditor.", system_prompt_mode="augment",
+    )
+    i = cmd.index("--append-system-prompt")
+    assert cmd[i + 1] == "You are a security auditor."
+    assert "--system-prompt" not in cmd
+
+
+def test_build_command_replace_mode_uses_system_prompt_flag():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(
+        workspace="/ws", model="opus",
+        system_prompt="Only this.", system_prompt_mode="replace",
+    )
+    i = cmd.index("--system-prompt")
+    assert cmd[i + 1] == "Only this."
+    assert "--append-system-prompt" not in cmd
+
+
+def test_build_command_no_prompt_flags_when_unset():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(workspace="/ws", model="opus")
+    assert "--append-system-prompt" not in cmd
+    assert "--system-prompt" not in cmd

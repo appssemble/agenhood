@@ -426,3 +426,23 @@ async def test_codex_no_session_id_unchanged(monkeypatch, tmp_path):
     assert result.success is True
     assert "--ephemeral" in captured_cmd["argv"]
     assert not os.path.isdir(os.path.join(str(tmp_path), ".agent-state", "codex", "sessions"))
+
+
+@pytest.mark.asyncio
+async def test_run_materializes_configured_system_prompt(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver, codex_home
+
+    proc = FakeProc([])
+    patch_proc(monkeypatch, proc)
+    events, emit = collector()
+    config = AgentConfig(
+        driver="codex", model="gpt-5-codex",
+        system_prompt="You are a security auditor.", tools=[],
+    )
+    await CodexDriver().run(
+        task=TaskBody(prompt="x"), config=config, limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    import pathlib
+    agents = pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md"
+    assert agents.read_text() == "You are a security auditor."

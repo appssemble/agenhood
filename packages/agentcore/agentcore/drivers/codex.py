@@ -101,6 +101,26 @@ def skills_dir(workspace: str) -> str:
     return str(Path(codex_home(workspace)) / ".agents" / "skills")
 
 
+def write_agents_md(workspace: str, system_prompt: str) -> str | None:
+    """Materialize the configured system prompt as ``$CODEX_HOME/AGENTS.md``.
+
+    codex has no system-prompt flag; its layered-instructions mechanism reads
+    the global ``$CODEX_HOME/AGENTS.md`` before any project AGENTS.md, which
+    makes it the slot for the container's configured prompt (spec §3.7 layer
+    1; both prompt modes behave as augment — the CLI's own harness prompt
+    cannot be replaced). An empty prompt removes a stale file from a prior
+    config. Recreates rather than rewrites in place (a prior task may have
+    chowned it to the agent uid; same pattern as write_codex_mcp).
+    """
+    path = Path(codex_home(workspace)) / "AGENTS.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.unlink(missing_ok=True)
+    if not system_prompt:
+        return None
+    path.write_text(system_prompt)
+    return str(path)
+
+
 def build_command(
     *, workspace: str, model: str, ephemeral: bool = True, effort: str | None = None
 ) -> list[str]:
@@ -371,6 +391,17 @@ class CodexDriver:
             credential_kind=credential_kind,
             codex_home=home,
         )
+
+        # Configured system prompt → $CODEX_HOME/AGENTS.md (spec §3.7 layer 1;
+        # best-effort like skills/MCP, but surfaced as a warn so a dropped
+        # prompt is never silent again).
+        try:
+            agents_path = write_agents_md(workspace, config.system_prompt or "")
+            if agents_path:
+                sandbox.chown_to_agent(agents_path)
+        except Exception as exc:  # noqa: BLE001 — prompt materialization is best-effort
+            await emit("log", {"level": "warn", "message": "system_prompt_error",
+                               "data": {"error": str(exc)}})
 
         # Materialize codex skills into the discovery dir (best-effort: a
         # failure must never change the task outcome — skills are an enhancement).

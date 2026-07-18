@@ -72,6 +72,8 @@ def build_command(
     mcp_config: str | None = None,
     resume_session_id: str | None = None,
     effort: str | None = None,
+    system_prompt: str | None = None,
+    system_prompt_mode: str = "augment",
 ) -> list[str]:
     """Build the ``claude -p`` invocation (prompt is fed on stdin)."""
     cmd = [
@@ -84,6 +86,14 @@ def build_command(
         model,
         "--dangerously-skip-permissions",
     ]
+    if system_prompt:
+        # The container's configured system prompt (spec §3.7 layer 1).
+        # augment keeps the CLI's own harness prompt; replace overrides it.
+        flag = (
+            "--system-prompt" if system_prompt_mode == "replace"
+            else "--append-system-prompt"
+        )
+        cmd += [flag, system_prompt]
     if effort:
         cmd += ["--effort", effort]
     if resume_session_id:
@@ -314,6 +324,8 @@ class ClaudeCodeDriver:
         cmd = build_command(
             workspace=workspace, model=model_arg(config.model), mcp_config=mcp_path,
             resume_session_id=resume_session_id, effort=config.effort,
+            system_prompt=config.system_prompt or None,
+            system_prompt_mode=config.system_prompt_mode,
         )
         child_env = build_env(
             sandbox.build_child_env(env),

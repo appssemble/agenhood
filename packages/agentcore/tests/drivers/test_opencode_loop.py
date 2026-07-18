@@ -246,3 +246,29 @@ async def test_opencode_rate_limit_hang_fails_fast(monkeypatch, tmp_path):
     # a terminal failed status_change was emitted with a clear code
     finals = [p for t, p in events if t == "status_change" and p.get("to") == "failed"]
     assert finals and finals[-1]["error"]["code"] == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_run_materializes_configured_system_prompt(monkeypatch, tmp_path):
+    import json as _json
+    import pathlib as _pathlib
+
+    from agentcore.drivers.opencode import OpencodeDriver, opencode_config_path
+
+    async def fake_spawn(*args, **kwargs):
+        return FakeProc([], returncode=0)
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    events, emit = collector()
+    config = AgentConfig(
+        driver="opencode", model="claude-opus-4-8",
+        system_prompt="Answer in French.", tools=[],
+    )
+    await OpencodeDriver().run(
+        task=TaskBody(prompt="x"), config=config, limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    cfg_file = _pathlib.Path(opencode_config_path(str(tmp_path)))
+    data = _json.loads(cfg_file.read_text())
+    assert len(data["instructions"]) == 1
+    assert _pathlib.Path(data["instructions"][0]).read_text() == "Answer in French."
