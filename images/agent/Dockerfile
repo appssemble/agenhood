@@ -93,7 +93,7 @@ RUN set -eux; \
 
 # --- claude-code: Anthropic's official CLI; the claude-code driver shells out to it ---
 # Best-effort like opencode/codex: a download failure must not break the build.
-ARG CLAUDE_CODE_VERSION=2.1.191
+ARG CLAUDE_CODE_VERSION=2.1.212
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
     && claude --version \
     || echo "WARNING: @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} install failed (best-effort, driver handles at runtime)"
