@@ -203,3 +203,27 @@ def test_build_command_no_prompt_flags_when_unset():
     cmd = build_command(workspace="/ws", model="opus")
     assert "--append-system-prompt" not in cmd
     assert "--system-prompt" not in cmd
+
+
+def test_build_command_includes_json_schema():
+    from agentcore.drivers.claude_code import build_command
+
+    cmd = build_command(workspace="/ws", model="m", json_schema='{"type":"object"}')
+    i = cmd.index("--json-schema")
+    assert cmd[i + 1] == '{"type":"object"}'
+
+
+def test_build_command_omits_json_schema_by_default():
+    from agentcore.drivers.claude_code import build_command
+
+    assert "--json-schema" not in build_command(workspace="/ws", model="m")
+
+
+def test_result_structured_output():
+    from agentcore.drivers.claude_code import result_structured_output
+
+    ev = {"type": "result", "subtype": "success", "structured_output": {"a": 1}}
+    assert result_structured_output(ev) == {"a": 1}
+    assert result_structured_output({"type": "result", "is_error": True,
+                                     "structured_output": {"a": 1}}) is None
+    assert result_structured_output({"type": "assistant"}) is None

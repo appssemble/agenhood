@@ -41,6 +41,10 @@ from agentcore.models import (
     TaskBody,
     TaskResult,
 )
+from agentcore.structured_output import (
+    native_subset_compatible,
+    run_structured_attempts,
+)
 
 
 def model_arg(model: str) -> str:
@@ -74,6 +78,7 @@ def build_command(
     effort: str | None = None,
     system_prompt: str | None = None,
     system_prompt_mode: str = "augment",
+    json_schema: str | None = None,
 ) -> list[str]:
     """Build the ``claude -p`` invocation (prompt is fed on stdin)."""
     cmd = [
@@ -94,6 +99,11 @@ def build_command(
             else "--append-system-prompt"
         )
         cmd += [flag, system_prompt]
+    if json_schema:
+        # Native structured output (claude >= 2.1.205; verified on 2.1.212 that
+        # this works with --output-format stream-json — the result event then
+        # carries a schema-conforming `structured_output` field).
+        cmd += ["--json-schema", json_schema]
     if effort:
         cmd += ["--effort", effort]
     if resume_session_id:
@@ -173,6 +183,17 @@ def result_error(event: dict[str, Any]) -> str | None:
     return None
 
 
+def result_structured_output(event: dict[str, Any]) -> Any | None:
+    """Parsed object from a successful ``result`` event's ``structured_output``.
+
+    Present when the CLI ran with ``--json-schema`` (verified live on 2.1.212).
+    Still validated by the caller — never trusted as the guarantee.
+    """
+    if event.get("type") == "result" and not event.get("is_error"):
+        return event.get("structured_output")
+    return None
+
+
 def event_session_id(event: dict[str, Any]) -> str | None:
     """The claude session id carried on every stream-json event line, else None.
 
@@ -196,7 +217,7 @@ class ClaudeCodeDriver:
     name = "claude-code"
     capabilities = DriverCapabilities(
         supports_tools=False,
-        supports_structured_output=False,
+        supports_structured_output=True,
         supports_cancel=True,
         requires_image_feature=None,
         supports_mcp=True,
@@ -242,13 +263,43 @@ class ClaudeCodeDriver:
             resume_session_id = state.get("claude_session_id")
 
         latest_session_id: dict[str, str | None] = {"id": resume_session_id}
-        result = await self._run_claude(
-            task=task, config=config, limits=limits, credential=credential, emit=emit,
-            cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
-            workspace=workspace, skills=skills, mcp_servers=mcp_servers,
-            resume_session_id=resume_session_id, latest_session_id=latest_session_id,
-            env=env,
+
+        schema = (
+            task.output.json_schema
+            if task.output.type == "structured" and task.output.json_schema is not None
+            else None
         )
+
+        if schema is None:
+            result = await self._run_claude(
+                task=task, config=config, limits=limits, credential=credential, emit=emit,
+                cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
+                workspace=workspace, skills=skills, mcp_servers=mcp_servers,
+                resume_session_id=resume_session_id, latest_session_id=latest_session_id,
+                env=env, prompt=task.prompt, structured=False, emit_running=True,
+            )
+        else:
+            async def attempt(
+                prompt: str, resume_id: str | None,
+                timeout_seconds: int, emit_running: bool,
+            ) -> TaskResult:
+                return await self._run_claude(
+                    task=task, config=config,
+                    limits=limits.model_copy(
+                        update={"timeout_seconds": timeout_seconds}
+                    ),
+                    credential=credential, emit=emit, cancel=cancel,
+                    credential_kind=credential_kind, credential_meta=credential_meta,
+                    workspace=workspace, skills=skills, mcp_servers=mcp_servers,
+                    resume_session_id=resume_id, latest_session_id=latest_session_id,
+                    env=env, prompt=prompt, structured=True, emit_running=emit_running,
+                )
+
+            result = await run_structured_attempts(
+                schema=schema, task_prompt=task.prompt,
+                timeout_seconds=limits.timeout_seconds, emit=emit,
+                latest_id=latest_session_id, run_attempt=attempt,
+            )
         if session_id is not None and latest_session_id["id"]:
             write_session_state(
                 workspace, self.name, session_id,
@@ -273,13 +324,17 @@ class ClaudeCodeDriver:
         resume_session_id: str | None,
         latest_session_id: dict[str, str | None],
         env: dict[str, str] | None = None,
+        prompt: str,
+        structured: bool = False,
+        emit_running: bool = True,
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
-        await emit(
-            "status_change",
-            {"from": "pending", "to": "running", "result": None, "error": None},
-        )
+        if emit_running:
+            await emit(
+                "status_change",
+                {"from": "pending", "to": "running", "result": None, "error": None},
+            )
 
         home = claude_home(workspace)
         sandbox.ensure_agent_dir(home)
@@ -321,11 +376,20 @@ class ClaudeCodeDriver:
                 await emit("log", {"level": "warn", "message": "mcp_error",
                                    "data": {"error": str(exc)}})
 
+        json_schema_arg: str | None = None
+        if (
+            structured
+            and task.output.json_schema is not None
+            and native_subset_compatible(task.output.json_schema)
+        ):
+            json_schema_arg = json.dumps(task.output.json_schema)
+
         cmd = build_command(
             workspace=workspace, model=model_arg(config.model), mcp_config=mcp_path,
             resume_session_id=resume_session_id, effort=config.effort,
             system_prompt=config.system_prompt or None,
             system_prompt_mode=config.system_prompt_mode,
+            json_schema=json_schema_arg,
         )
         child_env = build_env(
             sandbox.build_child_env(env),
@@ -360,12 +424,13 @@ class ClaudeCodeDriver:
 
         start = time.monotonic()
         last_text: str | None = None
+        last_structured: Any = None
         error_msg: str | None = None
         tokens_in = 0
         tokens_out = 0
         try:
             if proc.stdin is not None:
-                proc.stdin.write(task.prompt.encode("utf-8"))
+                proc.stdin.write(prompt.encode("utf-8"))
                 await proc.stdin.drain()
                 proc.stdin.close()
 
@@ -416,6 +481,9 @@ class ClaudeCodeDriver:
                     text = result_text(value)
                     if text is not None:
                         last_text = text
+                    so = result_structured_output(value)
+                    if so is not None:
+                        last_structured = so
                     err = result_error(value)
                     if err is not None:
                         error_msg = err
@@ -446,6 +514,10 @@ class ClaudeCodeDriver:
             return TaskResult(success=False, reason="claude_code_error")
 
         if rc == 0 and error_msg is None:
+            if structured:
+                # run()'s structured loop validates and emits the terminal event.
+                out: Any = last_structured if last_structured is not None else (last_text or "")
+                return TaskResult(success=True, output=out)
             result = {"success": True, "output": last_text or ""}
             await emit(
                 "status_change",

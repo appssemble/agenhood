@@ -530,3 +530,131 @@ async def test_run_passes_configured_system_prompt_flag(monkeypatch, tmp_path):
     args = list(captured["args"])
     i = args.index("--append-system-prompt")
     assert args[i + 1] == "Answer tersely."
+
+
+# ---------------------------------------------------------------------------
+# Task 5: structured output — native --json-schema + validate-and-retry loop
+# ---------------------------------------------------------------------------
+
+
+def patch_procs(monkeypatch, procs):
+    """Each spawn_untrusted call consumes the next FakeProc; records argv."""
+    calls = []
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        calls.append(argv)
+        proc = procs.pop(0)
+        proc.returncode = None
+        return proc
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    return calls
+
+
+STRUCT_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"],
+    "additionalProperties": False,
+}
+
+
+def structured_task():
+    return TaskBody(
+        prompt="answer me",
+        output={"type": "structured", "schema": STRUCT_SCHEMA},
+    )
+
+
+def claude_result_line(*, result="", structured=None, session_id="s1"):
+    import json as _json
+
+    ev = {"type": "result", "subtype": "success", "is_error": False,
+          "result": result, "session_id": session_id}
+    if structured is not None:
+        ev["structured_output"] = structured
+    return _json.dumps(ev) + "\n"
+
+
+@pytest.mark.asyncio
+async def test_structured_prefers_structured_output_field(monkeypatch, tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    proc = FakeProc([claude_result_line(result='{"answer": "42"}',
+                                        structured={"answer": "42"})])
+    calls = patch_procs(monkeypatch, [proc])
+    events, emit = collector()
+
+    result = await ClaudeCodeDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert result.output == {"answer": "42"}
+    assert "--json-schema" in calls[0]
+    completed = [p for t, p in events if t == "status_change" and p["to"] == "completed"]
+    assert len(completed) == 1
+    assert completed[0]["result"] == {"success": True, "output": {"answer": "42"}}
+
+
+@pytest.mark.asyncio
+async def test_structured_falls_back_to_text_parse(monkeypatch, tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    # No structured_output field — e.g. an older CLI or the flag skipped.
+    proc = FakeProc([claude_result_line(result='{"answer": "42"}')])
+    patch_procs(monkeypatch, [proc])
+    _, emit = collector()
+
+    result = await ClaudeCodeDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert result.output == {"answer": "42"}
+
+
+@pytest.mark.asyncio
+async def test_structured_retries_via_session_resume(monkeypatch, tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    bad = FakeProc([claude_result_line(result="not json")])
+    good = FakeProc([claude_result_line(result='{"answer": "42"}')])
+    calls = patch_procs(monkeypatch, [bad, good])
+    events, emit = collector()
+
+    result = await ClaudeCodeDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert len(calls) == 2
+    assert "-r" in calls[1] and "s1" in calls[1]
+    assert b"Invalid output" in good.stdin.data
+    warns = [p for t, p in events if t == "log" and p["message"] == "structured_output_invalid"]
+    assert len(warns) == 1
+
+
+@pytest.mark.asyncio
+async def test_structured_fails_after_max_attempts(monkeypatch, tmp_path):
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+    from agentcore.structured_output import MAX_ATTEMPTS
+
+    procs = [FakeProc([claude_result_line(result="nope")]) for _ in range(MAX_ATTEMPTS)]
+    calls = patch_procs(monkeypatch, list(procs))
+    events, emit = collector()
+
+    result = await ClaudeCodeDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert result.success is False
+    assert result.reason == "invalid_structured_output"
+    assert len(calls) == MAX_ATTEMPTS
+
+
+def test_claude_code_supports_structured_output():
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+
+    assert ClaudeCodeDriver.capabilities.supports_structured_output is True
