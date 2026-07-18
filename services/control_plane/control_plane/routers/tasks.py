@@ -5,6 +5,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
+import jsonschema
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import StreamingResponse
@@ -206,6 +207,39 @@ def build_task_row(
 def _capabilities(driver: str):  # type: ignore[no-untyped-def]
     d = DRIVERS.get(driver)
     return d.capabilities if d is not None else None
+
+
+def validate_output_contract(body: TaskBody, driver: str) -> None:
+    """400 guards for structured tasks (spec: structured output across drivers).
+
+    Until now this rule lived only in the console UI; the API accepted a
+    structured task for any driver and silently returned free text.
+    """
+    if body.output.type != "structured":
+        return
+    if body.output.json_schema is None:
+        raise APIError(
+            400, "invalid_output_schema",
+            'output.schema is required when output.type is "structured"',
+            "output.schema",
+        )
+    try:
+        jsonschema.validators.validator_for(
+            body.output.json_schema
+        ).check_schema(body.output.json_schema)
+    except jsonschema.SchemaError as exc:
+        raise APIError(
+            400, "invalid_output_schema",
+            f"output.schema is not a valid JSON Schema: {exc.message}",
+            "output.schema",
+        ) from exc
+    caps = _capabilities(driver)
+    if caps is None or not caps.supports_structured_output:
+        raise APIError(
+            400, "structured_output_unsupported",
+            f"driver {driver!r} does not support structured output",
+            "output.type",
+        )
 
 
 def build_task_skills(
@@ -590,6 +624,7 @@ async def submit_task_core(
             session_id=body.session_id, driver=config.driver,
         )
 
+    validate_output_contract(body, config.driver)
     if not body.prompt.strip():
         raise APIError(400, "validation_error", "prompt is required", "prompt")
     if len(body.prompt.encode("utf-8")) > 100 * 1024:
