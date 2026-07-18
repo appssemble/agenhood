@@ -4,7 +4,7 @@
     "supports_cancel": true,
     "supports_mcp": true,
     "supports_skills": true,
-    "supports_structured_output": false,
+    "supports_structured_output": true,
     "supports_tools": false
   },
   "default_template": {

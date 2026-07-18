@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -306,7 +307,7 @@ def test_codex_capabilities_and_template():
 
     d = DRIVERS["codex"]
     assert d.capabilities.supports_tools is False
-    assert d.capabilities.supports_structured_output is False
+    assert d.capabilities.supports_structured_output is True
     assert d.capabilities.supports_cancel is True
     assert d.capabilities.requires_image_feature is None
     assert d.default_template.driver == "codex"
@@ -483,3 +484,157 @@ async def test_run_stdin_is_bare_prompt_without_system_prompt(monkeypatch, tmp_p
         credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
     )
     assert proc.stdin.data.decode() == "what is DNS?"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: structured output — native --output-schema + validate-and-retry loop
+# ---------------------------------------------------------------------------
+
+
+def patch_procs(monkeypatch, procs):
+    """Each subprocess spawn consumes the next FakeProc; records spawn args."""
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        proc = procs.pop(0)
+        proc.returncode = None
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    return calls
+
+
+STRUCT_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"],
+    "additionalProperties": False,
+}
+
+
+def structured_task():
+    return TaskBody(
+        prompt="answer me",
+        output={"type": "structured", "schema": STRUCT_SCHEMA},
+    )
+
+
+def codex_lines(text, thread_id="th_1"):
+    return [
+        f'{{"type": "thread.started", "thread_id": "{thread_id}"}}\n',
+        f'{{"type": "item.completed", "item": {{"type": "agent_message", "text": {json.dumps(text)}}}}}\n',  # noqa: E501
+    ]
+
+
+@pytest.mark.asyncio
+async def test_structured_valid_first_attempt(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    proc = FakeProc(codex_lines('{"answer": "42"}'))
+    patch_procs(monkeypatch, [proc])
+    events, emit = collector()
+
+    result = await CodexDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert result.output == {"answer": "42"}
+    completed = [p for t, p in events if t == "status_change" and p["to"] == "completed"]
+    assert len(completed) == 1
+    assert completed[0]["result"] == {"success": True, "output": {"answer": "42"}}
+    # schema instructions were appended to the prompt fed on stdin
+    assert b"## Output" in proc.stdin.data
+
+
+@pytest.mark.asyncio
+async def test_structured_retries_then_succeeds(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    bad = FakeProc(codex_lines("not json at all"))
+    good = FakeProc(codex_lines('{"answer": "42"}'))
+    calls = patch_procs(monkeypatch, [bad, good])
+    events, emit = collector()
+
+    result = await CodexDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert result.output == {"answer": "42"}
+    assert len(calls) == 2
+    # second spawn resumes the captured thread
+    assert "resume" in calls[1]
+    assert "th_1" in calls[1]
+    # correction prompt fed to the resumed session
+    assert b"Invalid output" in good.stdin.data
+    warns = [p for t, p in events if t == "log" and p["message"] == "structured_output_invalid"]
+    assert len(warns) == 1
+    # exactly one terminal completed event
+    completed = [p for t, p in events if t == "status_change" and p["to"] == "completed"]
+    assert len(completed) == 1
+
+
+@pytest.mark.asyncio
+async def test_structured_fails_after_max_attempts(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+    from agentcore.structured_output import MAX_ATTEMPTS
+
+    procs = [FakeProc(codex_lines("still not json")) for _ in range(MAX_ATTEMPTS)]
+    calls = patch_procs(monkeypatch, list(procs))
+    events, emit = collector()
+
+    result = await CodexDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is False
+    assert result.reason == "invalid_structured_output"
+    assert len(calls) == MAX_ATTEMPTS
+    failed = [p for t, p in events if t == "status_change" and p["to"] == "failed"]
+    assert failed[-1]["error"]["code"] == "invalid_structured_output"
+
+
+@pytest.mark.asyncio
+async def test_structured_native_flag_for_compatible_schema(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    proc = FakeProc(codex_lines('{"answer": "42"}'))
+    calls = patch_procs(monkeypatch, [proc])
+    _, emit = collector()
+
+    await CodexDriver().run(
+        task=structured_task(), config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert "--output-schema" in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_structured_no_native_flag_for_incompatible_schema(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    task = TaskBody(
+        prompt="p",
+        output={"type": "structured", "schema": {"type": "array", "items": {"type": "string"}}},
+    )
+    proc = FakeProc(codex_lines('["a"]'))
+    calls = patch_procs(monkeypatch, [proc])
+    _, emit = collector()
+
+    result = await CodexDriver().run(
+        task=task, config=cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert "--output-schema" not in calls[0]
+    assert result.output == ["a"]
+
+
+def test_codex_supports_structured_output():
+    from agentcore.drivers.codex import CodexDriver
+
+    assert CodexDriver.capabilities.supports_structured_output is True

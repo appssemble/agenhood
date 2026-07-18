@@ -318,3 +318,44 @@ def test_stdin_prompt_without_system_prompt_is_task_prompt_verbatim():
 
     assert stdin_prompt("just the task", "") == "just the task"
     assert stdin_prompt("just the task", None) == "just the task"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: structured output — native --output-schema helpers
+# ---------------------------------------------------------------------------
+
+
+def test_build_command_includes_output_schema():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(
+        workspace="/ws", model="gpt-5", output_schema_path="/ws/schema.json"
+    )
+    i = cmd.index("--output-schema")
+    assert cmd[i + 1] == "/ws/schema.json"
+    assert cmd[-1] == "-"  # stdin marker stays the final arg
+
+
+def test_build_command_omits_output_schema_by_default():
+    from agentcore.drivers.codex import build_command
+
+    assert "--output-schema" not in build_command(workspace="/ws", model="gpt-5")
+
+
+def test_build_resume_command_includes_output_schema():
+    from agentcore.drivers.codex import build_resume_command
+
+    cmd = build_resume_command(
+        model="gpt-5", thread_id="th_1", output_schema_path="/ws/schema.json"
+    )
+    i = cmd.index("--output-schema")
+    assert cmd[i + 1] == "/ws/schema.json"
+    assert cmd[-2:] == ["th_1", "-"]  # positional thread id stays last
+
+
+def test_write_output_schema(tmp_path):
+    from agentcore.drivers.codex import write_output_schema
+
+    path = write_output_schema(str(tmp_path), {"type": "object"})
+    assert json.loads(open(path).read()) == {"type": "object"}
+    assert path.endswith("output-schema.json")

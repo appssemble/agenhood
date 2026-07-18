@@ -55,6 +55,10 @@ from agentcore.models import (
     TaskBody,
     TaskResult,
 )
+from agentcore.structured_output import (
+    native_subset_compatible,
+    run_structured_attempts,
+)
 
 
 def model_arg(model: str) -> str:
@@ -121,6 +125,20 @@ def write_agents_md(workspace: str, system_prompt: str) -> str | None:
     return str(path)
 
 
+def write_output_schema(workspace: str, schema: dict[str, Any]) -> str:
+    """Materialize the task's JSON schema for codex's ``--output-schema``.
+
+    Recreates rather than rewrites in place (a prior task may have chowned it
+    to the agent uid; same pattern as write_agents_md). The caller chowns it
+    to the agent so the dropped codex process can read it.
+    """
+    path = Path(codex_home(workspace)) / "output-schema.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.unlink(missing_ok=True)
+    path.write_text(json.dumps(schema))
+    return str(path)
+
+
 def stdin_prompt(task_prompt: str, system_prompt: str | None) -> str:
     """Compose the stdin payload, reinforcing the configured system prompt.
 
@@ -140,13 +158,20 @@ def stdin_prompt(task_prompt: str, system_prompt: str | None) -> str:
 
 
 def build_command(
-    *, workspace: str, model: str, ephemeral: bool = True, effort: str | None = None
+    *,
+    workspace: str,
+    model: str,
+    ephemeral: bool = True,
+    effort: str | None = None,
+    output_schema_path: str | None = None,
 ) -> list[str]:
     """Build the ``codex exec`` invocation (prompt is fed on stdin via ``-``).
 
     ``ephemeral=False`` drops ``--ephemeral`` so the rollout file persists,
     used for the first turn of a session (driver-sessions spec §4).
     ``effort`` maps to codex's ``model_reasoning_effort`` config override.
+    ``output_schema_path`` (structured output, task 4) appends codex's native
+    ``--output-schema`` flag when the task's schema is native-subset compatible.
     """
     cmd = ["codex", "exec", "--json", "--skip-git-repo-check"]
     if ephemeral:
@@ -154,12 +179,18 @@ def build_command(
     cmd += ["-C", workspace, "-m", model]
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
+    if output_schema_path:
+        cmd += ["--output-schema", output_schema_path]
     cmd += ["--dangerously-bypass-approvals-and-sandbox", "-"]
     return cmd
 
 
 def build_resume_command(
-    *, model: str, thread_id: str, effort: str | None = None
+    *,
+    model: str,
+    thread_id: str,
+    effort: str | None = None,
+    output_schema_path: str | None = None,
 ) -> list[str]:
     """Build ``codex exec resume`` (continuing a prior session).
 
@@ -167,10 +198,13 @@ def build_resume_command(
     has no ``-C``/``--ephemeral`` flags — the resumed session's original
     working directory and on-disk persistence are implicit. The subprocess's
     own ``cwd=`` (set by the caller) still controls the actual process cwd.
+    ``output_schema_path`` — see ``build_command``.
     """
     cmd = ["codex", "exec", "resume", "--json", "--skip-git-repo-check", "-m", model]
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
+    if output_schema_path:
+        cmd += ["--output-schema", output_schema_path]
     cmd += ["--dangerously-bypass-approvals-and-sandbox", thread_id, "-"]
     return cmd
 
@@ -305,7 +339,7 @@ class CodexDriver:
     name = "codex"
     capabilities = DriverCapabilities(
         supports_tools=False,
-        supports_structured_output=False,
+        supports_structured_output=True,
         supports_cancel=True,
         requires_image_feature=None,
         supports_mcp=True,
@@ -351,14 +385,46 @@ class CodexDriver:
             resume_thread_id = state.get("thread_id")
 
         latest_thread_id: dict[str, str | None] = {"id": resume_thread_id}
-        result = await self._run_codex(
-            task=task, config=config, limits=limits, credential=credential, emit=emit,
-            cancel=cancel, credential_kind=credential_kind, credential_meta=credential_meta,
-            workspace=workspace, skills=skills, mcp_servers=mcp_servers,
-            session_id=session_id, resume_thread_id=resume_thread_id,
-            latest_thread_id=latest_thread_id,
-            env=env,
+
+        schema = (
+            task.output.json_schema
+            if task.output.type == "structured" and task.output.json_schema is not None
+            else None
         )
+
+        if schema is None:
+            result = await self._run_codex(
+                task=task, config=config, limits=limits, credential=credential,
+                emit=emit, cancel=cancel, credential_kind=credential_kind,
+                credential_meta=credential_meta, workspace=workspace, skills=skills,
+                mcp_servers=mcp_servers, session_id=session_id,
+                resume_thread_id=resume_thread_id, latest_thread_id=latest_thread_id,
+                env=env, prompt=task.prompt, structured=False, emit_running=True,
+            )
+        else:
+            async def attempt(
+                prompt: str, resume_id: str | None,
+                timeout_seconds: int, emit_running: bool,
+            ) -> TaskResult:
+                return await self._run_codex(
+                    task=task, config=config,
+                    limits=limits.model_copy(
+                        update={"timeout_seconds": timeout_seconds}
+                    ),
+                    credential=credential, emit=emit, cancel=cancel,
+                    credential_kind=credential_kind,
+                    credential_meta=credential_meta, workspace=workspace,
+                    skills=skills, mcp_servers=mcp_servers, session_id=session_id,
+                    resume_thread_id=resume_id, latest_thread_id=latest_thread_id,
+                    env=env, prompt=prompt, structured=True,
+                    emit_running=emit_running,
+                )
+
+            result = await run_structured_attempts(
+                schema=schema, task_prompt=task.prompt,
+                timeout_seconds=limits.timeout_seconds, emit=emit,
+                latest_id=latest_thread_id, run_attempt=attempt,
+            )
         if session_id is not None and latest_thread_id["id"]:
             write_session_state(
                 workspace, self.name, session_id, {"thread_id": latest_thread_id["id"]}
@@ -383,25 +449,51 @@ class CodexDriver:
         resume_thread_id: str | None,
         latest_thread_id: dict[str, str | None],
         env: dict[str, str] | None = None,
+        prompt: str,
+        structured: bool = False,
+        emit_running: bool = True,
     ) -> TaskResult:
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
-        await emit(
-            "status_change",
-            {"from": "pending", "to": "running", "result": None, "error": None},
-        )
+        if emit_running:
+            await emit(
+                "status_change",
+                {"from": "pending", "to": "running", "result": None, "error": None},
+            )
 
         home = codex_home(workspace)
         sandbox.ensure_agent_dir(home)
+
+        # Native --output-schema (task 4): materialize the task's JSON schema
+        # when it fits the native strict subset. Best-effort, like AGENTS.md —
+        # a failure must not change the task outcome, only drop the native flag
+        # (the shared validate-and-retry loop still enforces the schema).
+        output_schema_file: str | None = None
+        if (
+            structured
+            and task.output.json_schema is not None
+            and native_subset_compatible(task.output.json_schema)
+        ):
+            try:
+                output_schema_file = write_output_schema(
+                    workspace, task.output.json_schema
+                )
+                sandbox.chown_to_agent(output_schema_file)
+            except Exception as exc:  # noqa: BLE001 — native flag is best-effort
+                output_schema_file = None
+                await emit("log", {"level": "warn", "message": "output_schema_error",
+                                   "data": {"error": str(exc)}})
+
         if resume_thread_id:
             cmd = build_resume_command(
                 model=model_arg(config.model), thread_id=resume_thread_id,
-                effort=config.effort,
+                effort=config.effort, output_schema_path=output_schema_file,
             )
         else:
             cmd = build_command(
                 workspace=workspace, model=model_arg(config.model),
-                ephemeral=session_id is None, effort=config.effort,
+                ephemeral=session_id is None and not structured,
+                effort=config.effort, output_schema_path=output_schema_file,
             )
         child_env = build_env(
             sandbox.build_child_env(env),
@@ -510,7 +602,7 @@ class CodexDriver:
         try:
             # Feed the prompt on stdin, then close so codex can start.
             if proc.stdin is not None:
-                payload = stdin_prompt(task.prompt, config.system_prompt)
+                payload = stdin_prompt(prompt, config.system_prompt)
                 proc.stdin.write(payload.encode("utf-8"))
                 await proc.stdin.drain()
                 proc.stdin.close()
@@ -592,6 +684,9 @@ class CodexDriver:
             return TaskResult(success=False, reason="codex_error")
 
         if rc == 0:
+            if structured:
+                # run()'s structured loop validates and emits the terminal event.
+                return TaskResult(success=True, output=last_text or "")
             result = {"success": True, "output": last_text or ""}
             await emit(
                 "status_change",
