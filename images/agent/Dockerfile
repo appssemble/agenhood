@@ -74,7 +74,7 @@ RUN npm install -g opencode-ai@${OPENCODE_VERSION} \
 # the prebuilt musl release binary rather than the npm package so codex needs no
 # Node runtime at all (the binary is self-contained). Verified: the tarball
 # contains a single file `codex-<target>` which we rename to `codex`.
-ARG CODEX_VERSION=0.144.3
+ARG CODEX_VERSION=0.152.0
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
