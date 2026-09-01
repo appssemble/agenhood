@@ -41,6 +41,8 @@ def test_build_command_reads_prompt_from_stdin():
     assert cmd == [
         "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
         "-C", "/ws", "-m", "gpt-5-codex",
+        "-c", "features.plugins=false", "-c", "features.apps=false",
+        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
 
@@ -203,6 +205,8 @@ def test_build_command_ephemeral_true_by_default_unchanged():
     assert cmd == [
         "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
         "-C", "/ws", "-m", "gpt-5-codex",
+        "-c", "features.plugins=false", "-c", "features.apps=false",
+        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
 
@@ -215,6 +219,8 @@ def test_build_command_ephemeral_false_drops_the_flag():
     assert cmd == [
         "codex", "exec", "--json", "--skip-git-repo-check",
         "-C", "/ws", "-m", "gpt-5-codex",
+        "-c", "features.plugins=false", "-c", "features.apps=false",
+        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
 
@@ -227,7 +233,10 @@ def test_build_resume_command():
     # -C/--ephemeral flags (the resumed session's cwd/persistence are implicit).
     assert cmd == [
         "codex", "exec", "resume", "--json", "--skip-git-repo-check",
-        "-m", "gpt-5-codex", "--dangerously-bypass-approvals-and-sandbox",
+        "-m", "gpt-5-codex",
+        "-c", "features.plugins=false", "-c", "features.apps=false",
+        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
+        "--dangerously-bypass-approvals-and-sandbox",
         "019f3753-thread", "-",
     ]
 
@@ -257,6 +266,8 @@ def test_build_command_appends_reasoning_effort():
     assert cmd == [
         "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
         "-C", "/ws", "-m", "gpt-5.6-sol",
+        "-c", "features.plugins=false", "-c", "features.apps=false",
+        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "model_reasoning_effort=high",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
@@ -266,7 +277,7 @@ def test_build_command_no_effort_flag_when_unset():
     from agentcore.drivers.codex import build_command
 
     cmd = build_command(workspace="/ws", model="gpt-5-codex")
-    assert "-c" not in cmd
+    assert not any(a.startswith("model_reasoning_effort=") for a in cmd)
 
 
 def test_build_resume_command_appends_reasoning_effort():
@@ -276,6 +287,8 @@ def test_build_resume_command_appends_reasoning_effort():
     assert cmd == [
         "codex", "exec", "resume", "--json", "--skip-git-repo-check",
         "-m", "gpt-5.6-sol",
+        "-c", "features.plugins=false", "-c", "features.apps=false",
+        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "model_reasoning_effort=max",
         "--dangerously-bypass-approvals-and-sandbox", "t-1", "-",
     ]
@@ -359,3 +372,32 @@ def test_write_output_schema(tmp_path):
     path = write_output_schema(str(tmp_path), {"type": "object"})
     assert json.loads(Path(path).read_text()) == {"type": "object"}
     assert path.endswith("output-schema.json")
+
+
+def _config_overrides(cmd: list[str]) -> list[str]:
+    return [cmd[i + 1] for i, a in enumerate(cmd[:-1]) if a == "-c"]
+
+
+def test_build_command_turns_off_codex_side_channels():
+    """codex exec spends 0.3-7 s AFTER the turn completes on account-plugin
+    sync, analytics POSTs and an OTEL flush (measured 2026-09-01); the driver
+    waits for process exit, so that lands on the task's critical path. Plugins
+    and apps also inflate every prompt by ~2.5k tokens. None of them serve a
+    sandboxed agent, so every invocation switches them off."""
+    from agentcore.drivers.codex import build_command, build_resume_command
+
+    expected = [
+        "features.plugins=false", "features.apps=false",
+        "analytics.enabled=false", "otel.exporter=none",
+    ]
+    assert _config_overrides(build_command(workspace="/ws", model="m")) == expected
+    assert _config_overrides(
+        build_resume_command(model="m", thread_id="t-1")
+    ) == expected
+
+
+def test_build_command_side_channel_overrides_precede_effort():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(workspace="/ws", model="m", effort="low")
+    assert _config_overrides(cmd)[-1] == "model_reasoning_effort=low"

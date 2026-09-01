@@ -9,9 +9,17 @@ DRIVERS via register().
 codex exec CLI (OpenAI codex):
 
     codex exec --json --skip-git-repo-check --ephemeral \\
-        -C <ws> -m <model> --dangerously-bypass-approvals-and-sandbox -
+        -C <ws> -m <model> -c features.plugins=false -c features.apps=false \\
+        -c analytics.enabled=false -c otel.exporter=none \\
+        --dangerously-bypass-approvals-and-sandbox -
 
 - ``--json`` emits one JSON event object per line on stdout;
+- the ``-c`` overrides (``SIDE_CHANNEL_OVERRIDES``) switch off codex's
+  ChatGPT-account plugin sync, apps (connectors), analytics and OTEL export:
+  codex runs them at startup and again at shutdown, and the driver waits for
+  process exit, so they sat on every task's critical path (0.3-7 s measured
+  after ``turn.completed``, scaling with OpenAI backend latency) and added
+  ~2.5k prompt tokens per turn. Nothing in a sandboxed agent uses them;
 - the trailing ``-`` reads the prompt from stdin (robust vs prompts starting "-");
 - ``--dangerously-bypass-approvals-and-sandbox`` auto-approves + full access —
   safe because the sandboxed container is itself the security boundary;
@@ -157,6 +165,22 @@ def stdin_prompt(task_prompt: str, system_prompt: str | None) -> str:
     )
 
 
+# codex config overrides applied to every invocation — see the module docstring.
+SIDE_CHANNEL_OVERRIDES: tuple[str, ...] = (
+    "features.plugins=false",
+    "features.apps=false",
+    "analytics.enabled=false",
+    "otel.exporter=none",
+)
+
+
+def _side_channel_args() -> list[str]:
+    out: list[str] = []
+    for override in SIDE_CHANNEL_OVERRIDES:
+        out += ["-c", override]
+    return out
+
+
 def build_command(
     *,
     workspace: str,
@@ -177,6 +201,7 @@ def build_command(
     if ephemeral:
         cmd.append("--ephemeral")
     cmd += ["-C", workspace, "-m", model]
+    cmd += _side_channel_args()
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
     if output_schema_path:
@@ -201,6 +226,7 @@ def build_resume_command(
     ``output_schema_path`` — see ``build_command``.
     """
     cmd = ["codex", "exec", "resume", "--json", "--skip-git-repo-check", "-m", model]
+    cmd += _side_channel_args()
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
     if output_schema_path:
