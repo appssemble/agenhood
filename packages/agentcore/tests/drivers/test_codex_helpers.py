@@ -170,6 +170,7 @@ def test_codex_registered_via_package_import():
 # Task 5: privsep — .agent-state home + allowlisted env
 # ---------------------------------------------------------------------------
 
+
 def test_codex_home_is_under_agent_state():
     from agentcore.drivers import codex
     assert codex.codex_home("/workspace").endswith("/.agent-state/codex")
@@ -199,6 +200,7 @@ def test_codex_build_env_starts_from_allowlist(monkeypatch):
 # ---------------------------------------------------------------------------
 # Task 4: driver sessions — ephemeral/resume command shape + thread id parsing
 # ---------------------------------------------------------------------------
+
 
 def test_build_command_ephemeral_true_by_default_unchanged():
     from agentcore.drivers.codex import build_command
@@ -267,6 +269,7 @@ def test_event_thread_id_ignores_other_event_types():
 # Task 2: codex driver maps effort
 # ---------------------------------------------------------------------------
 
+
 def test_build_command_appends_reasoning_effort():
     from agentcore.drivers.codex import build_command
 
@@ -306,48 +309,61 @@ def test_build_resume_command_appends_reasoning_effort():
     ]
 
 
-def test_write_agents_md_creates_file_with_prompt(tmp_path):
-    from agentcore.drivers.codex import codex_home, write_agents_md
-
-    path = write_agents_md(str(tmp_path), "You are a data analyst.")
-    assert path is not None
+def test_remove_stale_agents_md_deletes_file_left_by_older_driver(tmp_path):
+    """Driver versions before 2026-09 wrote the system prompt to
+    $CODEX_HOME/AGENTS.md on a persistent volume; a survivor would double the
+    prompt next to developer_instructions."""
     import pathlib
-    p = pathlib.Path(path)
-    assert p == pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md"
-    assert p.read_text() == "You are a data analyst."
+
+    from agentcore.drivers.codex import codex_home, remove_stale_agents_md
+
+    stale = pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("old prompt")
+    remove_stale_agents_md(str(tmp_path))
+    assert not stale.exists()
+    remove_stale_agents_md(str(tmp_path))  # absent → no error
 
 
-def test_write_agents_md_removes_stale_file_when_prompt_empty(tmp_path):
-    from agentcore.drivers.codex import write_agents_md
-
-    first = write_agents_md(str(tmp_path), "old prompt")
-    assert first is not None
+def test_write_codex_config_developer_instructions_roundtrip_through_toml(tmp_path):
     import pathlib
-    assert write_agents_md(str(tmp_path), "") is None
-    assert not pathlib.Path(first).exists()
+    import tomllib
+
+    from agentcore.drivers.codex import codex_config_path, write_codex_config
+
+    prompt = 'Say "hi".\nUse C:\\path\\x\ttabs — and émojis 🙂\x7f end'
+    path = write_codex_config(str(tmp_path), [], prompt)
+    assert path == codex_config_path(str(tmp_path))
+    parsed = tomllib.loads(pathlib.Path(path).read_text())
+    assert parsed == {"developer_instructions": prompt}
+    assert oct(pathlib.Path(path).stat().st_mode & 0o777) == "0o600"
 
 
-def test_stdin_prompt_prefixes_standing_instructions():
-    from agentcore.drivers.codex import stdin_prompt
+def test_write_codex_config_combines_developer_instructions_and_mcp(tmp_path):
+    import pathlib
+    import tomllib
 
-    out = stdin_prompt("summarize the file", "You are a security auditor.")
-    assert out.startswith("<standing_instructions>\n")
-    assert "You are a security auditor." in out
-    assert out.index("You are a security auditor.") < out.index("summarize the file")
-    assert out.endswith("summarize the file")
-    assert "</standing_instructions>" in out
+    from agentcore.drivers.codex import write_codex_config
+    from agentcore.models import ShimMcpServer
+
+    path = write_codex_config(
+        str(tmp_path),
+        [ShimMcpServer(name="lin", url="https://m", auth_type="bearer", secret="t")],
+        "Be terse.",
+    )
+    parsed = tomllib.loads(pathlib.Path(path).read_text())
+    assert parsed["developer_instructions"] == "Be terse."
+    assert parsed["mcp_servers"]["lin"]["url"] == "https://m"
 
 
-def test_stdin_prompt_without_system_prompt_is_task_prompt_verbatim():
-    from agentcore.drivers.codex import stdin_prompt
+def test_write_codex_config_removes_file_when_nothing_to_write(tmp_path):
+    import pathlib
 
-    assert stdin_prompt("just the task", "") == "just the task"
-    assert stdin_prompt("just the task", None) == "just the task"
+    from agentcore.drivers.codex import codex_config_path, write_codex_config
 
-
-# ---------------------------------------------------------------------------
-# Task 4: structured output — native --output-schema helpers
-# ---------------------------------------------------------------------------
+    assert write_codex_config(str(tmp_path), [], "stale") is not None
+    assert write_codex_config(str(tmp_path), [], "") is None
+    assert not pathlib.Path(codex_config_path(str(tmp_path))).exists()
 
 
 def test_build_command_includes_output_schema():

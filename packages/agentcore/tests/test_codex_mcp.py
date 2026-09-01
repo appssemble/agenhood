@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agentcore.drivers.codex import codex_config_path, codex_home, write_codex_mcp
+from agentcore.drivers.codex import codex_config_path, codex_home, write_codex_config
 from agentcore.drivers.mcp_config import codex_mcp_env
 from agentcore.models import ShimMcpServer
 
@@ -17,17 +17,18 @@ def test_config_path_under_codex_home(tmp_path):
 
 
 def test_write_creates_config_toml(tmp_path):
-    n = write_codex_mcp(str(tmp_path), [
+    path = write_codex_config(str(tmp_path), [
         ShimMcpServer(name="lin", url="https://m", auth_type="bearer", secret="t"),
-    ])
-    assert n == 1
-    toml = Path(codex_config_path(str(tmp_path))).read_text()
+    ], "")
+    assert path == codex_config_path(str(tmp_path))
+    toml = Path(path).read_text()
+    assert "developer_instructions" not in toml
     assert "[mcp_servers.lin]" in toml
     assert 'bearer_token_env_var = "MCP_LIN_TOKEN"' in toml
 
 
 def test_write_empty_is_noop(tmp_path):
-    assert write_codex_mcp(str(tmp_path), []) == 0
+    assert write_codex_config(str(tmp_path), [], "") is None
     assert not Path(codex_config_path(str(tmp_path))).exists()
 
 

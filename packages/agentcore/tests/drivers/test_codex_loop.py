@@ -132,9 +132,10 @@ async def test_success_emits_result_and_tokens(monkeypatch, tmp_path):
 
     assert result.success
     assert result.output == "all done"
-    # cfg() sets system_prompt="P", which now rides stdin as standing
+    # cfg() sets system_prompt="P"; it travels via config.toml
+    # developer_instructions, so stdin is the bare task prompt.
     # instructions above the task prompt (codex hardening).
-    assert proc.stdin.data == b"<standing_instructions>\nP\n</standing_instructions>\n\ndo it"
+    assert proc.stdin.data == b"do it"
     types = [t for t, _ in events]
     assert types[0] == "status_change"
     assert "codex_event" in types
@@ -447,12 +448,35 @@ async def test_run_materializes_configured_system_prompt(monkeypatch, tmp_path):
         credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
     )
     import pathlib
-    agents = pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md"
-    assert agents.read_text() == "You are a security auditor."
+    import tomllib
+    cfg_toml = pathlib.Path(codex_home(str(tmp_path))) / "config.toml"
+    assert tomllib.loads(cfg_toml.read_text())["developer_instructions"] == (
+        "You are a security auditor."
+    )
+    assert not (pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md").exists()
 
 
 @pytest.mark.asyncio
-async def test_run_prefixes_system_prompt_on_stdin(monkeypatch, tmp_path):
+async def test_run_removes_agents_md_written_by_older_driver(monkeypatch, tmp_path):
+    import pathlib
+
+    from agentcore.drivers.codex import CodexDriver, codex_home
+
+    stale = pathlib.Path(codex_home(str(tmp_path))) / "AGENTS.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("old prompt")
+    proc = FakeProc([])
+    patch_proc(monkeypatch, proc)
+    events, emit = collector()
+    await CodexDriver().run(
+        task=TaskBody(prompt="x"), config=cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+    assert not stale.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_sends_task_prompt_verbatim_even_with_system_prompt(monkeypatch, tmp_path):
     from agentcore.drivers.codex import CodexDriver
 
     proc = FakeProc([])
@@ -466,9 +490,7 @@ async def test_run_prefixes_system_prompt_on_stdin(monkeypatch, tmp_path):
         task=TaskBody(prompt="what is DNS?"), config=config, limits=LIMITS,
         credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
     )
-    sent = proc.stdin.data.decode()
-    assert sent.startswith("<standing_instructions>\nAnswer tersely.")
-    assert sent.endswith("what is DNS?")
+    assert proc.stdin.data.decode() == "what is DNS?"
 
 
 @pytest.mark.asyncio

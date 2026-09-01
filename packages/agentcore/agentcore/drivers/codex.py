@@ -32,6 +32,17 @@ codex exec CLI (OpenAI codex):
   because workspaces are not git repos;
 - ``-C`` sets the working dir; ``-m`` selects the (bare OpenAI) model.
 
+System prompt: written to ``$CODEX_HOME/config.toml`` as ``developer_instructions``
+(``write_codex_config``), codex's documented "additional developer instructions
+injected into the session". Measured 2026-09-01 against the alternatives: it
+costs the same tokens as AGENTS.md, is injected once per session (a stdin
+prefix is re-appended to the thread on every resumed turn), and sits above
+user-level content — AGENTS.md is user context and lost every conflict with
+the task text in the test; developer_instructions was the only channel that
+won one. Earlier driver versions wrote AGENTS.md AND prefixed stdin, doubling
+the prompt; ``remove_stale_agents_md`` clears the AGENTS.md left on persistent
+volumes by those versions.
+
 Auth: ``CODEX_API_KEY`` for the api-key path (codex exec ignores OPENAI_API_KEY);
 for ``oauth_subscription`` the driver writes ``$CODEX_HOME/auth.json`` instead.
 CODEX_HOME is redirected under the writable workspace (the container $HOME is not
@@ -57,7 +68,11 @@ from agentcore.drivers.base import (
     register,
 )
 from agentcore.drivers.cli_stream import classify_json_line, log_payload
-from agentcore.drivers.mcp_config import codex_mcp_env, render_codex_mcp_toml
+from agentcore.drivers.mcp_config import (
+    codex_mcp_env,
+    render_codex_mcp_toml,
+    toml_basic_string,
+)
 from agentcore.drivers.session_state import read_session_state, write_session_state
 from agentcore.drivers.skills_md import write_skills
 from agentcore.models import (
@@ -95,18 +110,33 @@ def codex_config_path(workspace: str) -> str:
     return str(Path(codex_home(workspace)) / "config.toml")
 
 
-def write_codex_mcp(workspace: str, servers: list[ShimMcpServer]) -> int:
-    """Write the resolved MCP servers into $CODEX_HOME/config.toml. Returns count.
-    No-op when there are no servers. This file is exclusively MCP config (codex's
-    only other state file is auth.json), so it is written fresh each task."""
-    if not servers:
-        return 0
+def write_codex_config(
+    workspace: str, servers: list[ShimMcpServer], developer_instructions: str
+) -> str | None:
+    """Write $CODEX_HOME/config.toml fresh for this task; return its path.
+
+    Carries the agent's system prompt as ``developer_instructions`` (see the
+    module docstring) plus the resolved MCP server blocks. The driver owns this
+    file outright — codex's other state files are auth.json and caches — so it
+    is recreated every task (a prior task may have chowned it to the agent uid)
+    and removed when there is nothing to write, so a previous task's servers or
+    prompt can never linger. Returns None when nothing was written.
+    """
     path = Path(codex_config_path(workspace))
+    path.unlink(missing_ok=True)
+    parts: list[str] = []
+    if developer_instructions:
+        parts.append(
+            f"developer_instructions = {toml_basic_string(developer_instructions)}\n"
+        )
+    if servers:
+        parts.append(render_codex_mcp_toml(servers))
+    if not parts:
+        return None
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.unlink(missing_ok=True)  # prior task may have chowned it to the agent uid
-    path.write_text(render_codex_mcp_toml(servers))
+    path.write_text("\n".join(parts))
     os.chmod(path, 0o600)
-    return len(servers)
+    return str(path)
 
 
 def skills_dir(workspace: str) -> str:
@@ -118,56 +148,29 @@ def skills_dir(workspace: str) -> str:
     return str(Path(codex_home(workspace)) / ".agents" / "skills")
 
 
-def write_agents_md(workspace: str, system_prompt: str) -> str | None:
-    """Materialize the configured system prompt as ``$CODEX_HOME/AGENTS.md``.
+def remove_stale_agents_md(workspace: str) -> None:
+    """Delete ``$CODEX_HOME/AGENTS.md`` if an older driver left one.
 
-    codex has no system-prompt flag; its layered-instructions mechanism reads
-    the global ``$CODEX_HOME/AGENTS.md`` before any project AGENTS.md, which
-    makes it the slot for the container's configured prompt (spec §3.7 layer
-    1; both prompt modes behave as augment — the CLI's own harness prompt
-    cannot be replaced). An empty prompt removes a stale file from a prior
-    config. Recreates rather than rewrites in place (a prior task may have
-    chowned it to the agent uid; same pattern as write_codex_mcp).
+    Until 2026-09 the configured system prompt was materialized there (and
+    prefixed on stdin); it now travels as ``developer_instructions``. Workspace
+    volumes outlive image upgrades, so without this the old file would double
+    the prompt for every pre-existing agent.
     """
-    path = Path(codex_home(workspace)) / "AGENTS.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.unlink(missing_ok=True)
-    if not system_prompt:
-        return None
-    path.write_text(system_prompt)
-    return str(path)
+    (Path(codex_home(workspace)) / "AGENTS.md").unlink(missing_ok=True)
 
 
 def write_output_schema(workspace: str, schema: dict[str, Any]) -> str:
     """Materialize the task's JSON schema for codex's ``--output-schema``.
 
     Recreates rather than rewrites in place (a prior task may have chowned it
-    to the agent uid; same pattern as write_agents_md). The caller chowns it
-    to the agent so the dropped codex process can read it.
+    to the agent uid; same pattern as write_codex_config). The caller chowns
+    it to the agent so the dropped codex process can read it.
     """
     path = Path(codex_home(workspace)) / "output-schema.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.unlink(missing_ok=True)
     path.write_text(json.dumps(schema))
     return str(path)
-
-
-def stdin_prompt(task_prompt: str, system_prompt: str | None) -> str:
-    """Compose the stdin payload, reinforcing the configured system prompt.
-
-    AGENTS.md (write_agents_md) is codex's official channel but lands as
-    user-level context below the harness system prompt; prefixing the same
-    instructions on every task's prompt doubles their salience so they are
-    not drowned out on long tasks. No prompt → task prompt verbatim.
-    """
-    if not system_prompt:
-        return task_prompt
-    return (
-        "<standing_instructions>\n"
-        f"{system_prompt}\n"
-        "</standing_instructions>\n\n"
-        f"{task_prompt}"
-    )
 
 
 # codex config overrides applied to every invocation — see the module docstring.
@@ -500,7 +503,7 @@ class CodexDriver:
         sandbox.ensure_agent_dir(home)
 
         # Native --output-schema (task 4): materialize the task's JSON schema
-        # when it fits the native strict subset. Best-effort, like AGENTS.md —
+        # when it fits the native strict subset. Best-effort, like skills —
         # a failure must not change the task outcome, only drop the native flag
         # (the shared validate-and-retry loop still enforces the schema).
         output_schema_file: str | None = None
@@ -537,14 +540,11 @@ class CodexDriver:
             codex_home=home,
         )
 
-        # Configured system prompt → $CODEX_HOME/AGENTS.md (spec §3.7 layer 1;
-        # best-effort like skills/MCP, but surfaced as a warn so a dropped
-        # prompt is never silent again).
+        # Older drivers wrote the system prompt to AGENTS.md; clear any
+        # survivor so it cannot double the developer_instructions below.
         try:
-            agents_path = write_agents_md(workspace, config.system_prompt or "")
-            if agents_path:
-                sandbox.chown_to_agent(agents_path)
-        except Exception as exc:  # noqa: BLE001 — prompt materialization is best-effort
+            remove_stale_agents_md(workspace)
+        except Exception as exc:  # noqa: BLE001 — cleanup is best-effort
             await emit("log", {"level": "warn", "message": "system_prompt_error",
                                "data": {"error": str(exc)}})
 
@@ -589,15 +589,21 @@ class CodexDriver:
             )
             sandbox.chown_to_agent(auth_path)
 
-        # Materialize MCP servers: write config.toml + inject secret env vars
-        # (best-effort, like skills). Env vars carry secrets codex reads at startup.
+        # config.toml: system prompt as developer_instructions + MCP servers
+        # (best-effort, like skills, but surfaced as a warn so a dropped prompt
+        # is never silent). MCP secrets ride env vars codex reads at startup.
         try:
-            count = write_codex_mcp(workspace, mcp_servers or [])
-            if count:
-                sandbox.chown_to_agent(codex_config_path(workspace))
-                child_env.update(codex_mcp_env(mcp_servers or []))
-                await emit("log", log_payload("mcp_materialized", data={"count": count}))
-        except Exception as exc:  # noqa: BLE001 — MCP is best-effort
+            cfg_path = write_codex_config(
+                workspace, mcp_servers or [], config.system_prompt or ""
+            )
+            if cfg_path:
+                sandbox.chown_to_agent(cfg_path)
+            if mcp_servers:
+                child_env.update(codex_mcp_env(mcp_servers))
+                await emit(
+                    "log", log_payload("mcp_materialized", data={"count": len(mcp_servers)})
+                )
+        except Exception as exc:  # noqa: BLE001 — config is best-effort
             await emit(
                 "log",
                 log_payload(
@@ -637,8 +643,7 @@ class CodexDriver:
         try:
             # Feed the prompt on stdin, then close so codex can start.
             if proc.stdin is not None:
-                payload = stdin_prompt(prompt, config.system_prompt)
-                proc.stdin.write(payload.encode("utf-8"))
+                proc.stdin.write(prompt.encode("utf-8"))
                 await proc.stdin.drain()
                 proc.stdin.close()
 

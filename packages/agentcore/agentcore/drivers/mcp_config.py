@@ -49,9 +49,33 @@ def render_opencode_mcp(servers: list[ShimMcpServer]) -> dict[str, Any]:
     return {"mcp": mcp}
 
 
-def _toml_basic_string(value: str) -> str:
-    """Minimal TOML basic-string escaping (backslash + double-quote)."""
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+_TOML_ESCAPES = {
+    '"': '\\"', "\\": "\\\\", "\b": "\\b", "\t": "\\t",
+    "\n": "\\n", "\f": "\\f", "\r": "\\r",
+}
+
+
+def toml_basic_string(value: str) -> str:
+    """Render ``value`` as a single-line TOML basic string.
+
+    Full escaping per the TOML spec: the named escapes above, and ``\\uXXXX``
+    for every other control character (U+0000-U+001F, U+007F), which TOML
+    forbids raw. Everything else — including non-ASCII — passes through. The
+    codex driver feeds arbitrary agent system prompts through this, so a
+    half-escaped string would silently break the whole config file."""
+    out: list[str] = []
+    for ch in value:
+        esc = _TOML_ESCAPES.get(ch)
+        if esc is not None:
+            out.append(esc)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+_toml_basic_string = toml_basic_string
 
 
 def render_codex_mcp_toml(servers: list[ShimMcpServer]) -> str:

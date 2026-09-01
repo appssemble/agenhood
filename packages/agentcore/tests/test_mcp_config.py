@@ -75,3 +75,12 @@ def test_codex_noauth_env_carries_nonempty_placeholder() -> None:
     # Must be non-empty: codex falls back to OAuth discovery for an empty token.
     assert env["MCP_PUB_TOKEN"] == CODEX_NOAUTH_PLACEHOLDER
     assert CODEX_NOAUTH_PLACEHOLDER
+
+
+def test_toml_basic_string_escapes_round_trip_through_tomllib():
+    import tomllib
+
+    from agentcore.drivers.mcp_config import toml_basic_string
+
+    raw = 'q"uote \\ back\\slash\nnew\ttab\x7fdel\x01ctl — é 🙂'
+    assert tomllib.loads(f"v = {toml_basic_string(raw)}")["v"] == raw
