@@ -11,6 +11,8 @@ codex exec CLI (OpenAI codex):
     codex exec --json --skip-git-repo-check --ephemeral \\
         -C <ws> -m <model> -c features.plugins=false -c features.apps=false \\
         -c analytics.enabled=false -c otel.exporter=none \\
+        -c features.image_generation=false -c features.view_image=false \\
+        -c features.personality=false -c features.multi_agent=false \\
         --dangerously-bypass-approvals-and-sandbox -
 
 - ``--json`` emits one JSON event object per line on stdout;
@@ -19,7 +21,10 @@ codex exec CLI (OpenAI codex):
   codex runs them at startup and again at shutdown, and the driver waits for
   process exit, so they sat on every task's critical path (0.3-7 s measured
   after ``turn.completed``, scaling with OpenAI backend latency) and added
-  ~2.5k prompt tokens per turn. Nothing in a sandboxed agent uses them;
+  ~2.5k prompt tokens per turn. Image generation, view_image, personality
+  and multi-agent add ~1k more of tool/feature prompt. Nothing in a headless
+  sandboxed agent uses any of them. ``web_search`` deliberately stays on
+  (another ~2.8k tokens) — it is the agent's only built-in web access;
 - the trailing ``-`` reads the prompt from stdin (robust vs prompts starting "-");
 - ``--dangerously-bypass-approvals-and-sandbox`` auto-approves + full access —
   safe because the sandboxed container is itself the security boundary;
@@ -171,6 +176,10 @@ SIDE_CHANNEL_OVERRIDES: tuple[str, ...] = (
     "features.apps=false",
     "analytics.enabled=false",
     "otel.exporter=none",
+    "features.image_generation=false",
+    "features.view_image=false",
+    "features.personality=false",
+    "features.multi_agent=false",
 )
 
 
