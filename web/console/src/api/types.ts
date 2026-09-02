@@ -286,6 +286,8 @@ export interface TenantTaskSummary {
   tokens_in: number;
   tokens_out: number;
   created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
 }
 
 // ---- Workspace git (workspace git rollback spec) ----------------------------

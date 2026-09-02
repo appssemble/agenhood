@@ -1,10 +1,24 @@
 import { Link } from "react-router-dom";
 import type { TenantTaskSummary } from "../api/types";
 import { TaskBadge } from "./StatusBadge";
-import { formatCompact } from "../lib/format";
+import { formatCompact, formatDuration } from "../lib/format";
+import { useNowTick } from "../lib/useNowTick";
 import { EmptyState } from "../ui/EmptyState";
 
+// How long a task took: its full run once finished, elapsed-so-far while it's
+// still going, and nothing at all before it starts.
+function taskDuration(t: TenantTaskSummary, nowMs: number): string {
+  const start = t.started_at ? Date.parse(t.started_at) : NaN;
+  if (!Number.isFinite(start)) return "—";
+  const end = t.ended_at ? Date.parse(t.ended_at) : nowMs;
+  if (!Number.isFinite(end)) return "—";
+  return formatDuration(Math.max(0, end - start));
+}
+
 export function ActivityFeed({ tasks }: { tasks: TenantTaskSummary[] }) {
+  const anyRunning = tasks.some((t) => t.ended_at == null && t.started_at != null);
+  const nowMs = useNowTick(anyRunning);
+
   if (tasks.length === 0) {
     return (
       <EmptyState
@@ -19,7 +33,7 @@ export function ActivityFeed({ tasks }: { tasks: TenantTaskSummary[] }) {
     <div style={{ display: "flex", flexDirection: "column" }}>
       {tasks.map((t) => (
         <Link key={t.task_id} to={`/containers/${t.container_id}/tasks/${t.task_id}`}
-          style={{ display: "grid", gridTemplateColumns: "1fr 96px 52px", gap: 10,
+          style={{ display: "grid", gridTemplateColumns: "1fr 96px 64px 52px", gap: 10,
             alignItems: "center", padding: "9px 0", borderBottom: "1px solid var(--surface-3)",
             textDecoration: "none", color: "inherit" }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>
@@ -27,6 +41,9 @@ export function ActivityFeed({ tasks }: { tasks: TenantTaskSummary[] }) {
           </span>
           <span style={{ justifySelf: "center" }}>
             <TaskBadge status={t.status} />
+          </span>
+          <span className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--muted-2)", textAlign: "right" }}>
+            {taskDuration(t, nowMs)}
           </span>
           <span className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--muted)", textAlign: "right" }}>
             {formatCompact(t.tokens_in + t.tokens_out)}
