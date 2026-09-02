@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTask, useTaskEvents, useCancelTask, keys } from "../api/queries";
 import { useTaskStream } from "../api/useTaskStream";
+import { useNowTick } from "../lib/useNowTick";
 import { TaskBadge } from "./StatusBadge";
 import { ChatTimeline } from "./ChatTimeline";
 import { useToast } from "./Toast";
@@ -40,6 +41,11 @@ function ActiveTurnBody({
   })();
   const status = (streamStatus ?? taskQ.data?.status ?? initialStatus ?? "running") as TaskStatus;
   const terminal = isTerminal(status);
+  // While the turn runs, the trailing step's duration advances with the clock;
+  // once it lands, it's pinned to the task's recorded end.
+  const nowMs = useNowTick(!terminal);
+  const endedAtMs = taskQ.data?.ended_at ? Date.parse(taskQ.data.ended_at) : NaN;
+  const endMs = terminal && Number.isFinite(endedAtMs) ? endedAtMs : nowMs;
 
   useEffect(() => {
     if (terminal) {
@@ -85,7 +91,7 @@ function ActiveTurnBody({
     <div className="chat-asst">
       <span className="glyph" aria-hidden="true"><Icons.Bot w={17} /></span>
       <div className="chat-asst-body">
-        <ChatTimeline cid={cid} events={events} result={terminal ? result?.output : undefined} />
+        <ChatTimeline cid={cid} events={events} result={terminal ? result?.output : undefined} endMs={endMs} />
 
         {!terminal && (
           <span className="chat-status">
@@ -132,6 +138,7 @@ function HistoricalTurnBody({ cid, taskId, status, onContentChange }: { cid: str
   const eventsQ = useTaskEvents(cid, taskId);
   const detailQ = useTask(cid, taskId);
   const events = eventsQ.data?.events ?? [];
+  const endedAtMs = detailQ.data?.ended_at ? Date.parse(detailQ.data.ended_at) : NaN;
 
   const result = detailQ.data?.result as { output?: unknown } | null | undefined;
   const errorMsg = detailQ.data?.error?.message;
@@ -146,7 +153,7 @@ function HistoricalTurnBody({ cid, taskId, status, onContentChange }: { cid: str
     <div className="chat-asst">
       <span className="glyph" aria-hidden="true"><Icons.Bot w={17} /></span>
       <div className="chat-asst-body">
-        <ChatTimeline cid={cid} events={events} result={result?.output} />
+        <ChatTimeline cid={cid} events={events} result={result?.output} endMs={endedAtMs} />
 
         {loading && <span className="chat-status"><span className="spin" /> Loading…</span>}
         {failed && (
