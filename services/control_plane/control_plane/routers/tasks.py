@@ -66,7 +66,7 @@ from control_plane.routers.containers import (
 from control_plane.schemas import SessionOut, TaskOut, TaskSubmitResponse
 from control_plane.shim_client import ShimClient, ShimError, ShimTooManyTasks
 from control_plane.skills_service import resolve_skills_for_request
-from control_plane.sse import format_sse, parse_event_line, should_forward
+from control_plane.sse import event_ts, format_sse, parse_event_line, should_forward
 from control_plane.tenant_defaults import worker_cap_for_driver
 
 router = APIRouter(tags=["Tasks"])
@@ -1114,6 +1114,7 @@ async def _persist_event_best_effort(
                 seq=int(event["seq"]),
                 type=event["type"],
                 payload=event.get("payload", {}),
+                ts=event_ts(event),
             ).on_conflict_do_nothing(index_elements=["task_id", "seq"])
             await s.execute(stmt)
             await _apply_event_to_task_row(s, task_id, event)
@@ -1153,7 +1154,9 @@ async def _apply_event_to_task_row(
         to_status = payload.get("to")
         values: dict[str, Any] = {
             "status": to_status,
-            "ended_at": datetime.now(UTC),
+            # The agent's own finish time, not the moment we got around to
+            # writing it down — task duration is read off this column.
+            "ended_at": event_ts(event),
             "result": payload.get("result"),
         }
         err = payload.get("error") or {}
