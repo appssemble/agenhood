@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatCompact, formatDate, shortId, relativeFromNow } from "./format";
+import { formatCompact, formatDate, shortId, relativeFromNow, formatDuration } from "./format";
 
 describe("relativeFromNow", () => {
   const now = Date.parse("2026-06-29T12:00:00Z");
@@ -54,5 +54,33 @@ describe("formatDate", () => {
     const out = formatDate("2026-06-14T10:00:00Z");
     expect(out).toMatch(/Jun/);
     expect(out).toMatch(/2026/);
+  });
+});
+
+describe("formatDuration", () => {
+  it("uses milliseconds below a second", () => {
+    expect(formatDuration(0)).toBe("0ms");
+    expect(formatDuration(312)).toBe("312ms");
+    expect(formatDuration(999)).toBe("999ms");
+  });
+  it("uses one decimal of seconds below a minute", () => {
+    expect(formatDuration(1000)).toBe("1.0s");
+    expect(formatDuration(1440)).toBe("1.4s");
+    expect(formatDuration(59_000)).toBe("59.0s");
+  });
+  it("rolls up to minutes rather than showing 60.0s", () => {
+    expect(formatDuration(59_999)).toBe("1m 0s");
+    expect(formatDuration(133_000)).toBe("2m 13s");
+    expect(formatDuration(3_599_000)).toBe("59m 59s");
+  });
+  it("rolls up to hours rather than showing 60m", () => {
+    expect(formatDuration(3_599_999)).toBe("1h 00m");
+    expect(formatDuration(3_600_000)).toBe("1h 00m");
+    expect(formatDuration(3_900_000)).toBe("1h 05m");
+  });
+  it("returns a dash for nonsense input", () => {
+    expect(formatDuration(-1)).toBe("—");
+    expect(formatDuration(NaN)).toBe("—");
+    expect(formatDuration(Infinity)).toBe("—");
   });
 });

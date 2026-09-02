@@ -56,3 +56,18 @@ export function relativeFromNow(iso: string | null | undefined, nowMs: number): 
   const d = Math.floor(h / 24);
   return past ? `${d}d ago` : `in ${d}d`;
 }
+
+/** Elapsed time, at the coarsest unit that still reads precisely: "312ms",
+ *  "1.4s", "2m 13s", "1h 04m". Each branch decides using the value *as it
+ *  will be rounded*, so no boundary can render as "60.0s" or "60m".
+ *  Negative or non-finite input → "—". */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const tenths = Math.round(ms / 100);
+  if (tenths < 600) return `${(tenths / 10).toFixed(1)}s`;
+  const sec = Math.round(ms / 1000);
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  const min = Math.round(ms / 60_000);
+  return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`;
+}
