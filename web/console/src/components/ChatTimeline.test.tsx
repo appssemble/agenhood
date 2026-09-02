@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { buildItems } from "./ChatTimeline";
 import type { Event } from "../api/types";
 
-/** Thin helper — casts type so tests stay terse without fighting the union. */
-function evt(seq: number, type: string, payload: Record<string, unknown>): Event {
-  return { seq, type: type as Event["type"], ts: "2026-06-30T00:00:00Z", payload };
+/** Thin helper — casts type so tests stay terse without fighting the union.
+ *  `sec` spaces events apart so duration behaviour is observable. */
+function evt(seq: number, type: string, payload: Record<string, unknown>, sec = 0): Event {
+  const ts = `2026-06-30T00:00:${String(sec).padStart(2, "0")}.000Z`;
+  return { seq, type: type as Event["type"], ts, payload };
 }
 
 // ─── core event-type dispatch ──────────────────────────────────────────────
@@ -483,5 +485,37 @@ describe("buildItems — fromRaw: codex thread items", () => {
       }),
     ]);
     expect(items).toHaveLength(0);
+  });
+});
+
+describe("buildItems — timestamps", () => {
+  it("stamps each item with its source event's ts", () => {
+    const events: Event[] = [
+      evt(1, "assistant_message", { content: [{ type: "text", text: "hi" }] }, 1),
+      evt(2, "log", { level: "info", message: "note" }, 4),
+    ];
+    const items = buildItems(events);
+    expect(items[0].ts).toBe("2026-06-30T00:00:01.000Z");
+    expect(items[1].ts).toBe("2026-06-30T00:00:04.000Z");
+  });
+
+  it("stamps a folded tool_call with the call's time, not the result's", () => {
+    // The tool_result is folded into the call, so the call's row spans the
+    // tool's execution — it must start when the call was made.
+    const events: Event[] = [
+      evt(1, "tool_call", { tool_use_id: "u1", name: "shell", input: { command: "ls" } }, 2),
+      evt(2, "tool_result", { tool_use_id: "u1", ok: true, content: "a b c", duration_ms: 900 }, 6),
+    ];
+    const items = buildItems(events);
+    expect(items).toHaveLength(1);
+    expect(items[0].ts).toBe("2026-06-30T00:00:02.000Z");
+  });
+
+  it("stamps items normalized out of a driver's raw payload", () => {
+    const events: Event[] = [
+      evt(1, "codex_event", { raw: { type: "item.completed", item: { type: "agent_message", text: "done" } } }, 3),
+    ];
+    const items = buildItems(events);
+    expect(items[0]).toMatchObject({ kind: "message", ts: "2026-06-30T00:00:03.000Z" });
   });
 });

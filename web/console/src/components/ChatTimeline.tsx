@@ -114,7 +114,7 @@ function diffRows(before: string, after: string, ctx = 3): DiffRow[] {
 // tool's input. A tool call may touch several files (a multi-file patch).
 type FileDiff = { path?: string; rows: DiffRow[] };
 
-type Item =
+type ItemBody =
   | { id: string; kind: "message"; text: string }
   | { id: string; kind: "tool"; name: string; args: string; ok?: boolean; durationMs?: number; output?: string; edit?: FileDiff[] }
   | { id: string; kind: "file"; op: string; path: string }
@@ -126,6 +126,10 @@ type Item =
   | { id: string; kind: "divider"; label: string }
   | { id: string; kind: "result"; output: unknown }
   | { id: string; kind: "event"; label: string };
+
+/** An item plus the time of the event that produced it. Optional because the
+ *  synthetic `result` row has no source event. */
+type Item = ItemBody & { ts?: string };
 
 const TERMINAL_FAIL = new Set(["failed", "timed_out", "cancelled"]);
 
@@ -221,6 +225,7 @@ export function buildItems(events: Event[]): Item[] {
   for (const e of events) {
     const p = e.payload as Record<string, any>;
     const id = String(e.seq);
+    const before = items.length;
     switch (e.type) {
       case "assistant_message": {
         const text = ((p.content as Array<{ type: string; text?: string }> | undefined) ?? [])
@@ -277,6 +282,9 @@ export function buildItems(events: Event[]): Item[] {
         break;
       }
     }
+    // Stamp whatever this event produced with the event's own time. Done here
+    // rather than at each push site so no future case can forget it.
+    for (let i = before; i < items.length; i++) items[i].ts = e.ts;
   }
   return items;
 }
