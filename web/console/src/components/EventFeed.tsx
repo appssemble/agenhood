@@ -1,5 +1,7 @@
 import type { Event } from "../api/types";
 import { containerFileRawUrl } from "../api/fileUrls";
+import { stepDurations } from "../lib/timing";
+import { formatDuration } from "../lib/format";
 
 function downloadHref(cid: string, path: string) {
   return containerFileRawUrl(cid, path);
@@ -72,12 +74,16 @@ function EventBody({ cid, ev }: { cid: string; ev: Event }) {
   }
 }
 
-export function EventFeed({ events, cid }: { events: Event[]; cid: string }) {
+export function EventFeed({ events, cid, endMs }: { events: Event[]; cid: string; endMs?: number }) {
+  // Each row's duration is the gap to the next event; the last runs to the end
+  // of the task (or, while it's still running, to now).
+  const durations = stepDurations(events.map((e) => e.ts), endMs ?? Date.now());
   return (
     <div>
-      {events.map((ev) => {
+      {events.map((ev, i) => {
         const label = ev.type.replace("_", " ");
         const modifier = rowClass(ev.type);
+        const d = durations[i];
         return (
           <div
             key={ev.seq}
@@ -92,6 +98,7 @@ export function EventFeed({ events, cid }: { events: Event[]; cid: string }) {
                 <EventBody cid={cid} ev={ev} />
               </div>
             </div>
+            <span className="dur">{d == null ? "" : formatDuration(d)}</span>
           </div>
         );
       })}
