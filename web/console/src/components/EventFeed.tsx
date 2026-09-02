@@ -74,10 +74,10 @@ function EventBody({ cid, ev }: { cid: string; ev: Event }) {
   }
 }
 
-export function EventFeed({ events, cid, endMs }: { events: Event[]; cid: string; endMs?: number }) {
+export function EventFeed({ events, cid, endMs }: { events: Event[]; cid: string; endMs: number }) {
   // Each row's duration is the gap to the next event; the last runs to the end
   // of the task (or, while it's still running, to now).
-  const durations = stepDurations(events.map((e) => e.ts), endMs ?? Date.now());
+  const durations = stepDurations(events.map((e) => e.ts), endMs);
   return (
     <div>
       {events.map((ev, i) => {

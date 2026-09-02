@@ -9,7 +9,7 @@ describe("EventFeed codex events", () => {
       { seq: 1, type: "codex_stdout", ts: "2026-06-08T00:00:00Z", payload: { line: "hello" } },
       { seq: 2, type: "codex_event", ts: "2026-06-08T00:00:01Z", payload: { raw: { type: "turn.completed" } } },
     ] as unknown as Event[];
-    render(<EventFeed events={events} cid="c1" />);
+    render(<EventFeed events={events} cid="c1" endMs={Date.parse("2026-06-08T00:00:02Z")} />);
     expect(screen.getByText("hello")).toBeInTheDocument();
     expect(screen.getByText(/turn\.completed/)).toBeInTheDocument();
   });

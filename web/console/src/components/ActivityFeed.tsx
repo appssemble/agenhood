@@ -4,6 +4,7 @@ import { TaskBadge } from "./StatusBadge";
 import { formatCompact, formatDuration } from "../lib/format";
 import { useNowTick } from "../lib/useNowTick";
 import { EmptyState } from "../ui/EmptyState";
+import { isTerminal } from "./ChatTurn";
 
 // How long a task took: its full run once finished, elapsed-so-far while it's
 // still going, and nothing at all before it starts.
@@ -16,7 +17,7 @@ function taskDuration(t: TenantTaskSummary, nowMs: number): string {
 }
 
 export function ActivityFeed({ tasks }: { tasks: TenantTaskSummary[] }) {
-  const anyRunning = tasks.some((t) => t.ended_at == null && t.started_at != null);
+  const anyRunning = tasks.some((t) => !isTerminal(t.status) && t.started_at != null);
   const nowMs = useNowTick(anyRunning);
 
   if (tasks.length === 0) {

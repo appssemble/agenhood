@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Icons } from "../ui/Icon";
 import type { Event } from "../api/types";
 import { containerFileRawUrl } from "../api/fileUrls";
@@ -425,8 +425,9 @@ function ItemView({ item, cid }: { item: Item; cid: string }) {
 // git ops, logs, terminal output, and step dividers. When `result` is provided
 // it's appended as the final step (the answer); a trailing message that just
 // duplicates it is dropped.
-export function ChatTimeline({ cid, events, result, endMs }: { cid: string; events: Event[]; result?: unknown; endMs?: number }) {
-  let items = buildItems(events);
+export function ChatTimeline({ cid, events, result, endMs }: { cid: string; events: Event[]; result?: unknown; endMs: number }) {
+  const built = useMemo(() => buildItems(events), [events]);
+  let items = built;
 
   const resultText = typeof result === "string" ? result.trim() : undefined;
   if (resultText) {
@@ -446,7 +447,7 @@ export function ChatTimeline({ cid, events, result, endMs }: { cid: string; even
   // Each step's duration is the gap to the next step; the last runs to the end
   // of the task (or to now, while it's still going). The `result` row has no
   // timestamp, so it's skipped as a boundary and gets no duration of its own.
-  const durations = stepDurations(items.map((it) => it.ts), endMs ?? Date.now());
+  const durations = stepDurations(items.map((it) => it.ts), endMs);
   return (
     <div className="ev-list">
       {items.map((it, i) => (

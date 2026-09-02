@@ -11,7 +11,7 @@ import { ApiError } from "../api/client";
 import { Icons } from "../ui/Icon";
 import type { TaskStatus } from "../api/types";
 
-function isTerminal(s?: TaskStatus) {
+export function isTerminal(s?: TaskStatus) {
   return !!s && s !== "running" && s !== "pending";
 }
 function isFailed(s: TaskStatus) {
