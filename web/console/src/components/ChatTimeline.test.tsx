@@ -549,4 +549,21 @@ describe("ChatTimeline — rendered durations", () => {
     expect(screen.getByText("the answer")).toBeInTheDocument();
     expect(screen.queryByText("0ms")).not.toBeInTheDocument();
   });
+
+  it("absorbs an interleaved token_update into the preceding item's duration", () => {
+    const events: Event[] = [
+      evt(1, "assistant_message", { content: [{ type: "text", text: "first" }] }, 1),
+      evt(2, "token_update", { tokens_in: 10, tokens_out: 5 }, 3),
+      evt(3, "log", { level: "info", message: "second" }, 6),
+    ];
+    const { container } = render(
+      <ChatTimeline cid="c1" events={events} endMs={Date.parse("2026-06-30T00:00:09.000Z")} />,
+    );
+    // The token_update sits between the two dated items but contributes no row
+    // of its own — the first item's duration spans all the way to the second
+    // item's start (5.0s), not just to the token_update (which would be 2.0s).
+    expect(container.querySelectorAll(".ev-row")).toHaveLength(2);
+    expect(screen.getByText("5.0s")).toBeInTheDocument();
+    expect(screen.queryByText("2.0s")).not.toBeInTheDocument();
+  });
 });
