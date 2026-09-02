@@ -91,6 +91,34 @@ RUN set -eux; \
       && codex --version ) \
     || echo "WARNING: codex ${CODEX_VERSION} install failed (best-effort, driver handles at runtime)"
 
+# --- codex code-mode host: a SECOND binary codex needs for code-mode models ---
+# codex's model catalog marks the 5.6 family (gpt-5.6-sol/-terra/-luna) as
+# `tool_mode: code_mode_only`: instead of emitting one tool call at a time the
+# model writes JavaScript that codex evaluates in a V8 isolate, and that isolate
+# lives in `codex-code-mode-host`, shipped as its own release asset (the plain
+# `codex-<target>.tar.gz` above holds only the codex binary). codex spawns it as
+# a sibling of its own executable, so it has to land in the same directory.
+# Without it code mode fails CLOSED — no fallback to direct tool calls — and the
+# agent runs with no shell tool at all. Best-effort like codex itself; the same
+# ${CODEX_VERSION} pins both halves, which must stay in lockstep (the host
+# handshake rejects an incompatible protocol version). Verified: the tarball
+# contains a single file `codex-code-mode-host-<target>` which we rename.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) target="x86_64-unknown-linux-musl" ;; \
+      arm64) target="aarch64-unknown-linux-musl" ;; \
+      *) echo "WARNING: unsupported arch $arch for codex-code-mode-host; skipping" && exit 0 ;; \
+    esac; \
+    url="https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-code-mode-host-${target}.tar.gz"; \
+    ( curl -fsSL "$url" -o /tmp/codex-code-mode-host.tar.gz \
+      && tar -xzf /tmp/codex-code-mode-host.tar.gz -C /usr/local/bin \
+      && mv "/usr/local/bin/codex-code-mode-host-${target}" /usr/local/bin/codex-code-mode-host \
+      && chmod +x /usr/local/bin/codex-code-mode-host \
+      && rm -f /tmp/codex-code-mode-host.tar.gz \
+      && codex-code-mode-host --help >/dev/null ) \
+    || echo "WARNING: codex-code-mode-host ${CODEX_VERSION} install failed (best-effort; code_mode_only models will fail at runtime)"
+
 # --- claude-code: Anthropic's official CLI; the claude-code driver shells out to it ---
 # Best-effort like opencode/codex: a download failure must not break the build.
 ARG CLAUDE_CODE_VERSION=2.1.212
