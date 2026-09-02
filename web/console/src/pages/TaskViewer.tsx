@@ -12,6 +12,7 @@ import { TaskBrief } from "../components/TaskBrief";
 import { ResultPanel } from "../components/ResultPanel";
 import { FilesPanel } from "../components/FilesPanel";
 import { TaskRail } from "../components/TaskRail";
+import { useNowTick } from "../lib/useNowTick";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../auth/useAuth";
 import { ApiError } from "../api/client";
@@ -61,7 +62,6 @@ export default function TaskViewer() {
   const [events, setEvents] = useState<Event[]>([]);
   const [conn, setConn] = useState<Conn>("connecting");
   const [tokens, setTokens] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [tab, setTab] = useState<Tab>("activity");
   const lastSeq = useRef(0);
@@ -70,13 +70,11 @@ export default function TaskViewer() {
   const status = taskQ.data?.status;
   const terminal = !!status && status !== "running" && status !== "pending";
 
-  // live elapsed counter while running
-  useEffect(() => {
-    if (terminal || !taskQ.data?.started_at) return;
-    const start = new Date(taskQ.data.started_at).getTime();
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, [terminal, taskQ.data?.started_at]);
+  // One second hand for the page: the header's elapsed chip and the feed's
+  // trailing row both read from it.
+  const nowMs = useNowTick(!terminal);
+  const endedAtMs = taskQ.data?.ended_at ? Date.parse(taskQ.data.ended_at) : NaN;
+  const endMs = terminal && Number.isFinite(endedAtMs) ? endedAtMs : nowMs;
 
   // SSE subscription; resumes with after_seq on reconnect
   useEffect(() => {
@@ -132,6 +130,8 @@ export default function TaskViewer() {
   const steps = feedEvents.filter((e) => e.type === "iteration_started").map((e) => (e.payload as Record<string, any>).iteration as number);
   const lastIteration = steps.length;
 
+  const startedAtMs = taskQ.data?.started_at ? Date.parse(taskQ.data.started_at) : NaN;
+  const elapsed = Number.isFinite(startedAtMs) ? Math.floor((nowMs - startedAtMs) / 1000) : 0;
   const elapsedMins = Math.floor(elapsed / 60);
   const elapsedSecs = String(elapsed % 60).padStart(2, "0");
 
@@ -241,7 +241,7 @@ export default function TaskViewer() {
         <div className="task-pane">
           {tab === "activity" && (
             <>
-              <EventFeed events={feedEvents} cid={cid!} />
+              <EventFeed events={feedEvents} cid={cid!} endMs={endMs} />
               {feedEvents.length === 0 && (
                 <div style={{ padding: 16, fontSize: 13, color: "var(--muted)" }}>
                   {!terminal

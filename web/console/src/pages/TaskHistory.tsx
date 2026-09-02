@@ -6,6 +6,7 @@ import { useTasks, useContainer } from "../api/queries";
 import { TaskBadge } from "../components/StatusBadge";
 import { ConfigDiff } from "../components/ConfigDiff";
 import { EventFeed } from "../components/EventFeed";
+import { useNowTick } from "../lib/useNowTick";
 import { SegControl } from "../ui/SegControl";
 import { Icons } from "../ui/Icon";
 import type { Event, TaskStatus, TaskSummary } from "../api/types";
@@ -25,12 +26,18 @@ function matchesFilter(status: TaskStatus, filter: Filter): boolean {
   return status === filter;
 }
 
-function Replay({ cid, tid }: { cid: string; tid: string }) {
+function Replay({ cid, tid, endedAt }: { cid: string; tid: string; endedAt: string | null }) {
   const { data } = useQuery({
     queryKey: ["containers", cid, "tasks", tid, "replay"],
     queryFn: () => api.get<{ events: Event[] }>(`/v1/containers/${cid}/tasks/${tid}/events`),
   });
   const events = data?.events ?? [];
+  // The "All" filter doesn't exclude running tasks, so the selected task may
+  // not have finished — tick the trailing row in that case.
+  const endedAtMs = endedAt ? Date.parse(endedAt) : NaN;
+  const settled = Number.isFinite(endedAtMs);
+  const nowMs = useNowTick(!settled);
+  const endMs = settled ? endedAtMs : nowMs;
   return (
     <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px dashed var(--border)" }}>
       <div
@@ -46,7 +53,7 @@ function Replay({ cid, tid }: { cid: string; tid: string }) {
       >
         Event replay
       </div>
-      <EventFeed events={events} cid={cid} />
+      <EventFeed events={events} cid={cid} endMs={endMs} />
     </div>
   );
 }
@@ -263,7 +270,7 @@ export default function TaskHistory() {
                 </p>
               )}
 
-              <Replay cid={cid!} tid={sel.task_id} />
+              <Replay cid={cid!} tid={sel.task_id} endedAt={sel.ended_at} />
             </div>
           </>
         ) : (
