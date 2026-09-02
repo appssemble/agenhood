@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildItems } from "./ChatTimeline";
+import { render, screen } from "@testing-library/react";
+import { buildItems, ChatTimeline } from "./ChatTimeline";
 import type { Event } from "../api/types";
 
 /** Thin helper — casts type so tests stay terse without fighting the union.
@@ -517,5 +518,35 @@ describe("buildItems — timestamps", () => {
     ];
     const items = buildItems(events);
     expect(items[0]).toMatchObject({ kind: "message", ts: "2026-06-30T00:00:03.000Z" });
+  });
+});
+
+describe("ChatTimeline — rendered durations", () => {
+  it("shows a duration per step, the last one running to endMs", () => {
+    const events: Event[] = [
+      evt(1, "assistant_message", { content: [{ type: "text", text: "working" }] }, 1),
+      evt(2, "log", { level: "info", message: "note" }, 3),
+    ];
+    render(<ChatTimeline cid="c1" events={events} endMs={Date.parse("2026-06-30T00:00:08.000Z")} />);
+    expect(screen.getByText("2.0s")).toBeInTheDocument();
+    expect(screen.getByText("5.0s")).toBeInTheDocument();
+  });
+
+  it("gives the result row no duration, and doesn't cut the last step short", () => {
+    const events: Event[] = [
+      evt(1, "assistant_message", { content: [{ type: "text", text: "working" }] }, 1),
+    ];
+    render(
+      <ChatTimeline
+        cid="c1"
+        events={events}
+        result="the answer"
+        endMs={Date.parse("2026-06-30T00:00:06.000Z")}
+      />,
+    );
+    // The step runs to the end of the task, not to the result row.
+    expect(screen.getByText("5.0s")).toBeInTheDocument();
+    expect(screen.getByText("the answer")).toBeInTheDocument();
+    expect(screen.queryByText("0ms")).not.toBeInTheDocument();
   });
 });

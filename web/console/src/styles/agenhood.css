@@ -1678,6 +1678,12 @@ table.tbl{ width: 100%; border-collapse: separate; border-spacing: 0; font-size:
 }
 /* ── event transcript (ordered, per-step UI) ─────────────────── */
 .ev-list{ display: flex; flex-direction: column; gap: 9px; }
+.ev-row{ display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.ev-row-body{ min-width: 0; }
+.ev-dur{
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted-2);
+  white-space: nowrap; padding-top: 2px;
+}
 
 /* assistant message */
 .ev-msg{ font-size: 13.5px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }

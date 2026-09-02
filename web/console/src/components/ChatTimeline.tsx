@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Icons } from "../ui/Icon";
 import type { Event } from "../api/types";
 import { containerFileRawUrl } from "../api/fileUrls";
+import { stepDurations } from "../lib/timing";
+import { formatDuration } from "../lib/format";
 function downloadHref(cid: string, path: string) {
   return containerFileRawUrl(cid, path);
 }
@@ -423,7 +425,7 @@ function ItemView({ item, cid }: { item: Item; cid: string }) {
 // git ops, logs, terminal output, and step dividers. When `result` is provided
 // it's appended as the final step (the answer); a trailing message that just
 // duplicates it is dropped.
-export function ChatTimeline({ cid, events, result }: { cid: string; events: Event[]; result?: unknown }) {
+export function ChatTimeline({ cid, events, result, endMs }: { cid: string; events: Event[]; result?: unknown; endMs?: number }) {
   let items = buildItems(events);
 
   const resultText = typeof result === "string" ? result.trim() : undefined;
@@ -441,9 +443,18 @@ export function ChatTimeline({ cid, events, result }: { cid: string; events: Eve
   }
 
   if (items.length === 0) return null;
+  // Each step's duration is the gap to the next step; the last runs to the end
+  // of the task (or to now, while it's still going). The `result` row has no
+  // timestamp, so it's skipped as a boundary and gets no duration of its own.
+  const durations = stepDurations(items.map((it) => it.ts), endMs ?? Date.now());
   return (
     <div className="ev-list">
-      {items.map((it) => <ItemView key={it.id} item={it} cid={cid} />)}
+      {items.map((it, i) => (
+        <div className="ev-row" key={it.id}>
+          <div className="ev-row-body"><ItemView item={it} cid={cid} /></div>
+          <span className="ev-dur">{durations[i] == null ? "" : formatDuration(durations[i]!)}</span>
+        </div>
+      ))}
     </div>
   );
 }
