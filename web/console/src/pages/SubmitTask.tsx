@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useContainer, useTemplates, useSubmitTask, useTasks } from "../api/queries";
+import { useContainer, useTemplates, useSubmitTask, useTaskPages } from "../api/queries";
 import { useAuth } from "../auth/useAuth";
 import { useToast } from "../components/Toast";
 import { ApiError } from "../api/client";
@@ -44,7 +44,7 @@ export default function SubmitTask() {
   // Per-task effort override. null ⇒ inherit the container's configured effort (or the model's own default).
   const [effort, setEffort] = useState<Effort | null>(null);
 
-  const tasksQ = useTasks(cid!, sessionId ?? undefined);
+  const tasksQ = useTaskPages(cid!, sessionId ?? undefined);
   const recentTask = tasksQ.data?.tasks?.[0] ?? null;
 
   // Pre-fill from the most recent task — form layout only, to keep the chat
@@ -182,6 +182,9 @@ export default function SubmitTask() {
           cid={cid!}
           config={config}
           recentTasks={tasksQ.data?.tasks ?? []}
+          hasOlder={tasksQ.hasNextPage}
+          loadingOlder={tasksQ.isFetchingNextPage}
+          onLoadOlder={() => void tasksQ.fetchNextPage()}
           sessionId={sessionId}
           submit={submit}
           buildPayload={buildPayload}

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTask, useCancelTask, keys } from "../api/queries";
-import { api } from "../api/client";
+import { useTask, useCancelTask, keys, fetchAllTaskEvents } from "../api/queries";
 import { subscribeEvents } from "../api/events";
 import { TaskBadge } from "../components/StatusBadge";
 import { ConfirmBar } from "../components/ConfirmBar";
@@ -108,7 +107,7 @@ export default function TaskViewer() {
   // Finished tasks have no live stream — replay the recorded events instead.
   const replayQ = useQuery({
     queryKey: ["containers", cid, "tasks", tid, "replay"],
-    queryFn: () => api.get<{ events: Event[] }>(`/v1/containers/${cid}/tasks/${tid}/events`),
+    queryFn: () => fetchAllTaskEvents(cid!, tid!),
     enabled: !!cid && !!tid && terminal,
   });
 

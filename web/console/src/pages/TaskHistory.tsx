@@ -1,15 +1,14 @@
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client";
-import { useTasks, useContainer } from "../api/queries";
+import { useTaskPages, useContainer, fetchAllTaskEvents } from "../api/queries";
 import { TaskBadge } from "../components/StatusBadge";
 import { ConfigDiff } from "../components/ConfigDiff";
 import { EventFeed } from "../components/EventFeed";
 import { useNowTick } from "../lib/useNowTick";
 import { SegControl } from "../ui/SegControl";
 import { Icons } from "../ui/Icon";
-import type { Event, TaskStatus, TaskSummary } from "../api/types";
+import type { TaskStatus, TaskSummary } from "../api/types";
 
 type Filter = "all" | "completed" | "failed" | "cancelled";
 
@@ -29,7 +28,7 @@ function matchesFilter(status: TaskStatus, filter: Filter): boolean {
 function Replay({ cid, tid, endedAt }: { cid: string; tid: string; endedAt: string | null }) {
   const { data } = useQuery({
     queryKey: ["containers", cid, "tasks", tid, "replay"],
-    queryFn: () => api.get<{ events: Event[] }>(`/v1/containers/${cid}/tasks/${tid}/events`),
+    queryFn: () => fetchAllTaskEvents(cid, tid),
   });
   const events = data?.events ?? [];
   // The "All" filter doesn't exclude running tasks, so the selected task may
@@ -99,7 +98,8 @@ function HistRow({
 
 export default function TaskHistory() {
   const { cid } = useParams<{ cid: string }>();
-  const { data: tasksData } = useTasks(cid!);
+  const tasksQ = useTaskPages(cid!);
+  const tasksData = tasksQ.data;
   const { data: container } = useContainer(cid!);
   const tasks = tasksData?.tasks ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
@@ -150,7 +150,7 @@ export default function TaskHistory() {
           }}
         >
           <span style={{ fontWeight: 700, fontSize: 13.5 }}>Tasks</span>
-          <span className="id">{tasks.length} total</span>
+          <span className="id">{tasks.length}{tasksQ.hasNextPage ? "+" : ""} total</span>
           <div style={{ marginLeft: "auto" }}>
             <SegControl options={FILTER_OPTIONS} value={filter} onChange={setFilter} />
           </div>
@@ -169,6 +169,18 @@ export default function TaskHistory() {
           <p style={{ padding: "24px 18px", fontSize: 13, color: "var(--muted)" }}>
             No tasks match this filter.
           </p>
+        )}
+        {tasksQ.hasNextPage && (
+          <div style={{ padding: "12px 18px" }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={tasksQ.isFetchingNextPage}
+              onClick={() => void tasksQ.fetchNextPage()}
+            >
+              {tasksQ.isFetchingNextPage ? "Loading…" : "Load more tasks"}
+            </button>
+          </div>
         )}
       </div>
 

@@ -18,6 +18,9 @@ export function SubmitTaskChat({
   cid,
   config,
   recentTasks,
+  hasOlder = false,
+  loadingOlder = false,
+  onLoadOlder,
   sessionId,
   submit,
   buildPayload,
@@ -48,6 +51,9 @@ export function SubmitTaskChat({
   cid: string;
   config: AgentConfig;
   recentTasks: TaskSummary[];
+  hasOlder?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
   // The currently selected session (from SessionPicker); null means "no
   // session" — the thread then shows only tasks that also have no session,
   // not every task in the container.
@@ -89,6 +95,9 @@ export function SubmitTaskChat({
   // chat view — and content streaming/loading in afterwards — always lands on
   // the latest turn.
   const pinned = useRef(true);
+  // Distance from the bottom captured before older turns are prepended, so the
+  // viewport stays on the same turn once they render.
+  const anchorFromBottom = useRef<number | null>(null);
 
   // Scoped to the selected session (null ⇒ only tasks that also have no
   // session — not every task in the container), shown oldest→newest, then
@@ -116,7 +125,21 @@ export function SubmitTaskChat({
   }
 
   // Land at the bottom on entry and whenever the turn list changes.
-  useLayoutEffect(() => { stickToBottom(); }, [turns.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = threadRef.current;
+    if (el && anchorFromBottom.current != null) {
+      el.scrollTop = el.scrollHeight - anchorFromBottom.current;
+      anchorFromBottom.current = null;
+      return;
+    }
+    stickToBottom();
+  }, [turns.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function loadOlder() {
+    const el = threadRef.current;
+    if (el) anchorFromBottom.current = el.scrollHeight - el.scrollTop;
+    onLoadOlder?.();
+  }
 
   // Release the pin when the user scrolls up (so we never yank the viewport
   // while they read back through history) and re-arm it at the bottom.
@@ -150,6 +173,13 @@ export function SubmitTaskChat({
   return (
     <div className="chat-view">
       <div className="chat-thread" ref={threadRef} onScroll={onThreadScroll}>
+        {hasOlder && (
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={loadingOlder} onClick={loadOlder}>
+              {loadingOlder ? "Loading…" : "Load older messages"}
+            </button>
+          </div>
+        )}
         {turns.length === 0 ? (
           <div className="chat-empty">
             <span className="ico"><Icons.Bot w={24} /></span>

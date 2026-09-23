@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "./client";
 import { containerFileRawPath } from "./fileUrls";
@@ -107,17 +107,66 @@ export const useTasks = (cid: string, sessionId?: string) => useQuery({
   ),
 });
 
-export const useSessions = (cid: string) => useQuery({
-  queryKey: keys.sessions(cid),
-  queryFn: () => api.get<{ sessions: SessionSummary[] }>(`/v1/containers/${cid}/sessions`),
+const SESSION_PAGE_SIZE = 50;
+const EVENT_PAGE_SIZE = 1000;
+
+type TaskPage = { tasks: TaskSummary[]; next_cursor?: string | null };
+type SessionPage = { sessions: SessionSummary[]; next_cursor?: string | null };
+type EventPage = { events: Event[]; next_after_seq?: number | null };
+
+// Stable references so each hook only re-flattens when a page changes.
+const flattenTaskPages = (data: InfiniteData<TaskPage>) => ({ tasks: data.pages.flatMap((p) => p.tasks) });
+const flattenSessionPages = (data: InfiniteData<SessionPage>) => ({ sessions: data.pages.flatMap((p) => p.sessions) });
+
+function withParams(path: string, params: Record<string, string | number | undefined>) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined) qs.set(k, String(v));
+  const q = qs.toString();
+  return q ? `${path}?${q}` : path;
+}
+
+// Like useTasks, but older pages can be appended with fetchNextPage.
+export const useTaskPages = (cid: string, sessionId?: string) => useInfiniteQuery({
+  queryKey: [...keys.tasks(cid, sessionId), "pages"],
+  queryFn: ({ pageParam }) => api.get<TaskPage>(
+    withParams(`/v1/containers/${cid}/tasks`, { session_id: sessionId, cursor: pageParam })
+  ),
+  initialPageParam: undefined as string | undefined,
+  getNextPageParam: (last) => last.next_cursor ?? undefined,
+  select: flattenTaskPages,
+});
+
+export const useSessions = (cid: string) => useInfiniteQuery({
+  queryKey: [...keys.sessions(cid), "pages"],
+  queryFn: ({ pageParam }) => api.get<SessionPage>(
+    withParams(`/v1/containers/${cid}/sessions`, { limit: SESSION_PAGE_SIZE, cursor: pageParam })
+  ),
+  initialPageParam: undefined as string | undefined,
+  getNextPageParam: (last) => last.next_cursor ?? undefined,
+  select: flattenSessionPages,
 });
 export const useTask = (cid: string, tid: string) => useQuery({ queryKey: keys.task(cid, tid), queryFn: () => api.get<TaskDetail>(`/v1/containers/${cid}/tasks/${tid}`) });
+
+// Reads every stored event of a task, page by page.
+export async function fetchAllTaskEvents(cid: string, tid: string): Promise<{ events: Event[] }> {
+  const path = `/v1/containers/${cid}/tasks/${tid}/events`;
+  const events: Event[] = [];
+  let afterSeq: number | undefined;
+  for (;;) {
+    const page = await api.get<EventPage>(withParams(path, { limit: EVENT_PAGE_SIZE, after_seq: afterSeq }));
+    events.push(...page.events);
+    const next = page.next_after_seq;
+    if (next == null || next === afterSeq) return { events };
+    afterSeq = next;
+  }
+}
+
 // Replays a finished task's stored events (non-SSE GET). Used by the chat
 // layout to show a past turn's intermediate steps without opening a stream.
 export const useTaskEvents = (cid: string, tid: string, enabled = true) =>
   useQuery({
     queryKey: [...keys.task(cid, tid), "events"],
-    queryFn: () => api.get<{ events: Event[] }>(`/v1/containers/${cid}/tasks/${tid}/events`),
+    queryFn: () => fetchAllTaskEvents(cid, tid),
     enabled,
   });
 export const useFiles = (cid: string, prefix = "") => useQuery({ queryKey: keys.files(cid, prefix), queryFn: () => api.get<{ files: FileEntry[] }>(`/v1/containers/${cid}/files?prefix=${encodeURIComponent(prefix)}`) });

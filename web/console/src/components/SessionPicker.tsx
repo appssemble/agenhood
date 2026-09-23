@@ -98,6 +98,19 @@ export function SessionPicker({
                 </span>
               </button>
             ))}
+            {sessionsQ.hasNextPage && (
+              <button
+                type="button"
+                role="menuitem"
+                className="dd-option"
+                disabled={sessionsQ.isFetchingNextPage}
+                onClick={() => void sessionsQ.fetchNextPage()}
+              >
+                <span className="session-picker-meta">
+                  {sessionsQ.isFetchingNextPage ? "Loading…" : "Load more sessions"}
+                </span>
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"

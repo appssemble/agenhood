@@ -49,4 +49,23 @@ describe("TaskHistory", () => {
     await userEvent.click(await screen.findByText("Summarize"));
     expect(await screen.findByText("Replayed message")).toBeInTheDocument();
   });
+
+  it("loads older tasks with the load more button", async () => {
+    const snap = { driver: "vanilla", model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } };
+    const task = (id: string, prompt: string) => ({ task_id: id, status: "completed", prompt, started_at: "t", ended_at: "t",
+      tokens_in: 1, tokens_out: 1, iterations_used: 1, config_snapshot: snap });
+    server.use(http.get("/v1/containers/con_1", () => HttpResponse.json(CONTAINER_STUB)));
+    server.use(http.get("/v1/containers/con_1/tasks", ({ request }) =>
+      new URL(request.url).searchParams.get("cursor") === "c1"
+        ? HttpResponse.json({ tasks: [task("tsk_old", "Older task")], next_cursor: null })
+        : HttpResponse.json({ tasks: [task("tsk_new", "Newer task")], next_cursor: "c1" })));
+    renderWithProviders(<TaskHistory />);
+    expect(await screen.findByText("Newer task")).toBeInTheDocument();
+    expect(screen.getByText("1+ total")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /load more tasks/i }));
+    expect(await screen.findByText("Older task")).toBeInTheDocument();
+    expect(screen.getByText("2 total")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /load more tasks/i })).not.toBeInTheDocument();
+  });
 });
+

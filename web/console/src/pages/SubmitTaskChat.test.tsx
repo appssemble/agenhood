@@ -106,6 +106,31 @@ describe("SubmitTask chat layout", () => {
     await waitFor(() => expect(thread.scrollHeight - thread.scrollTop - thread.clientHeight).toBeLessThanOrEqual(0));
   });
 
+  it("loads older turns above the thread when the server has another page", async () => {
+    setup();
+    const turn = (id: string, prompt: string) => ({ task_id: id, status: "completed", prompt, started_at: "t", ended_at: "t", tokens_in: 1, tokens_out: 2, iterations_used: 1 });
+    server.use(http.get("/v1/containers/con_1/tasks", ({ request }) =>
+      new URL(request.url).searchParams.get("cursor") === "c1"
+        ? HttpResponse.json({ tasks: [turn("tsk_a", "Older prompt")], next_cursor: null })
+        : HttpResponse.json({ tasks: [turn("tsk_b", "Newer prompt")], next_cursor: "c1" })));
+    server.use(http.get("/v1/containers/con_1/tasks/:tid", ({ params }) => HttpResponse.json({
+      task_id: params.tid, status: "completed", prompt: "x", started_at: "t", ended_at: "t", tokens_in: 1, tokens_out: 2, iterations_used: 1, result: null, error: null,
+    })));
+    server.use(http.get("/v1/containers/con_1/tasks/:tid/events", () => HttpResponse.json({ events: [] })));
+
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: /chat/i }));
+    expect(await screen.findByText("Newer prompt", { selector: ".chat-bubble" })).toBeInTheDocument();
+    expect(screen.queryByText("Older prompt", { selector: ".chat-bubble" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /load older messages/i }));
+
+    const older = await screen.findByText("Older prompt", { selector: ".chat-bubble" });
+    const newer = screen.getByText("Newer prompt", { selector: ".chat-bubble" });
+    expect(older.compareDocumentPosition(newer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /load older messages/i })).not.toBeInTheDocument();
+  });
+
   it("seeds the thread with full container history and shows results by default", async () => {
     setup();
     server.use(http.get("/v1/containers/con_1/tasks", () => HttpResponse.json({ tasks: [

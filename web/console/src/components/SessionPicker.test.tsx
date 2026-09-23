@@ -42,4 +42,18 @@ describe("SessionPicker", () => {
     await userEvent.click(await screen.findByRole("menuitem", { name: /sess-1/ }));
     expect(picked).toBe("sess-1");
   });
+
+  it("loads more sessions from the menu when the server has another page", async () => {
+    const row = (id: string) => ({ session_id: id, driver: "vanilla", task_count: 1,
+      first_created_at: "t1", last_created_at: "t2", busy: false });
+    server.use(http.get("/v1/containers/con_1/sessions", ({ request }) =>
+      new URL(request.url).searchParams.get("cursor") === "c1"
+        ? HttpResponse.json({ sessions: [row("sess-old")], next_cursor: null })
+        : HttpResponse.json({ sessions: [row("sess-new")], next_cursor: "c1" })));
+    renderWithProviders(<SessionPicker cid="con_1" sessionId={null} onChange={() => {}} />);
+    await userEvent.click(await screen.findByRole("button", { name: /no session/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /load more sessions/i }));
+    expect(await screen.findByText(/sess-old/)).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /load more sessions/i })).not.toBeInTheDocument();
+  });
 });
