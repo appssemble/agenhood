@@ -55,6 +55,7 @@ from control_plane.model_catalog import driver_can_use_subscription
 from control_plane.models_db import containers, events, git_remotes, prompts, tasks
 from control_plane.models_db import mcp_servers as mcp_servers_table
 from control_plane.models_db import skills as skills_table
+from control_plane.pagination import clamp_limit, decode_cursor, encode_cursor
 from control_plane.prompts_service import resolve_body
 from control_plane.routers.containers import (
     _load_owned_container,
@@ -70,6 +71,11 @@ from control_plane.sse import event_ts, format_sse, parse_event_line, should_for
 from control_plane.tenant_defaults import worker_cap_for_driver
 
 router = APIRouter(tags=["Tasks"])
+
+DEFAULT_TASK_PAGE = 100
+MAX_TASK_PAGE = 200
+MAX_SESSION_PAGE = 200
+MAX_EVENT_PAGE = 5000
 
 
 async def _load_tenant_rows_by_id(
@@ -135,10 +141,22 @@ class TaskListResponse(BaseModel):
     )
 
 
+class PagedTaskListResponse(TaskListResponse):
+    next_cursor: str | None = Field(
+        default=None,
+        description="Pass as `cursor` to fetch the next page; null on the last page.",
+    )
+
+
 class SessionListResponse(BaseModel):
     """Wrapper for the container sessions listing."""
     sessions: list[SessionOut] = Field(
         description="Sessions for the container, most recently active first.",
+    )
+    next_cursor: str | None = Field(
+        default=None,
+        description="Pass as `cursor` to fetch the next page; null on the last page "
+        "or when `limit` was not sent.",
     )
 
 
@@ -818,8 +836,8 @@ async def submit_task_from_prompt(
 
 @router.get(
     "/containers/{cid}/tasks",
-    response_model=TaskListResponse,
-    response_description="The container's most recent tasks (up to 100), newest first.",
+    response_model=PagedTaskListResponse,
+    response_description="A page of the container's tasks, newest first.",
 )
 async def list_tasks(
     cid: Annotated[str, Path(description="Container id whose tasks to list.")],
@@ -832,29 +850,70 @@ async def list_tasks(
         str | None,
         Query(description="Only return tasks belonging to this session."),
     ] = None,
+    limit: Annotated[
+        int,
+        Query(description=f"Max tasks to return. Clamped to the 1-{MAX_TASK_PAGE} range."),
+    ] = DEFAULT_TASK_PAGE,
+    cursor: Annotated[
+        str | None,
+        Query(description="`next_cursor` from the previous page."),
+    ] = None,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
-    """List a container's most recent tasks (newest first, capped at 100).
+    """List a container's tasks, newest first, one page at a time.
 
     Tenant-scoped (API key/bearer). Optionally filter by ``scheduled_task_id``
-    and/or ``session_id``. Returns 404 not_found if the container is not owned by
-    the tenant.
+    and/or ``session_id``. Follow ``next_cursor`` for older tasks. Returns 404
+    not_found if the container is not owned by the tenant, 400 invalid_cursor
+    for a malformed cursor.
     """
     tid = _tid(principal)
+    after = decode_cursor(cursor) if cursor is not None else None
     await _load_owned_container(session, tid, cid)
+    rows, next_cursor = await container_tasks_page(
+        session,
+        tenant_id=tid,
+        cid=cid,
+        scheduled_task_id=scheduled_task_id,
+        session_id=session_id,
+        limit=clamp_limit(limit, MAX_TASK_PAGE),
+        after=after,
+    )
+    return {
+        "tasks": [_row_to_task_out(r).model_dump() for r in rows],
+        "next_cursor": next_cursor,
+    }
+
+
+async def container_tasks_page(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    cid: str,
+    scheduled_task_id: str | None,
+    session_id: str | None,
+    limit: int,
+    after: tuple[datetime, str] | None,
+) -> tuple[list[Any], str | None]:
+    """One page of a container's tasks ordered by (created_at, id) descending."""
     stmt = (
         select(tasks)
-        .where(tasks.c.container_id == cid, tasks.c.tenant_id == tid)
-        .order_by(tasks.c.created_at.desc())
-        .limit(100)
+        .where(tasks.c.container_id == cid, tasks.c.tenant_id == tenant_id)
+        .order_by(tasks.c.created_at.desc(), tasks.c.id.desc())
+        .limit(limit + 1)
     )
     if scheduled_task_id is not None:
         stmt = stmt.where(tasks.c.scheduled_task_id == scheduled_task_id)
     if session_id is not None:
         stmt = stmt.where(tasks.c.session_id == session_id)
+    if after is not None:
+        stmt = stmt.where(sa.tuple_(tasks.c.created_at, tasks.c.id) < sa.tuple_(*after))
     rows = (await session.execute(stmt)).all()
-    return {"tasks": [_row_to_task_out(r).model_dump() for r in rows]}
+    if len(rows) <= limit:
+        return rows, None
+    last = rows[limit - 1]
+    return rows[:limit], encode_cursor(last.created_at, last.id)
 
 
 @router.get(
@@ -865,6 +924,19 @@ async def list_tasks(
 async def list_sessions(
     cid: Annotated[str, Path(description="Container id whose sessions to list.")],
     request: Request,
+    limit: Annotated[
+        int | None,
+        Query(
+            description=(
+                f"Max sessions to return, clamped to 1-{MAX_SESSION_PAGE}. "
+                "When omitted, every session is returned in one response."
+            ),
+        ),
+    ] = None,
+    cursor: Annotated[
+        str | None,
+        Query(description="`next_cursor` from the previous page."),
+    ] = None,
     principal: Principal = Depends(_principal),
     session: AsyncSession = Depends(_session),
 ) -> dict:  # type: ignore[type-arg]
@@ -873,30 +945,20 @@ async def list_sessions(
     Tenant-scoped (API key/bearer). Groups the container's tasks by session_id
     (tasks with no session are excluded) and reports the driver, task count,
     first/last activity timestamps, and whether the session is busy (a task is
-    pending or running). Returns 404 not_found if the container is not owned by
-    the tenant.
+    pending or running). Send ``limit`` to page through them via
+    ``next_cursor``. Returns 404 not_found if the container is not owned by
+    the tenant, 400 invalid_cursor for a malformed cursor.
     """
     tid = _tid(principal)
+    after = decode_cursor(cursor) if cursor is not None else None
     await _load_owned_container(session, tid, cid)
-    rows = (
-        await session.execute(
-            sa.select(
-                tasks.c.session_id,
-                sa.func.min(tasks.c.driver).label("driver"),
-                sa.func.count().label("task_count"),
-                sa.func.min(tasks.c.created_at).label("first_created_at"),
-                sa.func.max(tasks.c.created_at).label("last_created_at"),
-                sa.func.bool_or(tasks.c.status.in_(("pending", "running"))).label("busy"),
-            )
-            .where(
-                tasks.c.container_id == cid,
-                tasks.c.tenant_id == tid,
-                tasks.c.session_id.isnot(None),
-            )
-            .group_by(tasks.c.session_id)
-            .order_by(sa.func.max(tasks.c.created_at).desc())
-        )
-    ).all()
+    rows, next_cursor = await container_sessions_page(
+        session,
+        tenant_id=tid,
+        cid=cid,
+        limit=clamp_limit(limit, MAX_SESSION_PAGE) if limit is not None else None,
+        after=after,
+    )
     return {
         "sessions": [
             SessionOut(
@@ -908,8 +970,47 @@ async def list_sessions(
                 busy=bool(r.busy),
             ).model_dump()
             for r in rows
-        ]
+        ],
+        "next_cursor": next_cursor,
     }
+
+
+async def container_sessions_page(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    cid: str,
+    limit: int | None,
+    after: tuple[datetime, str] | None,
+) -> tuple[list[Any], str | None]:
+    """Sessions by (last activity, session_id) descending; all of them when limit is None."""
+    last_created_at = sa.func.max(tasks.c.created_at)
+    stmt = (
+        sa.select(
+            tasks.c.session_id,
+            sa.func.min(tasks.c.driver).label("driver"),
+            sa.func.count().label("task_count"),
+            sa.func.min(tasks.c.created_at).label("first_created_at"),
+            last_created_at.label("last_created_at"),
+            sa.func.bool_or(tasks.c.status.in_(("pending", "running"))).label("busy"),
+        )
+        .where(
+            tasks.c.container_id == cid,
+            tasks.c.tenant_id == tenant_id,
+            tasks.c.session_id.isnot(None),
+        )
+        .group_by(tasks.c.session_id)
+        .order_by(last_created_at.desc(), tasks.c.session_id.desc())
+    )
+    if after is not None:
+        stmt = stmt.having(sa.tuple_(last_created_at, tasks.c.session_id) < sa.tuple_(*after))
+    if limit is None:
+        return (await session.execute(stmt)).all(), None
+    rows = (await session.execute(stmt.limit(limit + 1))).all()
+    if len(rows) <= limit:
+        return rows, None
+    last = rows[limit - 1]
+    return rows[:limit], encode_cursor(last.last_created_at, last.session_id)
 
 
 async def recent_tenant_tasks(
@@ -1041,6 +1142,15 @@ async def stream_events(
         int | None,
         Query(description="Only return events with seq greater than this value."),
     ] = None,
+    limit: Annotated[
+        int | None,
+        Query(
+            description=(
+                f"JSON replay only: max events to return, clamped to 1-{MAX_EVENT_PAGE}. "
+                "When omitted, every stored event is returned."
+            ),
+        ),
+    ] = None,
 ) -> StreamingResponse | dict:  # type: ignore[type-arg]
     """Stream a task's events, or replay the stored ones.
 
@@ -1050,8 +1160,10 @@ async def stream_events(
       (media type ``text/event-stream``) forwarded from the container's shim;
       events are persisted best-effort as they flow. The request-scoped DB
       connection is released before streaming to avoid pool exhaustion.
-    - otherwise -> a one-shot JSON replay of the stored events, shape
-      ``{"events": [...]}`` in ascending seq order.
+    - otherwise -> a JSON replay of the stored events, shape
+      ``{"events": [...], "next_after_seq": int | null}`` in ascending seq
+      order. With ``limit``, pass ``next_after_seq`` back as ``after_seq`` to
+      read the next page; it is null on the last page.
 
     ``after_seq`` filters to events with a higher seq in both modes. Returns 404
     not_found if the container or the task is not owned by the tenant.
@@ -1063,18 +1175,19 @@ async def stream_events(
 
     accept = request.headers.get("accept", "")
     if "text/event-stream" not in accept:
-        rows = (
-            await session.execute(
-                select(events)
-                .where(events.c.task_id == tid)
-                .order_by(events.c.seq.asc())
-            )
-        ).all()
-        return {"events": [
-            {"seq": r.seq, "type": r.type, "ts": r.ts.isoformat(), "payload": r.payload}
-            for r in rows
-            if should_forward(seq=int(r.seq), after_seq=after_seq)
-        ]}
+        rows, next_after_seq = await task_events_page(
+            session,
+            task_id=tid,
+            after_seq=after_seq,
+            limit=clamp_limit(limit, MAX_EVENT_PAGE) if limit is not None else None,
+        )
+        return {
+            "events": [
+                {"seq": r.seq, "type": r.type, "ts": r.ts.isoformat(), "payload": r.payload}
+                for r in rows
+            ],
+            "next_after_seq": next_after_seq,
+        }
 
     # INCIDENT FIX (sse-db-pool-exhaustion): release the request-scoped pooled
     # connection before streaming.  For a StreamingResponse the Depends(_session)
@@ -1102,6 +1215,25 @@ async def stream_events(
             await shim.aclose()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+async def task_events_page(
+    session: AsyncSession,
+    *,
+    task_id: str,
+    after_seq: int | None,
+    limit: int | None,
+) -> tuple[list[Any], int | None]:
+    """Stored events in seq order; all of them when limit is None."""
+    stmt = select(events).where(events.c.task_id == task_id).order_by(events.c.seq.asc())
+    if after_seq is not None:
+        stmt = stmt.where(events.c.seq > after_seq)
+    if limit is None:
+        return (await session.execute(stmt)).all(), None
+    rows = (await session.execute(stmt.limit(limit + 1))).all()
+    if len(rows) <= limit:
+        return rows, None
+    return rows[:limit], int(rows[limit - 1].seq)
 
 
 async def _persist_event_best_effort(
