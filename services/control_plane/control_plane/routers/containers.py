@@ -17,7 +17,7 @@ from agentcore.drivers.base import DRIVERS
 from agentcore.drivers.vanilla import DEFAULT_SYSTEM_PROMPT, DONE_TOOL, enabled_tool_specs
 from agentcore.models import AgentConfig, ResolvedLimits, TaskBody
 from agentcore.prompt import assemble_system_prompt
-from agentcore.tools.base import TOOLS
+from agentcore.tools.base import TOOLS, ToolSpec
 from control_plane import lifecycle
 from control_plane.audit import audit
 from control_plane.auth import Principal
@@ -200,9 +200,24 @@ async def load_tenant_limits(session: AsyncSession, tenant_id: str) -> dict[str,
     return merge_limits(dict(row))
 
 
+def _enabled_tool_specs_for_preview(cfg: AgentConfig) -> list[ToolSpec]:
+    """Enabled-tool specs for the preview, sourced from the right registry.
+
+    Drivers that own their tools (default_template.tool_specs populated, e.g.
+    codex) describe them there; a name can collide with the generic `TOOLS`
+    registry (codex's "web_search" vs. the vanilla tool of the same name), so
+    those drivers must never be resolved against TOOLS."""
+    drv = DRIVERS.get(cfg.driver)
+    owned_specs = drv.default_template.tool_specs if drv is not None else []
+    if not owned_specs:
+        return enabled_tool_specs(cfg)
+    by_name = {t.name: t for t in owned_specs}
+    return [by_name[name] for name in cfg.tools if name in by_name]
+
+
 def _preview_prompt(cfg: AgentConfig) -> str:
     """Assemble a system-prompt preview from the config (no task or live limits)."""
-    tool_specs = enabled_tool_specs(cfg)
+    tool_specs = _enabled_tool_specs_for_preview(cfg)
     tool_specs_with_done = tool_specs if DONE_TOOL in tool_specs else [*tool_specs, DONE_TOOL]
     return assemble_system_prompt(
         config=cfg,

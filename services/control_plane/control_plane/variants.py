@@ -45,6 +45,21 @@ def assert_config_runnable_on_variant(
     drv = drivers.get(driver_name)
     if drv is not None:
         _check("driver", driver_name, drv.capabilities.requires_image_feature)
+
+    # Drivers that own their tools (default_template.tool_specs populated,
+    # e.g. codex) can reuse a name that also exists in the generic `tools`
+    # registry (codex's "web_search" vs. the vanilla tool of the same name).
+    # Look those up in the driver's own specs, never in the shared registry.
+    template = getattr(drv, "default_template", None)
+    owned_specs = getattr(template, "tool_specs", []) if template is not None else []
+    if owned_specs:
+        owned_by_name = {t.name: t for t in owned_specs}
+        for tname in tool_names:
+            tool_spec = owned_by_name.get(tname)
+            if tool_spec is not None:
+                _check("tool", tname, tool_spec.requires_image_feature)
+        return
+
     for tname in tool_names:
         tool = tools.get(tname)
         if tool is not None:
