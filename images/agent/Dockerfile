@@ -63,7 +63,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-runtime-${TARGETARCH} \
 # Best-effort per spec §3.5.2 / index §11.5: if the npm install fails at
 # build time (e.g. package not yet published), the build continues and the
 # driver handles the missing binary gracefully at runtime.
-ARG OPENCODE_VERSION=1.17.18
+ARG OPENCODE_VERSION=1.18.32
 RUN npm install -g opencode-ai@${OPENCODE_VERSION} \
     && opencode --version \
     || echo "WARNING: opencode-ai@${OPENCODE_VERSION} install failed (best-effort, driver will handle at runtime)"

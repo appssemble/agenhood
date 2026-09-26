@@ -201,7 +201,7 @@ def test_proxy_allows_public_host_and_logs_it(env):
 
 # The agent image carries the opencode binary; default to the locally built tag.
 AGENT_IMAGE = _os.environ.get("AGENT_IMAGE", "agent-runtime:latest")
-FREE_MODEL = "opencode/deepseek-v4-flash-free"  # keyless "Zen" model — no API key
+FREE_MODEL = "opencode/mimo-v2.6-flash-free"  # keyless "Zen" model — no API key
 _XDG_BASE = "/workspace/.agent-runtime/opencode"
 
 

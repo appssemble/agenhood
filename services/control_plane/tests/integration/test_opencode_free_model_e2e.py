@@ -7,7 +7,7 @@ This is the missing integration coverage for the opencode path — it drives the
     →  terminal status_change  →  task result
 
 It uses one of opencode's built-in free "Zen" models
-(``opencode/deepseek-v4-flash-free``), so it needs **no LLM credential** — which
+(``opencode/mimo-v2.6-flash-free``), so it needs **no LLM credential** — which
 also exercises the keyless-provider path (the control plane must NOT reject the
 submit with ``no_credential``). The agent container reaches opencode's free
 service directly (the egress proxy is disabled on the test network).
@@ -26,7 +26,7 @@ from httpx import ASGITransport, AsyncClient
 
 pytestmark = [pytest.mark.integration]
 
-FREE_MODEL = "opencode/deepseek-v4-flash-free"
+FREE_MODEL = "opencode/mimo-v2.6-flash-free"
 TERMINAL = ("completed", "failed", "timed_out", "cancelled")
 
 
