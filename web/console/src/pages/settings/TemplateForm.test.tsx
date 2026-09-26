@@ -26,6 +26,21 @@ const opencodeTpl = {
   driver_template: { driver: "opencode", default_system_prompt: "", available_tools: [], tools_user_editable: false, supports_context: false },
   available_tool_specs: [],
 };
+const codexTpl = {
+  ...vanillaTpl, id: "tpl_c", driver: "codex",
+  driver_template: {
+    driver: "codex", default_system_prompt: "", supports_context: false, tools_user_editable: true,
+    available_tools: ["web_search", "image_generation", "view_image", "multi_agent", "goals"],
+    default_tools: ["web_search"],
+  },
+  available_tool_specs: [
+    { name: "web_search", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "image_generation", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "view_image", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "multi_agent", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "goals", description: "", input_schema: {}, requires_image_feature: null },
+  ],
+};
 
 function setup() {
   server.use(http.get("/v1/auth/me", () => HttpResponse.json({ id: "u", tenant_id: "t", name: "D", email: "d@x.io", role: "admin", is_staff: false, must_change_password: false,
@@ -33,7 +48,7 @@ function setup() {
   server.use(http.get("/v1/models", () => HttpResponse.json({ models: [
     { id: "claude-sonnet-4-6", provider: "anthropic", label: "claude-sonnet-4-6", category: "api_key", drivers: ["vanilla", "opencode", "codex"], available: true, requires: [] },
   ] })));
-  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [vanillaTpl, opencodeTpl] })));
+  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [vanillaTpl, opencodeTpl, codexTpl] })));
   server.use(http.get("/v1/skills", () => HttpResponse.json({ skills: [
     { id: "skl_1", name: "git-release", description: "", enabled: true, created_at: null, updated_at: null },
   ] })));
@@ -78,6 +93,23 @@ describe("TemplateForm (create mode)", () => {
     await userEvent.click(screen.getByRole("radio", { name: "opencode" }));
     await waitFor(() => expect(screen.queryByLabelText("read_file")).not.toBeInTheDocument());
     expect(screen.getByLabelText("git-release")).toBeInTheDocument();
+  });
+
+  it("shows the assembled-prompt preview for vanilla", async () => {
+    setup();
+    renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
+    expect(await screen.findByTestId("assembled-preview")).toBeInTheDocument();
+  });
+
+  it("shows the manages-its-own-system-prompt note for codex instead of the preview", async () => {
+    // codex reports tools_user_editable=true but supports_context=false, so the
+    // preview must stay gated on both flags, not just tools_user_editable.
+    setup();
+    renderWithProviders(<AuthProvider><TemplateForm /></AuthProvider>);
+    await screen.findByLabelText("read_file");
+    await userEvent.click(screen.getByRole("radio", { name: "codex" }));
+    await waitFor(() => expect(screen.getByText(/manages its own system prompt and tools/i)).toBeInTheDocument());
+    expect(screen.queryByTestId("assembled-preview")).not.toBeInTheDocument();
   });
 
   it("clears effort when switching to a driver that doesn't support it", async () => {

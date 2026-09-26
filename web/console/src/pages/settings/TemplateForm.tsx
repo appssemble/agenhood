@@ -116,6 +116,7 @@ export default function TemplateForm() {
   // prompt the agent will receive updates as you build the template.
   const toolSpecs: ToolSpec[] = driverMeta?.available_tool_specs ?? [];
   const editableTools = driverMeta?.driver_template.tools_user_editable ?? true;
+  const supportsContext = driverMeta?.driver_template.supports_context ?? true;
   const isSkillDriver = draft.driver === "opencode" || draft.driver === "codex";
   const assembled = assemblePrompt(draft as unknown as AgentConfig, toolSpecs);
 
@@ -228,7 +229,7 @@ export default function TemplateForm() {
           </dl>
 
           {/* Assembled prompt */}
-          {editableTools ? (
+          {editableTools && supportsContext ? (
             <div data-testid="assembled-preview" style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.65, whiteSpace: "pre-wrap", color: "var(--ink-2)" }}>
               {userIndex >= 0 ? (
                 <>

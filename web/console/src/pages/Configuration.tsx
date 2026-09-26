@@ -44,6 +44,7 @@ export default function Configuration() {
   const envDirty = envDraft !== null && JSON.stringify(envDraft) !== JSON.stringify(envQ.data ?? []);
   const dirty = configDirty || envDirty;
   const editableTools = driverMeta?.driver_template.tools_user_editable ?? true;
+  const supportsContext = driverMeta?.driver_template.supports_context ?? true;
   // Only the vanilla driver runs the host-managed reason→act loop; opencode,
   // codex, and claude-code drive their own control flow, so the iteration cap doesn't apply.
   const supportsMaxIterations = draft.driver === "vanilla";
@@ -265,7 +266,7 @@ export default function Configuration() {
           </button>
         </div>
 
-        {editableTools ? (
+        {editableTools && supportsContext ? (
           <div
             data-testid="assembled-preview"
             style={{

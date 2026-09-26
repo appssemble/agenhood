@@ -97,6 +97,16 @@ describe("Configuration editor (driver-aware)", () => {
     expect(preview).toHaveTextContent("## SYSTEM");        // augment scaffolding present
   });
 
+  it("shows the manages-its-own-system-prompt note for codex, not the vanilla-style scaffolding preview", async () => {
+    // codex reports tools_user_editable=true but supports_context=false, so the
+    // preview must stay gated on both flags, not just tools_user_editable.
+    setup({ driver: "codex", tools: ["web_search"] });
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+    const preview = await screen.findByTestId("assembled-preview");
+    expect(preview).toHaveTextContent(/manages its own system prompt/i);
+    expect(preview).not.toHaveTextContent("## SYSTEM");
+  });
+
   it("shows the assembled preview verbatim in replace mode", async () => {
     setup({ driver: "vanilla", tools: ["read_file"] });
     renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
