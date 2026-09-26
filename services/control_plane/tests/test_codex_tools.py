@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 import agentcore.drivers  # noqa: F401  registers every driver
+from agentcore.models import AgentConfig
 
 pytestmark = pytest.mark.unit
 
@@ -53,9 +54,6 @@ def test_codex_tools_pass_slim_variant_check():
         variant="slim", driver_name="codex", tool_names=CODEX_TOOL_NAMES,
         drivers=DRIVERS, tools=TOOLS,
     )
-
-
-from agentcore.models import AgentConfig
 
 
 def _codex(**kw):

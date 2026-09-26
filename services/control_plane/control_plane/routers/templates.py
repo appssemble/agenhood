@@ -301,7 +301,9 @@ async def create_template(
         "effort": body.get("effort"),
         "system_prompt": body.get("system_prompt", ""),
         "system_prompt_mode": body.get("system_prompt_mode", "augment"),
-        "tools": body["tools"] if "tools" in body else (default_tools_for(body.get("driver", "")) or []),
+        "tools": body["tools"] if "tools" in body else (
+            default_tools_for(body.get("driver", "")) or []
+        ),
         "context": context_from_body(body.get("context")),
         "skills": body.get("skills", []),
         "mcp_servers": body.get("mcp_servers", []),
