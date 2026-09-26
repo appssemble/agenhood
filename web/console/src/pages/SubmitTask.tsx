@@ -67,6 +67,12 @@ export default function SubmitTask() {
   const schema = useMemo(() => parseSchema(schemaText), [schemaText]);
   const schemaBlocksSubmit = outputType === "structured" && schemaText.trim() !== "" && !schema.ok;
 
+  // This screen stays mounted across container navigation, so a tools override picked
+  // for one container (or driver) must not leak into another's submission.
+  useEffect(() => {
+    setTaskTools(null);
+  }, [cid, config?.driver]);
+
   if (!config) return <div className="p-8 text-sm text-muted">Loading…</div>;
 
   // Limits inherit the container override, else the tenant default; max iterations

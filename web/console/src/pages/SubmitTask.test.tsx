@@ -1,4 +1,4 @@
-import { describe, it, test, expect, vi } from "vitest";
+import { describe, it, test, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
@@ -8,7 +8,12 @@ import { AuthProvider } from "../auth/AuthProvider";
 import SubmitTask from "./SubmitTask";
 
 const nav = vi.fn();
-vi.mock("react-router-dom", async (orig) => ({ ...(await orig<typeof import("react-router-dom")>()), useParams: () => ({ cid: "con_1" }), useNavigate: () => nav }));
+// Mutable so a test can simulate navigating to a different container's submit
+// page (:cid changes) while SubmitTask stays mounted, the way the real router does.
+let mockCid = "con_1";
+vi.mock("react-router-dom", async (orig) => ({ ...(await orig<typeof import("react-router-dom")>()), useParams: () => ({ cid: mockCid }), useNavigate: () => nav }));
+
+beforeEach(() => { mockCid = "con_1"; });
 
 const vanillaTpl = {
   id: "tpl_v", tenant_id: null, name: "Vanilla", driver: "vanilla", model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] }, limits: {}, is_builtin: true,
@@ -121,6 +126,31 @@ describe("SubmitTask", () => {
     renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
     await screen.findByLabelText(/Prompt/i);
     expect(screen.queryByLabelText("Override tools for this task")).not.toBeInTheDocument();
+  });
+
+  it("resets the tools override when navigating to a different container", async () => {
+    setup("codex", ["web_search"]);
+    server.use(http.get("/v1/containers/con_2", () => HttpResponse.json({ id: "con_2", name: "c2", external_id: null, status: "running", image_variant: "full", image_tag: "v",
+      config: { driver: "claude-code", model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } }, metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
+    server.use(http.get("/v1/containers/con_2/tasks", () => HttpResponse.json({ tasks: [] })));
+    server.use(http.get("/v1/containers/con_2/sessions", () => HttpResponse.json({ sessions: [] })));
+    let body: any = null;
+    server.use(http.post("/v1/containers/con_2/tasks", async ({ request }) => { body = await request.json(); return HttpResponse.json({ task_id: "tsk_14", status: "running", started_at: "t" }); }));
+
+    const { rerender } = renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.click(await screen.findByLabelText("Override tools for this task"));
+    await userEvent.click(await screen.findByLabelText("task tool image_generation"));
+
+    mockCid = "con_2";
+    rerender(<AuthProvider><SubmitTask /></AuthProvider>);
+
+    // claude-code hides the tools override outright; its disappearance confirms
+    // the config for the new container has loaded.
+    await waitFor(() => expect(screen.queryByLabelText("Override tools for this task")).not.toBeInTheDocument());
+    await userEvent.type(await screen.findByLabelText(/Prompt/i), "After switching container");
+    await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
+    await waitFor(() => expect(body?.prompt).toBe("After switching container"));
+    expect(body).not.toHaveProperty("tools");
   });
 });
 
