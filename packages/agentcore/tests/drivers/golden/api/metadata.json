@@ -10,8 +10,10 @@
   "default_template": {
     "available_tools": [],
     "default_system_prompt": "You are a fast, precise assistant. Answer the request directly and completely in a single response. Do not narrate your process.",
+    "default_tools": null,
     "driver": "api",
     "supports_context": true,
+    "tool_specs": [],
     "tools_user_editable": false
   },
   "name": "api"

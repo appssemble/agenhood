@@ -312,8 +312,10 @@ def test_codex_capabilities_and_template():
     assert d.capabilities.supports_cancel is True
     assert d.capabilities.requires_image_feature is None
     assert d.default_template.driver == "codex"
-    assert d.default_template.available_tools == []
-    assert d.default_template.tools_user_editable is False
+    assert d.default_template.available_tools == [
+        "web_search", "image_generation", "view_image", "multi_agent", "goals",
+    ]
+    assert d.default_template.tools_user_editable is True
     assert d.default_template.supports_context is False
 
 

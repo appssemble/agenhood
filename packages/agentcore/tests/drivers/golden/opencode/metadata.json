@@ -10,8 +10,10 @@
   "default_template": {
     "available_tools": [],
     "default_system_prompt": "You are an autonomous coding agent (opencode). Complete the task in the workspace and report concisely when finished.",
+    "default_tools": null,
     "driver": "opencode",
     "supports_context": false,
+    "tool_specs": [],
     "tools_user_editable": false
   },
   "name": "opencode"

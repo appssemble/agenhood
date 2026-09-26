@@ -101,3 +101,26 @@ def test_capability_flags_for_skills_and_mcp():
     assert VanillaDriver.capabilities.supports_mcp is True
     for cls in (OpencodeDriver, CodexDriver, ClaudeCodeDriver):
         assert cls.capabilities.supports_skills is True, cls.name
+
+
+def test_codex_template_declares_toggleable_tools():
+    from agentcore.drivers.codex import CodexDriver
+
+    dt = CodexDriver.default_template
+    assert dt.available_tools == [
+        "web_search", "image_generation", "view_image", "multi_agent", "goals",
+    ]
+    assert dt.default_tools == ["web_search"]
+    assert dt.tools_user_editable is True
+    assert [s.name for s in dt.tool_specs] == dt.available_tools
+    assert all(s.requires_image_feature is None for s in dt.tool_specs)
+
+
+def test_other_drivers_have_no_default_tools():
+    from agentcore.drivers.claude_code import ClaudeCodeDriver
+    from agentcore.drivers.opencode import OpencodeDriver
+    from agentcore.drivers.vanilla import VanillaDriver
+
+    for cls in (ClaudeCodeDriver, OpencodeDriver, VanillaDriver):
+        assert cls.default_template.default_tools is None, cls.name
+        assert cls.default_template.tool_specs == [], cls.name

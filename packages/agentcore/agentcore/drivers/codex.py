@@ -11,8 +11,7 @@ codex exec CLI (OpenAI codex):
     codex exec --json --skip-git-repo-check --ephemeral \\
         -C <ws> -m <model> -c features.plugins=false -c features.apps=false \\
         -c analytics.enabled=false -c otel.exporter=none \\
-        -c features.image_generation=false -c features.view_image=false \\
-        -c features.multi_agent=false -c features.goals=false \\
+        <tool flags> \\
         --dangerously-bypass-approvals-and-sandbox -
 
 - ``--json`` emits one JSON event object per line on stdout;
@@ -21,10 +20,11 @@ codex exec CLI (OpenAI codex):
   codex runs them at startup and again at shutdown, and the driver waits for
   process exit, so they sat on every task's critical path (0.3-7 s measured
   after ``turn.completed``, scaling with OpenAI backend latency) and added
-  ~2.5k prompt tokens per turn. Image generation, view_image, multi-agent
-  and goals add ~1k more of tool/feature prompt. Nothing in a headless
-  sandboxed agent uses any of them. ``web_search`` deliberately stays on
-  (another ~2.8k tokens) — it is the agent's only built-in web access;
+  ~2.5k prompt tokens per turn. These are always off;
+- the agent's ``tools`` list switches codex tools (``CODEX_TOOLS``): each is
+  emitted on or off explicitly so codex defaults never leak in, except
+  ``web_search`` on, which leaves codex's own mode (~2.8k tokens). The
+  default is ``web_search`` only; the other tools add ~1k tokens of prompt;
 - the trailing ``-`` reads the prompt from stdin (robust vs prompts starting "-");
 - ``--dangerously-bypass-approvals-and-sandbox`` auto-approves + full access —
   safe because the sandboxed container is itself the security boundary;
@@ -55,6 +55,8 @@ import asyncio
 import json
 import os
 import time
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -87,6 +89,7 @@ from agentcore.structured_output import (
     native_subset_compatible,
     run_structured_attempts,
 )
+from agentcore.tools.base import ToolSpec
 
 
 def model_arg(model: str) -> str:
@@ -179,17 +182,50 @@ SIDE_CHANNEL_OVERRIDES: tuple[str, ...] = (
     "features.apps=false",
     "analytics.enabled=false",
     "otel.exporter=none",
-    "features.image_generation=false",
-    "features.view_image=false",
-    "features.multi_agent=false",
-    "features.goals=false",
 )
+
+
+@dataclass(frozen=True)
+class CodexTool:
+    """A codex tool the agent config can switch; ``on``/``off`` are ``-c``
+    overrides, None meaning codex's own default applies."""
+
+    name: str
+    description: str
+    on: str | None
+    off: str
+
+
+CODEX_TOOLS: tuple[CodexTool, ...] = (
+    CodexTool("web_search", "Search the web with codex's built-in search.",
+              None, "web_search=disabled"),
+    CodexTool("image_generation", "Generate images.",
+              "features.image_generation=true", "features.image_generation=false"),
+    CodexTool("view_image", "Look at image files in the workspace.",
+              "features.view_image=true", "features.view_image=false"),
+    CodexTool("multi_agent", "Spawn sub-agents that work in parallel.",
+              "features.multi_agent=true", "features.multi_agent=false"),
+    CodexTool("goals", "Track long-running goals across turns.",
+              "features.goals=true", "features.goals=false"),
+)
+CODEX_DEFAULT_TOOLS: tuple[str, ...] = ("web_search",)
 
 
 def _side_channel_args() -> list[str]:
     out: list[str] = []
     for override in SIDE_CHANNEL_OVERRIDES:
         out += ["-c", override]
+    return out
+
+
+def tool_args(tools: Iterable[str]) -> list[str]:
+    """``-c`` overrides that switch every codex tool on or off."""
+    enabled = set(tools)
+    out: list[str] = []
+    for tool in CODEX_TOOLS:
+        override = tool.on if tool.name in enabled else tool.off
+        if override is not None:
+            out += ["-c", override]
     return out
 
 
@@ -200,6 +236,7 @@ def build_command(
     ephemeral: bool = True,
     effort: str | None = None,
     output_schema_path: str | None = None,
+    tools: Iterable[str] = CODEX_DEFAULT_TOOLS,
 ) -> list[str]:
     """Build the ``codex exec`` invocation (prompt is fed on stdin via ``-``).
 
@@ -208,12 +245,14 @@ def build_command(
     ``effort`` maps to codex's ``model_reasoning_effort`` config override.
     ``output_schema_path`` (structured output, task 4) appends codex's native
     ``--output-schema`` flag when the task's schema is native-subset compatible.
+    ``tools`` lists the enabled codex tools (see ``CODEX_TOOLS``).
     """
     cmd = ["codex", "exec", "--json", "--skip-git-repo-check"]
     if ephemeral:
         cmd.append("--ephemeral")
     cmd += ["-C", workspace, "-m", model]
     cmd += _side_channel_args()
+    cmd += tool_args(tools)
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
     if output_schema_path:
@@ -228,6 +267,7 @@ def build_resume_command(
     thread_id: str,
     effort: str | None = None,
     output_schema_path: str | None = None,
+    tools: Iterable[str] = CODEX_DEFAULT_TOOLS,
 ) -> list[str]:
     """Build ``codex exec resume`` (continuing a prior session).
 
@@ -236,9 +276,11 @@ def build_resume_command(
     working directory and on-disk persistence are implicit. The subprocess's
     own ``cwd=`` (set by the caller) still controls the actual process cwd.
     ``output_schema_path`` — see ``build_command``.
+    ``tools`` lists the enabled codex tools (see ``CODEX_TOOLS``).
     """
     cmd = ["codex", "exec", "resume", "--json", "--skip-git-repo-check", "-m", model]
     cmd += _side_channel_args()
+    cmd += tool_args(tools)
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
     if output_schema_path:
@@ -386,9 +428,14 @@ class CodexDriver:
     default_template = DriverTemplate(
         driver="codex",
         default_system_prompt=_CODEX_PROMPT,
-        available_tools=[],  # codex owns its tools; list is empty
-        tools_user_editable=False,
+        available_tools=[t.name for t in CODEX_TOOLS],
+        tools_user_editable=True,
         supports_context=False,
+        default_tools=list(CODEX_DEFAULT_TOOLS),
+        tool_specs=[
+            ToolSpec(name=t.name, description=t.description, input_schema={})
+            for t in CODEX_TOOLS
+        ],
     )
 
     async def run(
@@ -526,12 +573,14 @@ class CodexDriver:
             cmd = build_resume_command(
                 model=model_arg(config.model), thread_id=resume_thread_id,
                 effort=config.effort, output_schema_path=output_schema_file,
+                tools=config.tools,
             )
         else:
             cmd = build_command(
                 workspace=workspace, model=model_arg(config.model),
                 ephemeral=session_id is None and not structured,
                 effort=config.effort, output_schema_path=output_schema_file,
+                tools=config.tools,
             )
         child_env = build_env(
             sandbox.build_child_env(env),

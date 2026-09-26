@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from agentcore.errors import NotFoundError
@@ -25,6 +25,7 @@ from agentcore.models import (
     TaskBody,
     TaskResult,
 )
+from agentcore.tools.base import ToolSpec
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,10 @@ class DriverTemplate:
     available_tools: list[str]  # [] if the driver owns its tools
     tools_user_editable: bool
     supports_context: bool  # canonical name per index §11.2
+    # Tools a new config starts with; None means all of available_tools.
+    default_tools: list[str] | None = None
+    # Specs for tools the driver runs itself (not in the TOOLS registry).
+    tool_specs: list[ToolSpec] = field(default_factory=list)
 
 
 # emit(event_type, payload) -> persists+streams one event (seq assigned by caller)

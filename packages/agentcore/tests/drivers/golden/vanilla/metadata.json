@@ -21,8 +21,10 @@
       "web_read"
     ],
     "default_system_prompt": "You are a capable, autonomous research and production assistant. You work in a sandboxed Linux workspace and finish tasks by producing files and a clear result. Use your tools deliberately and cite sources where relevant.",
+    "default_tools": null,
     "driver": "vanilla",
     "supports_context": true,
+    "tool_specs": [],
     "tools_user_editable": true
   },
   "name": "vanilla"

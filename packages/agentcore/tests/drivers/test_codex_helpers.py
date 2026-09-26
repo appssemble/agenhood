@@ -406,27 +406,70 @@ def _config_overrides(cmd: list[str]) -> list[str]:
     return [cmd[i + 1] for i, a in enumerate(cmd[:-1]) if a == "-c"]
 
 
+SIDE_CHANNELS = [
+    "features.plugins=false", "features.apps=false",
+    "analytics.enabled=false", "otel.exporter=none",
+]
+ALL_TOOLS_OFF = [
+    "web_search=disabled",
+    "features.image_generation=false", "features.view_image=false",
+    "features.multi_agent=false", "features.goals=false",
+]
+
+
 def test_build_command_turns_off_codex_side_channels():
-    """codex exec spends 0.3-7 s AFTER the turn completes on account-plugin
-    sync, analytics POSTs and an OTEL flush (measured 2026-09-01); the driver
-    waits for process exit, so that lands on the task's critical path. Plugins
-    and apps also inflate every prompt by ~2.5k tokens, and image generation,
-    view_image, multi-agent and goals add another ~1k of tool/feature
-    prompt. None of them serve a headless sandboxed agent, so every invocation
-    switches them off. web_search stays on: it is the agent's only built-in
-    web access."""
+    """Plugins, apps, analytics and OTEL cost 0.3-7 s after the turn and
+    ~2.5k prompt tokens (measured 2026-09-01); they are always off,
+    whatever tools are enabled."""
     from agentcore.drivers.codex import build_command, build_resume_command
 
-    expected = [
-        "features.plugins=false", "features.apps=false",
-        "analytics.enabled=false", "otel.exporter=none",
+    for tools in ([], ["web_search"], ["image_generation", "goals"]):
+        assert _config_overrides(
+            build_command(workspace="/ws", model="m", tools=tools)
+        )[:4] == SIDE_CHANNELS
+        assert _config_overrides(
+            build_resume_command(model="m", thread_id="t-1", tools=tools)
+        )[:4] == SIDE_CHANNELS
+
+
+def test_default_tools_keep_todays_command():
+    """Default = web_search only; it matches the pre-toggle command exactly."""
+    from agentcore.drivers.codex import build_command
+
+    assert _config_overrides(build_command(workspace="/ws", model="m")) == SIDE_CHANNELS + [
         "features.image_generation=false", "features.view_image=false",
         "features.multi_agent=false", "features.goals=false",
     ]
-    assert _config_overrides(build_command(workspace="/ws", model="m")) == expected
-    assert _config_overrides(
-        build_resume_command(model="m", thread_id="t-1")
-    ) == expected
+
+
+def test_tool_args_all_off():
+    from agentcore.drivers.codex import tool_args
+
+    assert _config_overrides(tool_args([]) + ["x"]) == ALL_TOOLS_OFF
+
+
+def test_tool_args_all_on():
+    from agentcore.drivers.codex import CODEX_TOOLS, tool_args
+
+    assert _config_overrides(tool_args([t.name for t in CODEX_TOOLS]) + ["x"]) == [
+        "features.image_generation=true", "features.view_image=true",
+        "features.multi_agent=true", "features.goals=true",
+    ]
+
+
+def test_tool_args_ignores_unknown_names():
+    from agentcore.drivers.codex import tool_args
+
+    assert tool_args(["bash"]) == tool_args([])
+
+
+def test_resume_command_carries_tools():
+    from agentcore.drivers.codex import build_resume_command
+
+    cmd = build_resume_command(model="m", thread_id="t-1", tools=["view_image"])
+    overrides = _config_overrides(cmd)
+    assert "web_search=disabled" in overrides
+    assert "features.view_image=true" in overrides
 
 
 def test_build_command_side_channel_overrides_precede_effort():

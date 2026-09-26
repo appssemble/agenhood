@@ -8,11 +8,52 @@
     "supports_tools": false
   },
   "default_template": {
-    "available_tools": [],
+    "available_tools": [
+      "web_search",
+      "image_generation",
+      "view_image",
+      "multi_agent",
+      "goals"
+    ],
     "default_system_prompt": "You are an autonomous coding agent (codex). Complete the task in the workspace and report concisely when finished.",
+    "default_tools": [
+      "web_search"
+    ],
     "driver": "codex",
     "supports_context": false,
-    "tools_user_editable": false
+    "tool_specs": [
+      {
+        "description": "Search the web with codex's built-in search.",
+        "input_schema": {},
+        "name": "web_search",
+        "requires_image_feature": null
+      },
+      {
+        "description": "Generate images.",
+        "input_schema": {},
+        "name": "image_generation",
+        "requires_image_feature": null
+      },
+      {
+        "description": "Look at image files in the workspace.",
+        "input_schema": {},
+        "name": "view_image",
+        "requires_image_feature": null
+      },
+      {
+        "description": "Spawn sub-agents that work in parallel.",
+        "input_schema": {},
+        "name": "multi_agent",
+        "requires_image_feature": null
+      },
+      {
+        "description": "Track long-running goals across turns.",
+        "input_schema": {},
+        "name": "goals",
+        "requires_image_feature": null
+      }
+    ],
+    "tools_user_editable": true
   },
   "name": "codex"
 }
