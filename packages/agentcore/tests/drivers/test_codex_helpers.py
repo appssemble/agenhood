@@ -44,7 +44,7 @@ def test_build_command_reads_prompt_from_stdin():
         "-c", "features.plugins=false", "-c", "features.apps=false",
         "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.personality=false", "-c", "features.multi_agent=false",
+        "-c", "features.multi_agent=false", "-c", "features.goals=false",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
 
@@ -212,7 +212,7 @@ def test_build_command_ephemeral_true_by_default_unchanged():
         "-c", "features.plugins=false", "-c", "features.apps=false",
         "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.personality=false", "-c", "features.multi_agent=false",
+        "-c", "features.multi_agent=false", "-c", "features.goals=false",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
 
@@ -228,7 +228,7 @@ def test_build_command_ephemeral_false_drops_the_flag():
         "-c", "features.plugins=false", "-c", "features.apps=false",
         "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.personality=false", "-c", "features.multi_agent=false",
+        "-c", "features.multi_agent=false", "-c", "features.goals=false",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
 
@@ -245,7 +245,7 @@ def test_build_resume_command():
         "-c", "features.plugins=false", "-c", "features.apps=false",
         "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.personality=false", "-c", "features.multi_agent=false",
+        "-c", "features.multi_agent=false", "-c", "features.goals=false",
         "--dangerously-bypass-approvals-and-sandbox",
         "019f3753-thread", "-",
     ]
@@ -280,7 +280,7 @@ def test_build_command_appends_reasoning_effort():
         "-c", "features.plugins=false", "-c", "features.apps=false",
         "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.personality=false", "-c", "features.multi_agent=false",
+        "-c", "features.multi_agent=false", "-c", "features.goals=false",
         "-c", "model_reasoning_effort=high",
         "--dangerously-bypass-approvals-and-sandbox", "-",
     ]
@@ -303,7 +303,7 @@ def test_build_resume_command_appends_reasoning_effort():
         "-c", "features.plugins=false", "-c", "features.apps=false",
         "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
         "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.personality=false", "-c", "features.multi_agent=false",
+        "-c", "features.multi_agent=false", "-c", "features.goals=false",
         "-c", "model_reasoning_effort=max",
         "--dangerously-bypass-approvals-and-sandbox", "t-1", "-",
     ]
@@ -411,7 +411,7 @@ def test_build_command_turns_off_codex_side_channels():
     sync, analytics POSTs and an OTEL flush (measured 2026-09-01); the driver
     waits for process exit, so that lands on the task's critical path. Plugins
     and apps also inflate every prompt by ~2.5k tokens, and image generation,
-    view_image, personality and multi-agent add another ~1k of tool/feature
+    view_image, multi-agent and goals add another ~1k of tool/feature
     prompt. None of them serve a headless sandboxed agent, so every invocation
     switches them off. web_search stays on: it is the agent's only built-in
     web access."""
@@ -421,7 +421,7 @@ def test_build_command_turns_off_codex_side_channels():
         "features.plugins=false", "features.apps=false",
         "analytics.enabled=false", "otel.exporter=none",
         "features.image_generation=false", "features.view_image=false",
-        "features.personality=false", "features.multi_agent=false",
+        "features.multi_agent=false", "features.goals=false",
     ]
     assert _config_overrides(build_command(workspace="/ws", model="m")) == expected
     assert _config_overrides(
