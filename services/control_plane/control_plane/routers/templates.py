@@ -384,9 +384,18 @@ async def patch_template(
             and "driver" in updates
             and updates["driver"] != row_dict["driver"]
         ):
+            # The stored tool names belong to the OLD driver; a name like codex's
+            # "view_image" is meaningless (and may not even be validate-able) for
+            # a driver that doesn't offer it. Drop whatever the new driver doesn't
+            # recognize, then fall back to its own defaults (spec: driver switch).
+            new_driver = DRIVERS.get(updates["driver"])
+            new_available = set(
+                new_driver.default_template.available_tools if new_driver else []
+            )
+            stored_tools = row_dict.get("tools") or []
+            kept_tools = [name for name in stored_tools if name in new_available]
             defaults = default_tools_for(updates["driver"])
-            if defaults is not None:
-                updates["tools"] = defaults
+            updates["tools"] = defaults if defaults is not None else kept_tools
         if "context" in updates:
             updates["context"] = context_from_body(updates["context"])
         if "effort" in updates:
