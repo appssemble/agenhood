@@ -30,6 +30,27 @@ def test_codex_driver_uses_authoritative_list_not_substring():
         assert "opencode" in by_id[mid]["drivers"]
 
 
+def test_codex_only_models_are_offered_on_codex_via_subscription():
+    # codex serves models before opencode's bundled list knows them (e.g.
+    # gpt-6-astra). They must still reach the catalog, codex-only, and only for
+    # the ChatGPT subscription `codex debug models` was run against.
+    entries = build_catalog_entries(
+        ["openai/gpt-5.5"], [], codex_ids=["gpt-5.5", "gpt-6-astra"]
+    )
+    by_id = {e["id"]: e for e in entries}
+
+    assert by_id["gpt-6-astra"] == {
+        "id": "gpt-6-astra",
+        "provider": "openai",
+        "label": "gpt-6-astra",
+        "category": "subscription",
+        "credentials": ["openai_subscription"],
+        "drivers": ["codex"],
+    }
+    assert "opencode" in by_id["gpt-5.5"]["drivers"]
+    assert [e["id"] for e in entries].count("gpt-5.5") == 1
+
+
 def test_codex_ids_none_falls_back_to_substring():
     # Back-compat: with no authoritative list (codex auth unavailable at build
     # time), the legacy "codex"-substring heuristic still applies.

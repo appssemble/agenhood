@@ -601,8 +601,7 @@
         "openai_subscription"
       ],
       "drivers": [
-        "opencode",
-        "codex"
+        "opencode"
       ]
     },
     {
@@ -616,7 +615,6 @@
       ],
       "drivers": [
         "opencode",
-        "codex",
         "vanilla",
         "api"
       ]
@@ -647,7 +645,6 @@
       ],
       "drivers": [
         "opencode",
-        "codex",
         "vanilla",
         "api"
       ]
@@ -921,6 +918,42 @@
         "opencode",
         "vanilla",
         "api"
+      ]
+    },
+    {
+      "id": "gpt-6-astra",
+      "provider": "openai",
+      "label": "gpt-6-astra",
+      "category": "subscription",
+      "credentials": [
+        "openai_subscription"
+      ],
+      "drivers": [
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-6-luna",
+      "provider": "openai",
+      "label": "gpt-6-luna",
+      "category": "subscription",
+      "credentials": [
+        "openai_subscription"
+      ],
+      "drivers": [
+        "codex"
+      ]
+    },
+    {
+      "id": "gpt-6-sol",
+      "provider": "openai",
+      "label": "gpt-6-sol",
+      "category": "subscription",
+      "credentials": [
+        "openai_subscription"
+      ],
+      "drivers": [
+        "codex"
       ]
     },
     {

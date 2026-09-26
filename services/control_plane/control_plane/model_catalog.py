@@ -118,7 +118,8 @@ def build_catalog_entries(
     sub_ids:   from a query with a real ChatGPT token (openai Codex subscription set).
     codex_ids: authoritative Codex-runnable model slugs from ``codex debug models``
                (visibility == "list"). When ``None``, codex-driver membership falls
-               back to the ``*codex*`` substring heuristic.
+               back to the ``*codex*`` substring heuristic. Slugs opencode doesn't
+               list become codex-only subscription entries.
     go_ids:    from a query with an opencode (Zen/Go) key configured — adds the
                opencode-go/* plan models. Duplicates of base ids are deduped.
     """
@@ -183,6 +184,17 @@ def build_catalog_entries(
             "category": category,
             "credentials": creds,
             "drivers": drivers,
+        })
+    # codex can serve models before opencode's bundled list knows them; codex
+    # is the authority on its own set, so add those as codex-only entries.
+    for codex_id in sorted((codex_set or set()) - seen):
+        out.append({
+            "id": codex_id,
+            "provider": "openai",
+            "label": codex_id,
+            "category": "subscription",
+            "credentials": ["openai_subscription"],
+            "drivers": ["codex"],
         })
     # claude-code is offered only via family aliases (see _CLAUDE_CODE_ALIASES).
     out.extend(_claude_code_alias_entries())

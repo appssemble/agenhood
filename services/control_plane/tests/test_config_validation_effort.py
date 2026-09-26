@@ -16,7 +16,7 @@ def test_effort_drivers_is_the_cli_trio():
 
 
 def test_effort_accepted_for_codex():
-    cfg = AgentConfig(driver="codex", model="gpt-5.4", effort="high")
+    cfg = AgentConfig(driver="codex", model="gpt-5.5", effort="high")
     validate_config(cfg, LIMITS)  # must not raise
 
 
