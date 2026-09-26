@@ -280,3 +280,78 @@ def test_patch_template_driver_change_to_vanilla_without_tools_keeps_stored():
         r = c.patch("/v1/templates/tpl_1", json={"driver": "vanilla"})
     assert r.status_code == 200
     assert r.json()["tools"] == ["view_image"]
+
+
+# ---------------------------------------------------------------------------
+# Task 4: per-task tools override
+# ---------------------------------------------------------------------------
+
+
+def test_tools_override_replaces_config_tools():
+    from control_plane.routers.tasks import apply_tools_override
+
+    out = apply_tools_override(_codex(tools=["web_search"]), ["image_generation"])
+    assert out.tools == ["image_generation"]
+
+
+def test_tools_override_none_keeps_config():
+    from control_plane.routers.tasks import apply_tools_override
+
+    cfg = _codex(tools=["web_search"])
+    assert apply_tools_override(cfg, None) is cfg
+
+
+def test_tools_override_empty_list_turns_all_off():
+    from control_plane.routers.tasks import apply_tools_override
+
+    assert apply_tools_override(_codex(tools=["web_search"]), []).tools == []
+
+
+def test_tools_override_rejects_unknown_tool():
+    from control_plane.errors import APIError
+    from control_plane.routers.tasks import apply_tools_override
+
+    with pytest.raises(APIError) as exc:
+        apply_tools_override(_codex(), ["bash"])
+    assert exc.value.field == "tools"
+
+
+def test_tools_override_rejected_for_non_editable_driver():
+    from control_plane.errors import APIError
+    from control_plane.routers.tasks import apply_tools_override
+
+    with pytest.raises(APIError) as exc:
+        apply_tools_override(AgentConfig(driver="claude-code", model="m"), ["web_search"])
+    assert exc.value.field == "tools"
+
+
+def test_tools_override_works_for_vanilla():
+    from control_plane.routers.tasks import apply_tools_override
+
+    out = apply_tools_override(
+        AgentConfig(driver="vanilla", model="m", tools=["bash"]), ["read_file"]
+    )
+    assert out.tools == ["read_file"]
+
+
+def test_task_body_tools_defaults_to_none():
+    from agentcore.models import TaskBody
+
+    assert TaskBody(prompt="hi").tools is None
+
+
+def test_vanilla_override_with_chromium_tool_fails_on_slim():
+    from agentcore.drivers.base import DRIVERS
+    from agentcore.tools.base import TOOLS
+    from control_plane.errors import APIError
+    from control_plane.routers.tasks import apply_tools_override
+    from control_plane.variants import assert_config_runnable_on_variant
+
+    # web_fetch requires the chromium image feature; web_read does not (it
+    # works in all variants via its Exa/local-fetch fallback).
+    cfg = apply_tools_override(AgentConfig(driver="vanilla", model="m"), ["web_fetch"])
+    with pytest.raises(APIError):
+        assert_config_runnable_on_variant(
+            variant="slim", driver_name="vanilla", tool_names=cfg.tools,
+            drivers=DRIVERS, tools=TOOLS,
+        )

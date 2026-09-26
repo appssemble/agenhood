@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import agentcore.tools  # noqa: F401  registers every built-in tool
 import control_plane.tables as t
 from agentcore.drivers.base import DRIVERS
 from agentcore.models import (
@@ -28,6 +29,7 @@ from agentcore.models import (
     TaskBody,
     TaskLimits,
 )
+from agentcore.tools.base import TOOLS
 from control_plane import lifecycle
 from control_plane.auth import Principal
 from control_plane.auth.crypto import decrypt_secret, load_key_from_env
@@ -69,6 +71,7 @@ from control_plane.shim_client import ShimClient, ShimError, ShimTooManyTasks
 from control_plane.skills_service import resolve_skills_for_request
 from control_plane.sse import event_ts, format_sse, parse_event_line, should_forward
 from control_plane.tenant_defaults import worker_cap_for_driver
+from control_plane.variants import assert_config_runnable_on_variant
 
 router = APIRouter(tags=["Tasks"])
 
@@ -193,6 +196,27 @@ def apply_effort_override(config: AgentConfig, effort: str | None) -> AgentConfi
             f"driver '{config.driver}' does not support effort", "effort",
         )
     return config.model_copy(update={"effort": effort})
+
+
+def apply_tools_override(config: AgentConfig, tools: list[str] | None) -> AgentConfig:
+    """Fold an optional per-task tools override into the config *before* the
+    snapshot, mirroring apply_effort_override."""
+    if tools is None:
+        return config
+    drv = DRIVERS.get(config.driver)
+    if drv is None or not drv.default_template.tools_user_editable:
+        raise APIError(
+            400, "validation_error",
+            f"driver '{config.driver}' does not allow editing tools", "tools",
+        )
+    available = set(drv.default_template.available_tools)
+    for tool in tools:
+        if tool not in available:
+            raise APIError(
+                400, "validation_error",
+                f"tool '{tool}' is not available for driver '{config.driver}'", "tools",
+            )
+    return config.model_copy(update={"tools": list(tools)})
 
 
 def build_task_row(
@@ -628,6 +652,12 @@ async def submit_task_core(
     row = await _load_owned_container(session, tenant_id, cid)
     config = AgentConfig(**row.config)
     config = apply_effort_override(config, body.effort)
+    config = apply_tools_override(config, body.tools)
+    if body.tools is not None:
+        assert_config_runnable_on_variant(
+            variant=row.image_variant or "full", driver_name=config.driver,
+            tool_names=list(config.tools), drivers=DRIVERS, tools=TOOLS,
+        )
 
     # Per-container env for the agent process. Secrets decrypt in memory only;
     # a decrypt failure fails the submission rather than silently dropping vars.

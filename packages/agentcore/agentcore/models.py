@@ -36,6 +36,8 @@ class TaskBody(BaseModel):
     # Optional per-task override of the container's AgentConfig.effort. Folded
     # into the config snapshot by the tasks router before dispatch.
     effort: Effort | None = None
+    # Optional per-task override of the container's AgentConfig.tools.
+    tools: list[str] | None = None
 
 
 class ResolvedLimits(BaseModel):
