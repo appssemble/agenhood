@@ -159,12 +159,15 @@ def template_public_view(row: dict[str, Any]) -> dict[str, Any]:
 
     if driver is not None:
         capabilities = asdict(driver.capabilities)
-        driver_template = asdict(driver.default_template)
-        # Collect ToolSpec dicts for tools listed in the driver's default_template
-        for tool_name in driver.default_template.available_tools:
-            tool = TOOLS.get(tool_name)
-            if tool is not None:
-                available_tool_specs.append(asdict(tool.spec))
+        dt = driver.default_template
+        driver_template = asdict(dt)
+        if dt.tool_specs:
+            available_tool_specs = [asdict(s) for s in dt.tool_specs]
+        else:
+            for tool_name in dt.available_tools:
+                tool = TOOLS.get(tool_name)
+                if tool is not None:
+                    available_tool_specs.append(asdict(tool.spec))
 
     return {
         **row,

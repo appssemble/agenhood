@@ -53,7 +53,7 @@ def build_builtin_template_rows() -> list[dict[str, Any]]:
                 "model": None,
                 "system_prompt": dt.default_system_prompt,
                 "system_prompt_mode": "augment",
-                "tools": list(dt.available_tools),
+                "tools": list(dt.default_tools if dt.default_tools is not None else dt.available_tools),
                 "context": {},
                 "skills": [],
                 "limits": {},
