@@ -56,6 +56,28 @@ def test_codex_tools_pass_slim_variant_check():
     )
 
 
+def test_codex_variant_check_ignores_the_vanilla_tools_registry():
+    """codex's "web_search" shares a name with the vanilla registry tool of the
+    same name. The variant check must resolve codex tool names against the
+    driver's own tool_specs, never against the (unrelated) `tools` registry,
+    even one where "web_search" would fail the check."""
+    from agentcore.drivers.base import DRIVERS
+    from control_plane.variants import assert_config_runnable_on_variant
+
+    class _FakeSpec:
+        requires_image_feature = "chromium"
+
+    class _FakeTool:
+        spec = _FakeSpec()
+
+    poisoned_tools = {"web_search": _FakeTool()}
+
+    assert_config_runnable_on_variant(  # must not raise
+        variant="slim", driver_name="codex", tool_names=["web_search"],
+        drivers=DRIVERS, tools=poisoned_tools,
+    )
+
+
 def _codex(**kw):
     return AgentConfig(driver="codex", model="gpt-5.4", **kw)
 
@@ -163,6 +185,25 @@ def test_resolve_create_config_inline_vanilla_without_tools_stays_empty():
     req = CreateContainerRequest(name="c", config=AgentConfig(driver="vanilla", model="m"))
     cfg, _tid, _rt = asyncio.run(_resolve_create_config(None, req))
     assert cfg.tools == []
+
+
+def test_assembled_prompt_preview_uses_codexs_own_web_search_description():
+    """The preview must describe codex's "web_search" from the driver's own
+    tool_specs, not the unrelated vanilla registry tool of the same name."""
+    from control_plane.routers.containers import _preview_prompt
+
+    preview = _preview_prompt(_codex(tools=["web_search"]))
+    assert "Search the web with codex's built-in search." in preview
+    assert "Search the web. Uses a hosted search provider" not in preview
+
+
+def test_assembled_prompt_preview_lists_every_enabled_codex_tool():
+    from control_plane.routers.containers import _preview_prompt
+
+    preview = _preview_prompt(_codex(tools=["goals", "view_image"]))
+    assert "- goals:" in preview
+    assert "- view_image:" in preview
+    assert "- web_search:" not in preview
 
 
 # --- template create/patch, through the real router (TestClient, no DB) -----
@@ -274,16 +315,28 @@ def test_patch_template_driver_change_with_tools_sent_keeps_sent():
     assert r.json()["tools"] == ["goals"]
 
 
-def test_patch_template_driver_change_to_vanilla_without_tools_keeps_stored():
+def test_patch_template_driver_change_to_vanilla_without_tools_drops_codex_only_names():
+    # codex's "view_image" isn't a vanilla tool; switching drivers without
+    # sending tools must drop it rather than carry it over verbatim.
     _use_tpl(rows=[_tpl_row(driver="codex", tools=["view_image"])])
     with TestClient(_tpl_app) as c:
         r = c.patch("/v1/templates/tpl_1", json={"driver": "vanilla"})
     assert r.status_code == 200
-    assert r.json()["tools"] == ["view_image"]
+    assert r.json()["tools"] == []
+
+
+def test_patch_template_driver_change_to_vanilla_without_tools_keeps_shared_names():
+    # "web_search" is a valid tool name for both codex and vanilla, so it
+    # survives the driver switch.
+    _use_tpl(rows=[_tpl_row(driver="codex", tools=["web_search", "view_image"])])
+    with TestClient(_tpl_app) as c:
+        r = c.patch("/v1/templates/tpl_1", json={"driver": "vanilla"})
+    assert r.status_code == 200
+    assert r.json()["tools"] == ["web_search"]
 
 
 # ---------------------------------------------------------------------------
-# Task 4: per-task tools override
+# per-task tools override
 # ---------------------------------------------------------------------------
 
 
