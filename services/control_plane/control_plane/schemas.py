@@ -78,7 +78,9 @@ class CreateContainerRequest(BaseModel):
         None,
         description=(
             "Inline agent configuration (driver, model, tools, prompt, skills, MCP "
-            "servers). When present it is the complete active config and overrides `template_id`."
+            "servers). When present it is the complete active config and overrides `template_id`. "
+            'For codex, omitting `tools` uses the driver defaults (`["web_search"]`); '
+            "an empty list `[]` turns off every codex tool."
         ),
     )
     image_tag: str | None = Field(
@@ -156,7 +158,14 @@ class ConfigPatch(BaseModel):
             "it entirely."
         ),
     )
-    tools: list[str] = Field(default_factory=list, description="Tool names enabled for the agent.")
+    tools: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tool names enabled for the agent. For codex, omitting this field uses "
+            'the driver defaults (`["web_search"]`); an empty list `[]` turns off '
+            "every codex tool."
+        ),
+    )
     context: ContextSpec = Field(
         default_factory=ContextSpec, description="Context-window / history configuration."
     )
