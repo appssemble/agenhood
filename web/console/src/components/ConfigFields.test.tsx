@@ -19,6 +19,20 @@ const apiMeta = {
   driver_template: { driver: "api", default_system_prompt: "", available_tools: [], tools_user_editable: false, supports_context: false },
   available_tool_specs: [],
 } as unknown as Template;
+const codexMeta = {
+  driver_template: {
+    driver: "codex", default_system_prompt: "", supports_context: true, tools_user_editable: true,
+    available_tools: ["web_search", "image_generation", "view_image", "multi_agent", "goals"],
+    default_tools: ["web_search"],
+  },
+  available_tool_specs: [
+    { name: "web_search", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "image_generation", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "view_image", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "multi_agent", description: "", input_schema: {}, requires_image_feature: null },
+    { name: "goals", description: "", input_schema: {}, requires_image_feature: null },
+  ],
+} as unknown as Template;
 
 // Builds a vanillaMeta variant carrying explicit capability flags, so tests can
 // exercise the capability-driven gate independent of the legacy driver-name fallback.
@@ -133,6 +147,22 @@ describe("ConfigFields", () => {
     await screen.findByText("Model");
     expect(screen.queryByText("Skills")).not.toBeInTheDocument();
     expect(screen.queryByText(/MCP servers/)).not.toBeInTheDocument();
+  });
+
+  it("shows the codex tool picker with its default tool checked", async () => {
+    models();
+    const onPatch = vi.fn();
+    const codex = { ...baseValue, driver: "codex", tools: ["web_search"] };
+    renderWithProviders(<ConfigFields value={codex} driverMeta={codexMeta} enabledSkills={[]} enabledMcpServers={[]} onPatch={onPatch} />);
+    expect(await screen.findByLabelText("web_search")).toBeInTheDocument();
+    expect(screen.getByLabelText("image_generation")).toBeInTheDocument();
+    expect(screen.getByLabelText("view_image")).toBeInTheDocument();
+    expect(screen.getByLabelText("multi_agent")).toBeInTheDocument();
+    expect(screen.getByLabelText("goals")).toBeInTheDocument();
+    expect(screen.getByLabelText("web_search")).toBeChecked();
+    expect(screen.getByLabelText("image_generation")).not.toBeChecked();
+    await userEvent.click(screen.getByLabelText("image_generation"));
+    expect(onPatch).toHaveBeenCalledWith({ tools: ["web_search", "image_generation"] });
   });
 
   it("falls back to the legacy driver list when capabilities are absent", async () => {

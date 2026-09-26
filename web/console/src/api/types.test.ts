@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { toolsForDriver } from "./types";
 import type {
   AgentConfig, OutputContract, Event, Container, Template,
   Me, ApiKeyCreated, Credential, TaskStatus, EventType,
@@ -54,5 +55,31 @@ describe("wire types match index §4/§6.2", () => {
     const status: TaskStatus = "completed";
     const cred: Credential = { id: "cred_1", provider: "anthropic", last4: "abcd", created_by: "Davis", created_at: "2026-05-20T10:00:00Z", auth_method: "api_key", status: "active", account_tail: null, expires_at: null };
     expect([k.key, me.role, status, cred.provider]).toEqual(["tk_live_secret", "admin", "completed", "anthropic"]);
+  });
+});
+
+function meta(dt: Partial<Template["driver_template"]>): Template {
+  return {
+    driver_template: {
+      driver: "x", default_system_prompt: "", available_tools: [],
+      tools_user_editable: true, supports_context: true, default_tools: null, ...dt,
+    },
+  } as Template;
+}
+
+describe("toolsForDriver", () => {
+  it("uses the driver's default tools when it has them", () => {
+    expect(toolsForDriver(meta({ default_tools: ["web_search"], available_tools: ["web_search", "goals"] }), ["bash"]))
+      .toEqual(["web_search"]);
+  });
+  it("keeps only tools the new driver offers", () => {
+    expect(toolsForDriver(meta({ available_tools: ["bash", "read_file"] }), ["bash", "image_generation"]))
+      .toEqual(["bash"]);
+  });
+  it("clears tools for drivers that own their tools", () => {
+    expect(toolsForDriver(meta({ tools_user_editable: false }), ["bash"])).toEqual([]);
+  });
+  it("keeps the list when driver metadata is not loaded", () => {
+    expect(toolsForDriver(undefined, ["bash"])).toEqual(["bash"]);
   });
 });

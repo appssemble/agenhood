@@ -61,6 +61,7 @@ export interface DriverCapabilities {
 export interface DriverTemplate {
   driver: string; default_system_prompt: string; available_tools: string[];
   tools_user_editable: boolean; supports_context: boolean;
+  default_tools?: string[] | null;
 }
 export interface ToolSpec {
   name: string; description: string; input_schema: Record<string, unknown>;
@@ -74,6 +75,15 @@ export interface Template {
   effort?: Effort | null;
   env_vars?: EnvVar[];
   capabilities: DriverCapabilities; driver_template: DriverTemplate; available_tool_specs: ToolSpec[];
+}
+
+// Tools a config should carry after switching to the driver described by `meta`.
+export function toolsForDriver(meta: Template | undefined, current: string[]): string[] {
+  const dt = meta?.driver_template;
+  if (!dt) return current;
+  if (dt.default_tools) return [...dt.default_tools];
+  if (!dt.tools_user_editable) return [];
+  return current.filter((t) => dt.available_tools.includes(t));
 }
 
 // Form-state shape for creating/editing a template. `model` is a string in the

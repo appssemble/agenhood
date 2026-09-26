@@ -144,7 +144,7 @@ export function ConfigFields({
           <div className="note" style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "flex-start" }}>
             <Icons.Info />
             <div>
-              <b>If you switch to <span className="mono">opencode</span>, <span className="mono">codex</span>, or <span className="mono">claude-code</span></b>, this picker is hidden,
+              <b>If you switch to <span className="mono">opencode</span> or <span className="mono">claude-code</span></b>, this picker is hidden,
               because these drivers manage their own tools and context.
             </div>
           </div>
