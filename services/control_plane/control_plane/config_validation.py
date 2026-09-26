@@ -38,9 +38,7 @@ def default_tools_for(driver: str) -> list[str] | None:
 
 
 def fill_default_tools(config: AgentConfig, *, tools_given: bool) -> AgentConfig:
-    """Apply the driver's default tools when the request did not send ``tools``.
-
-    An explicit list, including ``[]``, is kept as sent."""
+    """Fill in the driver's default tools unless the request sent ``tools`` explicitly."""
     if tools_given:
         return config
     defaults = default_tools_for(config.driver)

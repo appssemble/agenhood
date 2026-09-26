@@ -379,7 +379,11 @@ async def patch_template(
             "image_variant", "mem_limit", "cpus", "env_vars",
         }
         updates = {k: v for k, v in body.items() if k in allowed_fields}
-        if "driver" in updates and "tools" not in updates:
+        if (
+            "tools" not in updates
+            and "driver" in updates
+            and updates["driver"] != row_dict["driver"]
+        ):
             defaults = default_tools_for(updates["driver"])
             if defaults is not None:
                 updates["tools"] = defaults
