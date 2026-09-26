@@ -346,3 +346,128 @@ async def test_submit_linked_container_disables_snapshots_and_push(
     assert shim_req is not None, "forward_to_shim was not called"
     assert shim_req.git_snapshots is False
     assert shim_req.git_push is None
+
+
+# ---------------------------------------------------------------------------
+# Per-task tools override, at the router level
+# ---------------------------------------------------------------------------
+
+
+async def _submit_with_tools_override(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    row: Any,
+    tools: list[str],
+    driver: str = "vanilla",
+) -> tuple[Any, dict[str, Any]]:
+    """Submit a task with a ``tools`` override against a container ``row``.
+
+    Returns (response, captured) where captured may hold ``shim_req`` and
+    ``task_insert`` (the persisted tasks-row insert params) when the
+    submission got far enough to reach them.
+    """
+    captured: dict[str, Any] = {}
+
+    class _Session(_FakeSession):
+        async def execute(self, stmt: Any, params: Any = None) -> Any:
+            s = str(stmt).lower()
+            if "containers" in s and "tenant_id" in s and "count" not in s:
+                return _FakeResult(value=row)
+            if s.startswith("insert into tasks"):
+                captured["task_insert"] = dict(stmt.compile().params)
+                return _FakeResult()
+            return await super().execute(stmt, params)
+
+    async def fake_bring(*a: Any, **k: Any) -> None:
+        return None
+
+    async def fake_forward(
+        request: Any, row: Any, shim_req: Any, session: Any, task_id: str
+    ) -> dict:  # type: ignore[type-arg]
+        captured["shim_req"] = shim_req
+        return {"status": "running"}
+
+    monkeypatch.setattr(tasks_mod.lifecycle, "bring_to_running", fake_bring)
+    monkeypatch.setattr(tasks_mod, "forward_to_shim", fake_forward)
+    monkeypatch.setattr(tasks_mod, "decrypt_row", lambda row, key: "sk-fake-key")
+    monkeypatch.setattr(
+        tasks_mod, "load_key_from_env", lambda: b"fake-key-32-bytes-long----------"
+    )
+
+    fake_session = _Session()
+
+    async def _fake_session_dep() -> AsyncIterator[_Session]:
+        yield fake_session
+
+    _APP.dependency_overrides[resolve_principal] = lambda: _MEMBER_PRINCIPAL
+    _APP.dependency_overrides[tasks_mod._session] = _fake_session_dep  # type: ignore[attr-defined]
+    try:
+        transport = ASGITransport(app=_APP)  # type: ignore[arg-type]
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                f"/v1/containers/{CONTAINER_ID}/tasks",
+                json={"prompt": "hi", "tools": tools},
+            )
+    finally:
+        _APP.dependency_overrides.clear()
+    return r, captured
+
+
+@pytest.mark.asyncio
+async def test_submit_tools_override_with_chromium_tool_rejected_on_slim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A vanilla override that enables web_fetch (needs chromium) on a slim
+    container is rejected with 409 validation_error before dispatch."""
+
+    class _SlimVanillaRow(_FakeContainerRow):
+        image_variant = "slim"
+        config = {"driver": "vanilla", "model": "gpt-4o", "tools": []}
+
+    r, captured = await _submit_with_tools_override(
+        monkeypatch, row=_SlimVanillaRow(), tools=["web_fetch"],
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "validation_error"
+    assert "shim_req" not in captured, "must not dispatch to the shim"
+
+
+@pytest.mark.asyncio
+async def test_submit_tools_override_persists_and_forwards_the_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid per-task tools override ends up in the persisted config
+    snapshot and in the shim request, not just in the in-memory config."""
+
+    class _CodexRow(_FakeContainerRow):
+        config = {"driver": "codex", "model": "gpt-5.4", "tools": ["web_search"]}
+
+    r, captured = await _submit_with_tools_override(
+        monkeypatch, row=_CodexRow(), tools=["image_generation"],
+    )
+    assert r.status_code < 300, r.text
+
+    shim_req = captured.get("shim_req")
+    assert shim_req is not None, "forward_to_shim was not called"
+    assert shim_req.config.tools == ["image_generation"]
+
+    task_insert = captured.get("task_insert")
+    assert task_insert is not None, "the task row was not inserted"
+    assert task_insert["config_snapshot"]["tools"] == ["image_generation"]
+
+
+@pytest.mark.asyncio
+async def test_submit_tools_override_rejected_for_non_editable_driver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude-code does not let a task override its tools: 400 on field tools."""
+
+    class _ClaudeCodeRow(_FakeContainerRow):
+        config = {"driver": "claude-code", "model": "sonnet", "tools": []}
+
+    r, captured = await _submit_with_tools_override(
+        monkeypatch, row=_ClaudeCodeRow(), tools=["web_search"],
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["field"] == "tools"
+    assert "shim_req" not in captured, "must not dispatch to the shim"
