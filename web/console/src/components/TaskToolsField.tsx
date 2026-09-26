@@ -1,4 +1,4 @@
-import { Checkbox } from "../ui";
+import { Checkbox, Tag } from "../ui";
 import type { Template } from "../api/types";
 
 // Per-task tools override. null ⇒ inherit the container's tools.
@@ -35,6 +35,7 @@ export function TaskToolsField({
                 aria-label={`task tool ${t.name}`}
               />
               {t.name}
+              {t.requires_image_feature === "chromium" && (<Tag style={{ marginLeft: 4, fontSize: 10 }}>full</Tag>)}
             </label>
           ))}
         </div>
