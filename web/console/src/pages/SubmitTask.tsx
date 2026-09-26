@@ -43,6 +43,8 @@ export default function SubmitTask() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   // Per-task effort override. null ⇒ inherit the container's configured effort (or the model's own default).
   const [effort, setEffort] = useState<Effort | null>(null);
+  // Per-task tools override. null ⇒ inherit the container's tools.
+  const [taskTools, setTaskTools] = useState<string[] | null>(null);
 
   const tasksQ = useTaskPages(cid!, sessionId ?? undefined);
   const recentTask = tasksQ.data?.tasks?.[0] ?? null;
@@ -86,6 +88,7 @@ export default function SubmitTask() {
       limits: { max_iterations: maxIter, max_tokens: maxTokens, timeout_seconds: timeoutS },
       metadata: {},
       ...(effort ? { effort } : {}),
+      ...(taskTools !== null ? { tools: taskTools } : {}),
       ...(sessionId ? { session_id: sessionId } : {}),
     };
   }
@@ -173,6 +176,9 @@ export default function SubmitTask() {
               submitting={submit.isPending}
               effort={effort}
               onEffortChange={setEffort}
+              driverMeta={driverMeta}
+              taskTools={taskTools}
+              onTaskToolsChange={setTaskTools}
               {...limitProps}
             />
           </div>
@@ -199,6 +205,9 @@ export default function SubmitTask() {
           onError={onSubmitError}
           effort={effort}
           onEffortChange={setEffort}
+          driverMeta={driverMeta}
+          taskTools={taskTools}
+          onTaskToolsChange={setTaskTools}
           {...limitProps}
         />
       )}

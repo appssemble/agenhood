@@ -3,12 +3,13 @@ import { Link } from "react-router-dom";
 import { Button, Tag, Textarea } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "../components/EffortField";
+import { TaskToolsField } from "../components/TaskToolsField";
 import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
 import { PromptPicker } from "../ui/PromptPicker";
 import { appendPrompt } from "../lib/prompt";
 import { EFFORT_DRIVERS } from "../api/types";
-import type { AgentConfig, Effort, OutputType, TaskSummary, TenantLimits } from "../api/types";
+import type { AgentConfig, Effort, OutputType, TaskSummary, Template, TenantLimits } from "../api/types";
 
 // Classic form layout for submitting a task. Extracted unchanged from the
 // original SubmitTask screen; the parent owns all state and submission.
@@ -32,6 +33,9 @@ export function SubmitTaskForm({
   submitting,
   effort,
   onEffortChange,
+  driverMeta,
+  taskTools,
+  onTaskToolsChange,
   supportsMaxIterations,
   iterDefault,
   tokensDefault,
@@ -63,6 +67,9 @@ export function SubmitTaskForm({
   submitting: boolean;
   effort: Effort | null;
   onEffortChange: (v: Effort | null) => void;
+  driverMeta: Template | undefined;
+  taskTools: string[] | null;
+  onTaskToolsChange: (v: string[] | null) => void;
   supportsMaxIterations: boolean;
   iterDefault?: number | null;
   tokensDefault?: number | null;
@@ -150,6 +157,11 @@ export function SubmitTaskForm({
         {/* Effort — per-task override, same control as the chat Options panel. */}
         <div style={{ marginTop: 18 }}>
           <EffortField driver={config.driver} value={effort} onChange={onEffortChange} />
+        </div>
+
+        {/* Tools — per-task override, same control as the chat Options panel. */}
+        <div style={{ marginTop: 18 }}>
+          <TaskToolsField driverMeta={driverMeta} inherited={config.tools} value={taskTools} onChange={onTaskToolsChange} />
         </div>
 
         {/* Submit */}

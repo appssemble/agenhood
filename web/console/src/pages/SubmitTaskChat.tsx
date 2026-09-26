@@ -5,9 +5,10 @@ import { PromptPicker } from "../ui/PromptPicker";
 import { appendPrompt } from "../lib/prompt";
 import { ChatTurn } from "../components/ChatTurn";
 import { EffortField } from "../components/EffortField";
+import { TaskToolsField } from "../components/TaskToolsField";
 import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
-import type { AgentConfig, Effort, OutputType, TaskStatus, TaskSummary, TenantLimits } from "../api/types";
+import type { AgentConfig, Effort, OutputType, TaskStatus, TaskSummary, Template, TenantLimits } from "../api/types";
 
 type Turn = { taskId: string; prompt: string; status: TaskStatus; sessionId: string | null };
 
@@ -35,6 +36,9 @@ export function SubmitTaskChat({
   onError,
   effort,
   onEffortChange,
+  driverMeta,
+  taskTools,
+  onTaskToolsChange,
   // limits
   supportsMaxIterations,
   iterDefault,
@@ -71,6 +75,9 @@ export function SubmitTaskChat({
   onError: (err: unknown) => void;
   effort: Effort | null;
   onEffortChange: (v: Effort | null) => void;
+  driverMeta: Template | undefined;
+  taskTools: string[] | null;
+  onTaskToolsChange: (v: string[] | null) => void;
   supportsMaxIterations: boolean;
   iterDefault?: number | null;
   tokensDefault?: number | null;
@@ -221,6 +228,7 @@ export function SubmitTaskChat({
               setTimeoutS={setTimeoutS}
             />
             <EffortField driver={config.driver} value={effort} onChange={onEffortChange} />
+            <TaskToolsField driverMeta={driverMeta} inherited={config.tools} value={taskTools} onChange={onTaskToolsChange} />
           </div>
         )}
 
@@ -253,6 +261,7 @@ export function SubmitTaskChat({
             Options
             {outputType !== "text" && <span className="tag" style={{ fontSize: 10 }}>{outputType}</span>}
             {effort && <span className="tag" style={{ fontSize: 10 }}>effort {effort}</span>}
+            {taskTools !== null && <span className="tag" style={{ fontSize: 10 }}>tools {taskTools.length}</span>}
           </button>
           <span className="chat-hint">
             <Icons.Cube w={12} /> inherits {config.driver} · {config.model}
