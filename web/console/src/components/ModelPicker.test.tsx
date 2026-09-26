@@ -32,6 +32,20 @@ describe("ModelPicker", () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("anthropic/claude-opus-4-8"));
   });
 
+  it("lists all OpenAI models in one section, whichever credential they need", async () => {
+    server.use(http.get("/v1/models", () => HttpResponse.json({ models: [
+      { id: "gpt-6-astra", provider: "openai", label: "gpt-6-astra", category: "api_key", drivers: ["codex"], available: true, requires: [] },
+      { id: "gpt-6-sol", provider: "openai", label: "gpt-6-sol", category: "subscription", drivers: ["codex"], available: false, requires: ["openai_subscription"] },
+    ] })));
+    renderWithProviders(<ModelPicker driver="codex" value="" onChange={() => {}} />);
+    expect(await screen.findByText("OpenAI · API key or ChatGPT subscription")).toBeInTheDocument();
+    expect(screen.getByText("gpt-6-astra")).toBeInTheDocument();
+    expect(screen.getByText("gpt-6-sol")).toBeInTheDocument();
+    expect(screen.queryByText(/^API key$/)).not.toBeInTheDocument();
+    expect(screen.queryByText("OpenAI · subscription")).not.toBeInTheDocument();
+    expect(screen.getByText(/needs ChatGPT subscription/)).toBeInTheDocument();
+  });
+
   it("splits same-name OpenCode Zen and Go models into labeled billing sections", async () => {
     server.use(http.get("/v1/models", () => HttpResponse.json({ models: [
       { id: "opencode/deepseek-v4-flash", provider: "opencode", label: "deepseek-v4-flash", category: "api_key", drivers: ["opencode"], available: true, requires: [] },

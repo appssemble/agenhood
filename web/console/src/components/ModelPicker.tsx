@@ -5,12 +5,12 @@ import type { ModelOption } from "../api/types";
 
 const GROUP_LABEL: Record<string, string> = {
   free: "Free",
+  openai: "OpenAI · API key or ChatGPT subscription",
   api_key: "API key",
   opencode_zen: "OpenCode Zen · pay-per-token credits",
   opencode_go: "OpenCode Go · plan usage",
-  subscription: "OpenAI · subscription",
 };
-const GROUP_ORDER = ["free", "api_key", "opencode_go", "opencode_zen", "subscription"];
+const GROUP_ORDER = ["free", "openai", "api_key", "opencode_go", "opencode_zen"];
 const REQUIRE_LABEL: Record<string, string> = {
   openai_api_key: "needs OpenAI key",
   anthropic_api_key: "needs Anthropic key",
@@ -20,8 +20,11 @@ const REQUIRE_LABEL: Record<string, string> = {
 
 // The two OpenCode providers list the same model names but bill differently
 // (Go plan vs Zen credits); split them into their own sections so the picker
-// doesn't show two indistinguishable rows per model.
+// doesn't show two indistinguishable rows per model. OpenAI models share one
+// section: most run on an API key or a ChatGPT subscription, and the few that
+// need one specifically say so in their row tag.
 function groupOf(m: ModelOption): string {
+  if (m.provider === "openai") return "openai";
   if (m.category === "api_key" && m.provider === "opencode") return "opencode_zen";
   if (m.category === "api_key" && m.provider === "opencode-go") return "opencode_go";
   return m.category;
