@@ -50,7 +50,8 @@ async def test_codex_default_tools_backfill(migrated_db: str) -> None:
                 "('tpl_m29_vanilla', 'ten_m29', 'v', 'vanilla', '[]'::jsonb)"))
             await conn.execute(text(
                 "INSERT INTO containers "
-                "(id, tenant_id, name, docker_name, volume_name, shim_token, image_tag, config, status) VALUES "
+                "(id, tenant_id, name, docker_name, volume_name, shim_token, image_tag, "
+                " config, status) VALUES "
                 "('cnt_m29_empty', 'ten_m29', 'a', 'd1', 'v1', 't', 'test', "
                 " '{\"driver\":\"codex\",\"model\":\"m\",\"tools\":[]}'::jsonb, 'running'), "
                 "('cnt_m29_missing', 'ten_m29', 'b', 'd2', 'v2', 't', 'test', "
@@ -61,11 +62,21 @@ async def test_codex_default_tools_backfill(migrated_db: str) -> None:
         _alembic("upgrade", "head")
 
         async with engine.begin() as conn:
-            assert await _tools(conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'") == ["web_search"]
-            assert await _tools(conn, "SELECT tools FROM templates WHERE id='tpl_m29_vanilla'") == []
-            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'") == ["web_search"]
-            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_missing'") == ["web_search"]
-            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_vanilla'") == []
+            assert await _tools(
+                conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'"
+            ) == ["web_search"]
+            assert await _tools(
+                conn, "SELECT tools FROM templates WHERE id='tpl_m29_vanilla'"
+            ) == []
+            assert await _tools(
+                conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'"
+            ) == ["web_search"]
+            assert await _tools(
+                conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_missing'"
+            ) == ["web_search"]
+            assert await _tools(
+                conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_vanilla'"
+            ) == []
             # A user choice made after the upgrade must survive a re-run of the backfill.
             await conn.execute(text(
                 "UPDATE containers SET config = jsonb_set(config, '{tools}', '[\"goals\"]'::jsonb) "
@@ -78,16 +89,28 @@ async def test_codex_default_tools_backfill(migrated_db: str) -> None:
         _alembic("upgrade", "head")
 
         async with engine.begin() as conn:
-            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'") == ["goals"]
-            assert await _tools(conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'") == ["web_search"]
+            assert await _tools(
+                conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'"
+            ) == ["goals"]
+            assert await _tools(
+                conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'"
+            ) == ["web_search"]
 
         _alembic("downgrade", "0028_env_vars")
 
         async with engine.begin() as conn:
-            assert await _tools(conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'") == []
-            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'") == []
-            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_missing'") == []
-            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_vanilla'") == []
+            assert await _tools(
+                conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'"
+            ) == []
+            assert await _tools(
+                conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'"
+            ) == []
+            assert await _tools(
+                conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_missing'"
+            ) == []
+            assert await _tools(
+                conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_vanilla'"
+            ) == []
     finally:
         _alembic("upgrade", "head")
         async with engine.begin() as conn:

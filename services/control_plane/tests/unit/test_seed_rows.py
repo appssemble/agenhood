@@ -20,7 +20,8 @@ def test_builtin_row_copies_driver_template():
         assert r["is_builtin"] is True
         assert r["tenant_id"] is None
         assert r["system_prompt"] == dt.default_system_prompt
-        assert r["tools"] == (dt.default_tools if dt.default_tools is not None else dt.available_tools)
+        expected_tools = dt.default_tools if dt.default_tools is not None else dt.available_tools
+        assert r["tools"] == expected_tools
         assert r["system_prompt_mode"] == "augment"
         assert r["id"].startswith("tpl_")
 
