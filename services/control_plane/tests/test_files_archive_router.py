@@ -11,6 +11,7 @@ from control_plane.app import create_app
 from control_plane.auth.principal import Principal, resolve_principal
 from control_plane.config import Settings
 from control_plane.routers.files import _archive_filename
+from control_plane.shim_client import ShimFileNotFound, ShimInvalidPath
 
 pytestmark = pytest.mark.unit
 
@@ -92,6 +93,13 @@ class _FakeSession:
 _DELETED: list[str] = []
 
 
+def _raise_for_path(path: str) -> None:
+    if path == "missing.txt":
+        raise ShimFileNotFound("file not found")
+    if path.startswith(".."):
+        raise ShimInvalidPath("path escape not allowed")
+
+
 class _FakeShim:
     async def __aenter__(self) -> _FakeShim:
         return self
@@ -106,11 +114,16 @@ class _FakeShim:
     async def download_file(self, path: str) -> Any:
         import httpx
 
+        _raise_for_path(path)
         return httpx.Response(
             200, content=b"hello", headers={"content-type": "text/plain"}
         )
 
+    async def upload_file(self, path: str, content: bytes) -> None:
+        _raise_for_path(path)
+
     async def delete_file(self, path: str) -> None:
+        _raise_for_path(path)
         _DELETED.append(path)
 
     async def aclose(self) -> None:
@@ -197,3 +210,22 @@ def test_delete_file_wakes_paused_container() -> None:
     assert r.status_code == 204
     assert _DELETED == ["a/b.txt"]
     assert _WOKE == ["con_1"]
+
+
+@pytest.mark.parametrize("method", ["get", "delete"])
+def test_missing_file_returns_404(method: str) -> None:
+    _setup("running")
+    with TestClient(app) as c:
+        r = c.request(method, "/v1/containers/con_1/files/raw", params={"path": "missing.txt"})
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"
+    assert r.json()["error"]["message"] == "file not found"
+
+
+@pytest.mark.parametrize("method", ["get", "put", "delete"])
+def test_invalid_path_returns_400(method: str) -> None:
+    _setup("running")
+    with TestClient(app) as c:
+        r = c.request(method, "/v1/containers/con_1/files/raw", params={"path": "../etc/passwd"})
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "validation_error"

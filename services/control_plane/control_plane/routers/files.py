@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Annotated, Any
 from urllib.parse import quote
 
@@ -23,6 +25,8 @@ from control_plane.routers.containers import (
 from control_plane.shim_client import (
     ShimClient,
     ShimExportUnmatched,
+    ShimFileNotFound,
+    ShimInvalidPath,
     ShimTransferTooLarge,
 )
 
@@ -73,6 +77,17 @@ async def _wake_and_load(
     )
     await session.commit()
     return await _load_owned_container(session, tenant_id, cid)
+
+
+@contextmanager
+def _file_errors() -> Iterator[None]:
+    """Surface the shim's missing-file and bad-path answers as 404 and 400."""
+    try:
+        yield
+    except ShimFileNotFound as e:
+        raise api_error(404, "not_found", str(e), "path") from e
+    except ShimInvalidPath as e:
+        raise api_error(400, "validation_error", str(e), "path") from e
 
 
 def _archive_filename(name: str) -> str:
@@ -158,12 +173,14 @@ async def download_file(
     (spec §4.6): a paused container auto-resumes and an archived one rehydrates.
 
     Errors: 403 when the credential is not tenant-scoped; 404 when the
-    container does not exist or belongs to another tenant; 409 if the container
-    cannot be brought to running.
+    container does not exist or belongs to another tenant, or when the file
+    does not exist; 400 when the path is reserved or escapes the workspace;
+    409 if the container cannot be brought to running.
     """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     async with _shim_for(request, row) as shim:
-        resp = await shim.download_file(path)
+        with _file_errors():
+            resp = await shim.download_file(path)
     content_type = resp.headers.get("content-type", "application/octet-stream")
     return Response(
         content=resp.content,
@@ -198,13 +215,15 @@ async def upload_file(
     (spec §4.6): a paused container auto-resumes and an archived one rehydrates.
 
     Errors: 403 when the credential is not tenant-scoped; 404 when the
-    container does not exist or belongs to another tenant; 409 if the container
-    cannot be brought to running.
+    container does not exist or belongs to another tenant; 400 when the path is
+    reserved or escapes the workspace; 409 if the container cannot be brought
+    to running.
     """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     content = await request.body()
     async with _shim_for(request, row) as shim:
-        await shim.upload_file(path, content)
+        with _file_errors():
+            await shim.upload_file(path, content)
     return Response(status_code=204)
 
 
@@ -231,12 +250,14 @@ async def delete_file(
     (spec §4.6): a paused container auto-resumes and an archived one rehydrates.
 
     Errors: 403 when the credential is not tenant-scoped; 404 when the
-    container does not exist or belongs to another tenant; 409 if the container
-    cannot be brought to running.
+    container does not exist or belongs to another tenant, or when the file
+    does not exist; 400 when the path is reserved, escapes the workspace, or is
+    the workspace root; 409 if the container cannot be brought to running.
     """
     row = await _wake_and_load(request, session, _tid(principal), cid)
     async with _shim_for(request, row) as shim:
-        await shim.delete_file(path)
+        with _file_errors():
+            await shim.delete_file(path)
     return Response(status_code=204)
 
 

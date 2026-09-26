@@ -38,6 +38,30 @@ class ShimTransferTooLarge(ShimError):
     """Shim returned 413 — export/import exceeds the transfer size cap."""
 
 
+class ShimFileNotFound(ShimError):
+    """Shim returned 404 for a workspace file path."""
+
+
+class ShimInvalidPath(ShimError):
+    """Shim returned 400 for a workspace file path (escape or reserved)."""
+
+
+def _detail(r: httpx.Response, fallback: str) -> str:
+    try:
+        return str(r.json()["detail"])
+    except Exception:  # noqa: BLE001 — malformed body keeps the status meaning
+        return fallback
+
+
+def _raise_file_error(r: httpx.Response) -> None:
+    """Map the file endpoints' 404/400 responses to typed errors."""
+    if r.status_code == 404:
+        raise ShimFileNotFound(_detail(r, "file not found"))
+    if r.status_code == 400:
+        raise ShimInvalidPath(_detail(r, "invalid path"))
+    r.raise_for_status()
+
+
 def _raise_transfer_error(r: httpx.Response) -> None:
     """Map the transfer endpoints' modeled 422/413 bodies to typed errors."""
     if r.status_code == 422:
@@ -113,16 +137,16 @@ class ShimClient:
 
     async def download_file(self, path: str) -> httpx.Response:
         r = await self._client.get("/files/raw", params={"path": path})
-        r.raise_for_status()
+        _raise_file_error(r)
         return r
 
     async def upload_file(self, path: str, content: bytes) -> None:
         r = await self._client.put("/files/raw", params={"path": path}, content=content)
-        r.raise_for_status()
+        _raise_file_error(r)
 
     async def delete_file(self, path: str) -> None:
         r = await self._client.delete("/files/raw", params={"path": path})
-        r.raise_for_status()
+        _raise_file_error(r)
 
     async def download_archive(self) -> AsyncIterator[bytes]:
         async with self._client.stream(

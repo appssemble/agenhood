@@ -3,7 +3,7 @@ import pytest
 import respx
 
 from agentcore.models import AgentConfig, ResolvedLimits, TaskBody
-from control_plane.shim_client import ShimClient
+from control_plane.shim_client import ShimClient, ShimFileNotFound, ShimInvalidPath
 from control_plane.snapshot import build_shim_request
 
 pytestmark = pytest.mark.unit
@@ -81,10 +81,40 @@ async def test_delete_file_issues_delete_with_auth_and_path():
 
 
 @respx.mock
-async def test_delete_file_raises_on_error_status():
+async def test_delete_file_raises_not_found_on_404():
     respx.delete("http://agent-c-abc:8080/files/raw").mock(
         return_value=httpx.Response(404)
     )
     async with _client() as c:
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(ShimFileNotFound):
             await c.delete_file("missing.txt")
+
+
+@respx.mock
+async def test_download_file_raises_not_found_with_shim_detail():
+    respx.get("http://agent-c-abc:8080/files/raw").mock(
+        return_value=httpx.Response(404, json={"detail": "file not found"})
+    )
+    async with _client() as c:
+        with pytest.raises(ShimFileNotFound, match="file not found"):
+            await c.download_file("missing.txt")
+
+
+@respx.mock
+async def test_upload_file_raises_invalid_path_on_400():
+    respx.put("http://agent-c-abc:8080/files/raw").mock(
+        return_value=httpx.Response(400, json={"detail": "path escape not allowed"})
+    )
+    async with _client() as c:
+        with pytest.raises(ShimInvalidPath, match="path escape not allowed"):
+            await c.upload_file("../x", b"")
+
+
+@respx.mock
+async def test_download_file_raises_http_error_on_500():
+    respx.get("http://agent-c-abc:8080/files/raw").mock(
+        return_value=httpx.Response(500)
+    )
+    async with _client() as c:
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.download_file("a.txt")
