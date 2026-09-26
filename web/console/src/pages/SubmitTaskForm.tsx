@@ -159,7 +159,7 @@ export function SubmitTaskForm({
           <EffortField driver={config.driver} value={effort} onChange={onEffortChange} />
         </div>
 
-        {/* Tools — per-task override, same control as the chat Options panel. */}
+        {/* Tools: per-task override, same control as the chat Options panel. */}
         <div style={{ marginTop: 18 }}>
           <TaskToolsField driverMeta={driverMeta} inherited={config.tools} value={taskTools} onChange={onTaskToolsChange} />
         </div>
