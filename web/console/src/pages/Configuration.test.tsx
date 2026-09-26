@@ -27,7 +27,7 @@ const opencodeTpl = {
 };
 const codexTpl = {
   ...vanillaTpl, id: "tpl_c", name: "Codex", driver: "codex",
-  capabilities: { supports_tools: true, supports_structured_output: false, supports_cancel: true, requires_image_feature: null },
+  capabilities: { supports_tools: false, supports_structured_output: false, supports_cancel: true, requires_image_feature: null },
   driver_template: {
     driver: "codex", default_system_prompt: "", supports_context: false, tools_user_editable: true,
     available_tools: ["web_search", "image_generation", "view_image", "multi_agent", "goals"],

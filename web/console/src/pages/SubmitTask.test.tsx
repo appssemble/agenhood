@@ -28,8 +28,8 @@ const CODEX_TOOL_SPECS = ["web_search", "image_generation", "view_image", "multi
   name, description: name, input_schema: {}, requires_image_feature: null,
 }));
 const codexTpl = { ...vanillaTpl, id: "tpl_c", driver: "codex",
-  capabilities: { supports_tools: true, supports_structured_output: true, supports_cancel: true, requires_image_feature: null },
-  driver_template: { ...vanillaTpl.driver_template, driver: "codex", available_tools: CODEX_TOOL_SPECS.map((t) => t.name), tools_user_editable: true, supports_context: true },
+  capabilities: { supports_tools: false, supports_structured_output: true, supports_cancel: true, requires_image_feature: null },
+  driver_template: { ...vanillaTpl.driver_template, driver: "codex", available_tools: CODEX_TOOL_SPECS.map((t) => t.name), tools_user_editable: true, supports_context: false },
   available_tool_specs: CODEX_TOOL_SPECS };
 const claudeCodeTpl = { ...vanillaTpl, id: "tpl_cc", driver: "claude-code",
   capabilities: { supports_tools: false, supports_structured_output: false, supports_cancel: true, requires_image_feature: null },
