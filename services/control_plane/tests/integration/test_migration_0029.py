@@ -71,11 +71,22 @@ async def test_codex_default_tools_backfill(migrated_db: str) -> None:
                 "UPDATE containers SET config = jsonb_set(config, '{tools}', '[\"goals\"]'::jsonb) "
                 "WHERE id='cnt_m29_empty'"))
 
+        # Re-run just the backfill (stamp moves the version pointer without
+        # running the downgrade SQL, so the user's choice is still in place
+        # when the upgrade re-runs 0029's UPDATEs).
+        _alembic("stamp", "0028_env_vars")
+        _alembic("upgrade", "head")
+
+        async with engine.begin() as conn:
+            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'") == ["goals"]
+            assert await _tools(conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'") == ["web_search"]
+
         _alembic("downgrade", "0028_env_vars")
 
         async with engine.begin() as conn:
             assert await _tools(conn, "SELECT tools FROM templates WHERE id='tpl_m29_codex'") == []
             assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_empty'") == []
+            assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_missing'") == []
             assert await _tools(conn, "SELECT config->'tools' FROM containers WHERE id='cnt_m29_vanilla'") == []
     finally:
         _alembic("upgrade", "head")
