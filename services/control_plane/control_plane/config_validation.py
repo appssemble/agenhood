@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 # Trigger driver + tool registration so DRIVERS is populated.
+import agentcore.drivers  # noqa: F401
 import agentcore.drivers.vanilla  # noqa: F401
 import agentcore.tools  # noqa: F401
 from agentcore.drivers.base import DRIVERS
@@ -26,6 +27,26 @@ _LEGAL_PROMPT_MODES = {"augment", "replace"}
 # Drivers whose CLI accepts the unified reasoning-effort parameter
 # (AgentConfig.effort). vanilla calls the raw API and has no effort flag.
 EFFORT_DRIVERS = {"opencode", "claude-code", "codex"}
+
+
+def default_tools_for(driver: str) -> list[str] | None:
+    """Tools a config for ``driver`` gets when the request leaves them out."""
+    drv = DRIVERS.get(driver)
+    if drv is None or drv.default_template.default_tools is None:
+        return None
+    return list(drv.default_template.default_tools)
+
+
+def fill_default_tools(config: AgentConfig, *, tools_given: bool) -> AgentConfig:
+    """Apply the driver's default tools when the request did not send ``tools``.
+
+    An explicit list, including ``[]``, is kept as sent."""
+    if tools_given:
+        return config
+    defaults = default_tools_for(config.driver)
+    if defaults is None:
+        return config
+    return config.model_copy(update={"tools": defaults})
 
 
 # ---------------------------------------------------------------------------

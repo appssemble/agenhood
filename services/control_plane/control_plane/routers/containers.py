@@ -26,6 +26,7 @@ from control_plane.auth.principal import require_admin, resolve_principal
 from control_plane.config import Settings
 from control_plane.config_validation import (
     ConfigInvalid,
+    fill_default_tools,
     validate_config,
     validate_config_against_tenant,
 )
@@ -275,7 +276,9 @@ async def _resolve_create_config(
 
     if req.config is not None:
         # Inline config: it is the complete active config (overrides template).
-        cfg: AgentConfig = req.config
+        cfg: AgentConfig = fill_default_tools(
+            req.config, tools_given="tools" in req.config.model_fields_set
+        )
     elif base is not None:
         if base["model"] is None:
             raise validation_error(
@@ -589,7 +592,9 @@ async def patch_config(
     tid = _tid(principal)
     row = await _load_owned_container(session, tid, cid)
     limits = await load_tenant_limits(session, tid)
-    new_config = patch.to_agent_config()
+    new_config = fill_default_tools(
+        patch.to_agent_config(), tools_given="tools" in patch.model_fields_set
+    )
     # Drop skill ids that don't belong to this tenant so a stale/foreign id
     # can't linger in the saved config (spec: opencode skills).
     if new_config.skills:
