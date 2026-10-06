@@ -43,6 +43,8 @@ export default function SubmitTask() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   // Per-task effort override. null ⇒ inherit the container's configured effort (or the model's own default).
   const [effort, setEffort] = useState<Effort | null>(null);
+  // Per-task reasoning summary override. null ⇒ inherit the container's setting.
+  const [reasoningSummary, setReasoningSummary] = useState<boolean | null>(null);
   // Per-task tools override. null ⇒ inherit the container's tools.
   const [taskTools, setTaskTools] = useState<string[] | null>(null);
 
@@ -71,6 +73,7 @@ export default function SubmitTask() {
   // for one container (or driver) must not leak into another's submission.
   useEffect(() => {
     setTaskTools(null);
+    setReasoningSummary(null);
   }, [cid, config?.driver]);
 
   if (!config) return <div className="p-8 text-sm text-muted">Loading…</div>;
@@ -94,6 +97,7 @@ export default function SubmitTask() {
       limits: { max_iterations: maxIter, max_tokens: maxTokens, timeout_seconds: timeoutS },
       metadata: {},
       ...(effort ? { effort } : {}),
+      ...(reasoningSummary !== null ? { reasoning_summary: reasoningSummary } : {}),
       ...(taskTools !== null ? { tools: taskTools } : {}),
       ...(sessionId ? { session_id: sessionId } : {}),
     };
@@ -182,6 +186,8 @@ export default function SubmitTask() {
               submitting={submit.isPending}
               effort={effort}
               onEffortChange={setEffort}
+              reasoningSummary={reasoningSummary}
+              onReasoningSummaryChange={setReasoningSummary}
               driverMeta={driverMeta}
               taskTools={taskTools}
               onTaskToolsChange={setTaskTools}
@@ -211,6 +217,8 @@ export default function SubmitTask() {
           onError={onSubmitError}
           effort={effort}
           onEffortChange={setEffort}
+          reasoningSummary={reasoningSummary}
+          onReasoningSummaryChange={setReasoningSummary}
           driverMeta={driverMeta}
           taskTools={taskTools}
           onTaskToolsChange={setTaskTools}

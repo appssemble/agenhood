@@ -168,6 +168,34 @@ test("hides the effort selector for a driver without effort support", async () =
   expect(screen.queryByRole("button", { name: "high" })).not.toBeInTheDocument();
 });
 
+test("posts reasoning summaries turned on for a codex template", async () => {
+  const user = userEvent.setup();
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [
+    tpl({ driver: "codex",
+      driver_template: { driver: "codex", default_system_prompt: "", available_tools: [], tools_user_editable: true, supports_context: false } }),
+  ] })));
+  let posted: any = null;
+  server.use(http.post("/v1/containers", async ({ request }) => {
+    posted = await request.json();
+    return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+  }));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  await user.type(screen.getByLabelText(/name/i), "codex-prod");
+  await user.click(screen.getByRole("switch", { name: "Reasoning summaries" }));
+  await user.click(screen.getByRole("button", { name: /Create container/i }));
+  await waitFor(() => expect(posted?.config).toMatchObject({ driver: "codex", reasoning_summary: true }));
+});
+
+test("hides the reasoning summaries switch for a driver without it", async () => {
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl()] })));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "Reasoning summaries" })).not.toBeInTheDocument();
+});
+
 test("untouched env vars are omitted from the create request", async () => {
   const user = userEvent.setup();
   setupAuth();

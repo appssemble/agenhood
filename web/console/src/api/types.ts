@@ -11,6 +11,8 @@ export interface ContextSpec { variables: Record<string, string>; text: string |
 export type Effort = "low" | "medium" | "high" | "max";
 // Drivers whose CLI accepts the unified effort param (mirror of the backend gate).
 export const EFFORT_DRIVERS: string[] = ["opencode", "claude-code", "codex"];
+// Drivers that can emit reasoning summaries (mirror of the backend gate).
+export const REASONING_SUMMARY_DRIVERS: string[] = ["codex"];
 
 export interface AgentConfig {
   driver: string; model: string; system_prompt: string;
@@ -19,6 +21,8 @@ export interface AgentConfig {
   mcp_servers?: string[];
   // Reasoning effort passed to the CLI, for drivers in EFFORT_DRIVERS. null/undefined ⇒ the model's own default.
   effort?: Effort | null;
+  // Emit short reasoning summaries as task events, for drivers in REASONING_SUMMARY_DRIVERS.
+  reasoning_summary?: boolean;
   // Per-container task-limit overrides (null/undefined ⇒ use the tenant default).
   max_iterations?: number | null;
   max_tokens?: number | null;

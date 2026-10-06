@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 import { Field, Textarea, Checkbox, Tag, Note, SegControl } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "./EffortField";
+import { ReasoningSummarySwitch } from "./ReasoningSummaryField";
 import { ModelPicker } from "./ModelPicker";
-import { EFFORT_DRIVERS } from "../api/types";
+import { EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS } from "../api/types";
 import type { ContextSpec, SystemPromptMode, Template, ToolSpec, Skill, McpServer, Effort } from "../api/types";
 
 export interface ConfigFieldsValue {
@@ -16,6 +17,7 @@ export interface ConfigFieldsValue {
   skills?: string[];
   mcp_servers?: string[];
   effort?: Effort | null;
+  reasoning_summary?: boolean;
 }
 
 // A bordered area with an icon + title header and a padded body. Used for every
@@ -45,7 +47,7 @@ function SectionCard({
 }
 
 export function ConfigFields({
-  value, driverMeta, enabledSkills, enabledMcpServers, onPatch, variantWarning,
+  value, driverMeta, enabledSkills, enabledMcpServers, onPatch, variantWarning, showReasoningSummary = false,
 }: {
   value: ConfigFieldsValue;
   driverMeta: Template | undefined;
@@ -53,6 +55,8 @@ export function ConfigFields({
   enabledMcpServers: McpServer[];
   onPatch: (p: Partial<ConfigFieldsValue>) => void;
   variantWarning?: ReactNode;
+  // Templates have no reasoning_summary column, so only container config shows it.
+  showReasoningSummary?: boolean;
 }) {
   const toolSpecs: ToolSpec[] = driverMeta?.available_tool_specs ?? [];
   const isApiDriver = value.driver === "api";
@@ -90,6 +94,15 @@ export function ConfigFields({
               value={value.effort ?? null}
               onChange={(v) => onPatch({ effort: v })}
               hint="Reasoning effort passed to the CLI · Default keeps the model's own"
+            />
+          </div>
+        )}
+        {showReasoningSummary && REASONING_SUMMARY_DRIVERS.includes(value.driver) && (
+          <div style={{ marginTop: 14 }}>
+            <ReasoningSummarySwitch
+              driver={value.driver}
+              value={value.reasoning_summary ?? false}
+              onChange={(v) => onPatch({ reasoning_summary: v })}
             />
           </div>
         )}

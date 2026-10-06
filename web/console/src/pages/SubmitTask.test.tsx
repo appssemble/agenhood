@@ -1,5 +1,5 @@
 import { describe, it, test, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/server";
@@ -151,6 +151,60 @@ describe("SubmitTask", () => {
     await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
     await waitFor(() => expect(body?.prompt).toBe("After switching container"));
     expect(body).not.toHaveProperty("tools");
+  });
+
+  it("sends the reasoning summary override picked for a codex task", async () => {
+    setup("codex", ["web_search"]);
+    let body: any = null;
+    server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => { body = await request.json(); return HttpResponse.json({ task_id: "tsk_15", status: "running", started_at: "t" }); }));
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.type(await screen.findByLabelText(/Prompt/i), "Show thinking");
+    const group = await screen.findByRole("group", { name: "Reasoning summaries" });
+    await userEvent.click(within(group).getByRole("button", { name: "On" }));
+    await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
+    await waitFor(() => expect(body?.prompt).toBe("Show thinking"));
+    expect(body.reasoning_summary).toBe(true);
+  });
+
+  it("omits the reasoning summary override when left on default", async () => {
+    setup("codex", ["web_search"]);
+    let body: any = null;
+    server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => { body = await request.json(); return HttpResponse.json({ task_id: "tsk_16", status: "running", started_at: "t" }); }));
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.type(await screen.findByLabelText(/Prompt/i), "Inherit");
+    await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
+    await waitFor(() => expect(body?.prompt).toBe("Inherit"));
+    expect(body).not.toHaveProperty("reasoning_summary");
+  });
+
+  it("hides the reasoning summary override for drivers without it", async () => {
+    setup("opencode");
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await screen.findByLabelText(/Prompt/i);
+    expect(screen.queryByRole("group", { name: "Reasoning summaries" })).not.toBeInTheDocument();
+  });
+
+  it("resets the reasoning summary override when navigating to a different container", async () => {
+    setup("codex", ["web_search"]);
+    server.use(http.get("/v1/containers/con_2", () => HttpResponse.json({ id: "con_2", name: "c2", external_id: null, status: "running", image_variant: "full", image_tag: "v",
+      config: { driver: "claude-code", model: "m", system_prompt: "", system_prompt_mode: "augment", tools: [], context: { variables: {}, text: null, files: [] } }, metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
+    server.use(http.get("/v1/containers/con_2/tasks", () => HttpResponse.json({ tasks: [] })));
+    server.use(http.get("/v1/containers/con_2/sessions", () => HttpResponse.json({ sessions: [] })));
+    let body: any = null;
+    server.use(http.post("/v1/containers/con_2/tasks", async ({ request }) => { body = await request.json(); return HttpResponse.json({ task_id: "tsk_17", status: "running", started_at: "t" }); }));
+
+    const { rerender } = renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    const group = await screen.findByRole("group", { name: "Reasoning summaries" });
+    await userEvent.click(within(group).getByRole("button", { name: "On" }));
+
+    mockCid = "con_2";
+    rerender(<AuthProvider><SubmitTask /></AuthProvider>);
+
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Reasoning summaries" })).not.toBeInTheDocument());
+    await userEvent.type(await screen.findByLabelText(/Prompt/i), "After switching container");
+    await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
+    await waitFor(() => expect(body?.prompt).toBe("After switching container"));
+    expect(body).not.toHaveProperty("reasoning_summary");
   });
 });
 

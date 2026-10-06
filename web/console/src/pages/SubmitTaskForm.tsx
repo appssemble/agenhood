@@ -3,12 +3,13 @@ import { Link } from "react-router-dom";
 import { Button, Tag, Textarea } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "../components/EffortField";
+import { ReasoningSummaryOverride } from "../components/ReasoningSummaryField";
 import { TaskToolsField } from "../components/TaskToolsField";
 import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
 import { PromptPicker } from "../ui/PromptPicker";
 import { appendPrompt } from "../lib/prompt";
-import { EFFORT_DRIVERS } from "../api/types";
+import { EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS } from "../api/types";
 import type { AgentConfig, Effort, OutputType, TaskSummary, Template, TenantLimits } from "../api/types";
 
 // Classic form layout for submitting a task. Extracted unchanged from the
@@ -33,6 +34,8 @@ export function SubmitTaskForm({
   submitting,
   effort,
   onEffortChange,
+  reasoningSummary,
+  onReasoningSummaryChange,
   driverMeta,
   taskTools,
   onTaskToolsChange,
@@ -67,6 +70,8 @@ export function SubmitTaskForm({
   submitting: boolean;
   effort: Effort | null;
   onEffortChange: (v: Effort | null) => void;
+  reasoningSummary: boolean | null;
+  onReasoningSummaryChange: (v: boolean | null) => void;
   driverMeta: Template | undefined;
   taskTools: string[] | null;
   onTaskToolsChange: (v: string[] | null) => void;
@@ -159,6 +164,12 @@ export function SubmitTaskForm({
           <EffortField driver={config.driver} value={effort} onChange={onEffortChange} />
         </div>
 
+        {REASONING_SUMMARY_DRIVERS.includes(config.driver) && (
+          <div style={{ marginTop: 18 }}>
+            <ReasoningSummaryOverride driver={config.driver} value={reasoningSummary} onChange={onReasoningSummaryChange} />
+          </div>
+        )}
+
         {/* Tools: per-task override, same control as the chat Options panel. */}
         <div style={{ marginTop: 18 }}>
           <TaskToolsField driverMeta={driverMeta} inherited={config.tools} value={taskTools} onChange={onTaskToolsChange} />
@@ -185,6 +196,12 @@ export function SubmitTaskForm({
               <>
                 <dt>Effort</dt>
                 <dd className="mono">{config.effort ?? "default"}</dd>
+              </>
+            )}
+            {REASONING_SUMMARY_DRIVERS.includes(config.driver) && (
+              <>
+                <dt>Reasoning</dt>
+                <dd className="mono">{config.reasoning_summary ? "on" : "off"}</dd>
               </>
             )}
             <dt>Tools</dt>

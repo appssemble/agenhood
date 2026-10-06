@@ -6,10 +6,11 @@ import { ApiError } from "../api/client";
 import { Button, SegControl, Field, Input, Note, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "../components/EffortField";
+import { ReasoningSummarySwitch } from "../components/ReasoningSummaryField";
 import { ModelPicker } from "../components/ModelPicker";
 import { EnvVarsField } from "../components/EnvVarsField";
 import { MEM_OPTIONS, CPU_OPTIONS } from "../lib/resourceOptions";
-import { EFFORT_DRIVERS } from "../api/types";
+import { EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS } from "../api/types";
 import type { Effort, EnvVar, Template } from "../api/types";
 
 const DEFAULT_OPTION = { value: "", label: "Default (by image variant)" };
@@ -89,6 +90,7 @@ export default function CreateContainer() {
   const [variant, setVariant] = useState<"full" | "slim">("full");
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState<Effort | null>(null);
+  const [reasoningSummary, setReasoningSummary] = useState(false);
   const [memLimit, setMemLimit] = useState("");
   const [cpus, setCpus] = useState("");
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
@@ -103,6 +105,7 @@ export default function CreateContainer() {
   useEffect(() => {
     setModel(chosen?.model ?? "");
     setEffort(chosen?.effort ?? null);
+    setReasoningSummary(false);
     setVariant((chosen?.image_variant as "full" | "slim") ?? "full");
     setMemLimit("");
     setCpus("");
@@ -150,6 +153,7 @@ export default function CreateContainer() {
             tools: chosen.tools,
             context: chosen.context,
             effort,
+            reasoning_summary: reasoningSummary,
           }
         : undefined;
       // Both dropdowns default to "" (use the image-variant default) — only
@@ -292,6 +296,15 @@ export default function CreateContainer() {
                       value={effort}
                       onChange={setEffort}
                       hint="Reasoning effort passed to the CLI · Default keeps the model's own"
+                    />
+                  </div>
+                )}
+                {REASONING_SUMMARY_DRIVERS.includes(chosen?.driver ?? "") && (
+                  <div style={{ marginTop: 14 }}>
+                    <ReasoningSummarySwitch
+                      driver={chosen?.driver ?? ""}
+                      value={reasoningSummary}
+                      onChange={setReasoningSummary}
                     />
                   </div>
                 )}
