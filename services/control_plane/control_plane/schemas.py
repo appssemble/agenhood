@@ -185,6 +185,13 @@ class ConfigPatch(BaseModel):
             "claude-code and codex."
         ),
     )
+    reasoning_summary: bool = Field(
+        False,
+        description=(
+            "Emit short summaries of the model's reasoning as task events, "
+            "useful as status updates. Only valid for codex."
+        ),
+    )
     # Per-container task-limit overrides (None ⇒ use the tenant default).
     max_iterations: int | None = Field(
         None,
@@ -209,6 +216,7 @@ class ConfigPatch(BaseModel):
             skills=self.skills,
             mcp_servers=self.mcp_servers,
             effort=self.effort,
+            reasoning_summary=self.reasoning_summary,
             max_iterations=self.max_iterations,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,

@@ -235,6 +235,7 @@ def build_command(
     model: str,
     ephemeral: bool = True,
     effort: str | None = None,
+    reasoning_summary: bool = False,
     output_schema_path: str | None = None,
     tools: Iterable[str] = CODEX_DEFAULT_TOOLS,
 ) -> list[str]:
@@ -243,6 +244,7 @@ def build_command(
     ``ephemeral=False`` drops ``--ephemeral`` so the rollout file persists,
     used for the first turn of a session (driver-sessions spec §4).
     ``effort`` maps to codex's ``model_reasoning_effort`` config override.
+    ``reasoning_summary`` turns on codex's ``reasoning`` events.
     ``output_schema_path`` (structured output, task 4) appends codex's native
     ``--output-schema`` flag when the task's schema is native-subset compatible.
     ``tools`` lists the enabled codex tools (see ``CODEX_TOOLS``).
@@ -255,6 +257,8 @@ def build_command(
     cmd += tool_args(tools)
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
+    if reasoning_summary:
+        cmd += ["-c", "model_reasoning_summary=auto"]
     if output_schema_path:
         cmd += ["--output-schema", output_schema_path]
     cmd += ["--dangerously-bypass-approvals-and-sandbox", "-"]
@@ -266,6 +270,7 @@ def build_resume_command(
     model: str,
     thread_id: str,
     effort: str | None = None,
+    reasoning_summary: bool = False,
     output_schema_path: str | None = None,
     tools: Iterable[str] = CODEX_DEFAULT_TOOLS,
 ) -> list[str]:
@@ -283,6 +288,8 @@ def build_resume_command(
     cmd += tool_args(tools)
     if effort:
         cmd += ["-c", f"model_reasoning_effort={effort}"]
+    if reasoning_summary:
+        cmd += ["-c", "model_reasoning_summary=auto"]
     if output_schema_path:
         cmd += ["--output-schema", output_schema_path]
     cmd += ["--dangerously-bypass-approvals-and-sandbox", thread_id, "-"]
@@ -572,14 +579,16 @@ class CodexDriver:
         if resume_thread_id:
             cmd = build_resume_command(
                 model=model_arg(config.model), thread_id=resume_thread_id,
-                effort=config.effort, output_schema_path=output_schema_file,
+                effort=config.effort, reasoning_summary=config.reasoning_summary,
+                output_schema_path=output_schema_file,
                 tools=config.tools,
             )
         else:
             cmd = build_command(
                 workspace=workspace, model=model_arg(config.model),
                 ephemeral=session_id is None and not structured,
-                effort=config.effort, output_schema_path=output_schema_file,
+                effort=config.effort, reasoning_summary=config.reasoning_summary,
+                output_schema_path=output_schema_file,
                 tools=config.tools,
             )
         child_env = build_env(

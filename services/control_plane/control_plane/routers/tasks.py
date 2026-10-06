@@ -34,7 +34,7 @@ from control_plane import lifecycle
 from control_plane.auth import Principal
 from control_plane.auth.crypto import decrypt_secret, load_key_from_env
 from control_plane.config import Settings
-from control_plane.config_validation import EFFORT_DRIVERS
+from control_plane.config_validation import EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS
 from control_plane.credentials_service import (
     credential_provider_for,
     decrypt_row,
@@ -135,6 +135,11 @@ class PromptTaskBody(BaseModel):
         description="Optional per-task reasoning-effort override "
         "(low/medium/high/max). Only valid for opencode, claude-code and codex.",
     )
+    reasoning_summary: bool | None = Field(
+        default=None,
+        description="Optional per-task override of the container's "
+        "reasoning_summary. Only codex supports turning it on.",
+    )
 
 
 class TaskListResponse(BaseModel):
@@ -196,6 +201,22 @@ def apply_effort_override(config: AgentConfig, effort: str | None) -> AgentConfi
             f"driver '{config.driver}' does not support effort", "effort",
         )
     return config.model_copy(update={"effort": effort})
+
+
+def apply_reasoning_summary_override(
+    config: AgentConfig, reasoning_summary: bool | None
+) -> AgentConfig:
+    """Fold an optional per-task reasoning_summary override into the config
+    *before* the snapshot, mirroring apply_effort_override."""
+    if reasoning_summary is None:
+        return config
+    if reasoning_summary and config.driver not in REASONING_SUMMARY_DRIVERS:
+        raise APIError(
+            400, "validation_error",
+            f"driver '{config.driver}' does not support reasoning_summary",
+            "reasoning_summary",
+        )
+    return config.model_copy(update={"reasoning_summary": reasoning_summary})
 
 
 def apply_tools_override(config: AgentConfig, tools: list[str] | None) -> AgentConfig:
@@ -652,6 +673,7 @@ async def submit_task_core(
     row = await _load_owned_container(session, tenant_id, cid)
     config = AgentConfig(**row.config)
     config = apply_effort_override(config, body.effort)
+    config = apply_reasoning_summary_override(config, body.reasoning_summary)
     config = apply_tools_override(config, body.tools)
     if body.tools is not None:
         assert_config_runnable_on_variant(
@@ -860,6 +882,7 @@ async def submit_task_from_prompt(
             metadata={**body.metadata, "prompt_id": body.prompt_id},
             session_id=body.session_id,
             effort=body.effort,
+            reasoning_summary=body.reasoning_summary,
         ),
     )
 

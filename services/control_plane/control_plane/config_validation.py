@@ -28,6 +28,9 @@ _LEGAL_PROMPT_MODES = {"augment", "replace"}
 # (AgentConfig.effort). vanilla calls the raw API and has no effort flag.
 EFFORT_DRIVERS = {"opencode", "claude-code", "codex"}
 
+# Drivers that can emit reasoning summaries (AgentConfig.reasoning_summary).
+REASONING_SUMMARY_DRIVERS = {"codex"}
+
 
 def default_tools_for(driver: str) -> list[str] | None:
     """Tools a config for ``driver`` gets when the request leaves them out."""
@@ -90,6 +93,11 @@ def validate_config(config: AgentConfig, tenant_limits: dict[str, Any]) -> None:
     if config.effort is not None and config.driver not in EFFORT_DRIVERS:
         raise validation_error(
             f"driver '{config.driver}' does not support effort", field="effort"
+        )
+    if config.reasoning_summary and config.driver not in REASONING_SUMMARY_DRIVERS:
+        raise validation_error(
+            f"driver '{config.driver}' does not support reasoning_summary",
+            field="reasoning_summary",
         )
 
     # 4. Prompt mode legal.

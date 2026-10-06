@@ -732,3 +732,30 @@ def test_codex_supports_structured_output():
     from agentcore.drivers.codex import CodexDriver
 
     assert CodexDriver.capabilities.supports_structured_output is True
+
+
+@pytest.mark.asyncio
+async def test_codex_run_passes_reasoning_summary_to_cli(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    captured_cmd = {}
+
+    async def fake_spawn(argv, *, cwd, env, **kwargs):
+        captured_cmd["argv"] = argv
+        return FakeProc(
+            ['{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hi"}}'],
+            returncode=0,
+        )
+
+    monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
+    monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)
+
+    config = cfg().model_copy(update={"reasoning_summary": True})
+    _, emit = collector()
+    result = await CodexDriver().run(
+        task=TaskBody(prompt="hello"), config=config, limits=LIMITS,
+        credential="cred", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert result.success is True
+    assert "model_reasoning_summary=auto" in captured_cmd["argv"]

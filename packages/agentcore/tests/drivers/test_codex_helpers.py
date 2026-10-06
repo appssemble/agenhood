@@ -309,6 +309,28 @@ def test_build_resume_command_appends_reasoning_effort():
     ]
 
 
+def test_build_command_appends_reasoning_summary():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(workspace="/ws", model="m", reasoning_summary=True)
+    assert "model_reasoning_summary=auto" in _config_overrides(cmd)
+
+
+def test_build_command_no_reasoning_summary_flag_when_off():
+    from agentcore.drivers.codex import build_command
+
+    cmd = build_command(workspace="/ws", model="m")
+    assert not any(a.startswith("model_reasoning_summary=") for a in cmd)
+
+
+def test_build_resume_command_appends_reasoning_summary():
+    from agentcore.drivers.codex import build_resume_command
+
+    cmd = build_resume_command(model="m", thread_id="t-1", reasoning_summary=True)
+    assert "model_reasoning_summary=auto" in _config_overrides(cmd)
+    assert cmd[-2:] == ["t-1", "-"]
+
+
 def test_remove_stale_agents_md_deletes_file_left_by_older_driver(tmp_path):
     """Driver versions before 2026-09 wrote the system prompt to
     $CODEX_HOME/AGENTS.md on a persistent volume; a survivor would double the
