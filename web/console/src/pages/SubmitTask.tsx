@@ -5,6 +5,7 @@ import { useAuth } from "../auth/useAuth";
 import { useToast } from "../components/Toast";
 import { ApiError } from "../api/client";
 import type { Effort, OutputType } from "../api/types";
+import type { FlagOverrides } from "../components/DriverFlagField";
 import { Icons } from "../ui/Icon";
 import { parseSchema } from "../components/OutputContractField";
 import { SubmitTaskForm } from "./SubmitTaskForm";
@@ -43,8 +44,8 @@ export default function SubmitTask() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   // Per-task effort override. null ⇒ inherit the container's configured effort (or the model's own default).
   const [effort, setEffort] = useState<Effort | null>(null);
-  // Per-task reasoning summary override. null ⇒ inherit the container's setting.
-  const [reasoningSummary, setReasoningSummary] = useState<boolean | null>(null);
+  // Per-task driver flag overrides (reasoning summaries, progress updates). A missing key inherits the container's setting.
+  const [flagOverrides, setFlagOverrides] = useState<FlagOverrides>({});
   // Per-task tools override. null ⇒ inherit the container's tools.
   const [taskTools, setTaskTools] = useState<string[] | null>(null);
 
@@ -73,7 +74,7 @@ export default function SubmitTask() {
   // for one container (or driver) must not leak into another's submission.
   useEffect(() => {
     setTaskTools(null);
-    setReasoningSummary(null);
+    setFlagOverrides({});
   }, [cid, config?.driver]);
 
   if (!config) return <div className="p-8 text-sm text-muted">Loading…</div>;
@@ -97,7 +98,7 @@ export default function SubmitTask() {
       limits: { max_iterations: maxIter, max_tokens: maxTokens, timeout_seconds: timeoutS },
       metadata: {},
       ...(effort ? { effort } : {}),
-      ...(reasoningSummary !== null ? { reasoning_summary: reasoningSummary } : {}),
+      ...flagOverrides,
       ...(taskTools !== null ? { tools: taskTools } : {}),
       ...(sessionId ? { session_id: sessionId } : {}),
     };
@@ -186,8 +187,8 @@ export default function SubmitTask() {
               submitting={submit.isPending}
               effort={effort}
               onEffortChange={setEffort}
-              reasoningSummary={reasoningSummary}
-              onReasoningSummaryChange={setReasoningSummary}
+              flagOverrides={flagOverrides}
+              onFlagOverridesChange={setFlagOverrides}
               driverMeta={driverMeta}
               taskTools={taskTools}
               onTaskToolsChange={setTaskTools}
@@ -217,8 +218,8 @@ export default function SubmitTask() {
           onError={onSubmitError}
           effort={effort}
           onEffortChange={setEffort}
-          reasoningSummary={reasoningSummary}
-          onReasoningSummaryChange={setReasoningSummary}
+          flagOverrides={flagOverrides}
+          onFlagOverridesChange={setFlagOverrides}
           driverMeta={driverMeta}
           taskTools={taskTools}
           onTaskToolsChange={setTaskTools}

@@ -1,5 +1,30 @@
 import { Field, SegControl, Switch } from "../ui";
-import { REASONING_SUMMARY_DRIVERS } from "../api/types";
+import { PROGRESS_UPDATES_DRIVERS, REASONING_SUMMARY_DRIVERS } from "../api/types";
+
+// Boolean AgentConfig settings that only some drivers support.
+export const DRIVER_FLAGS = {
+  reasoning_summary: {
+    label: "Reasoning summaries",
+    description: "Emit short summaries of the model's thinking as task events",
+    badge: "reasoning",
+    drivers: REASONING_SUMMARY_DRIVERS,
+  },
+  progress_updates: {
+    label: "Progress updates",
+    description: "The agent describes each step in the user's language",
+    badge: "progress",
+    drivers: PROGRESS_UPDATES_DRIVERS,
+  },
+} as const;
+
+export type DriverFlag = keyof typeof DRIVER_FLAGS;
+export const DRIVER_FLAG_KEYS = Object.keys(DRIVER_FLAGS) as DriverFlag[];
+// Per-task overrides: a missing key inherits the container setting.
+export type FlagOverrides = Partial<Record<DriverFlag, boolean>>;
+
+export function flagSupported(flag: DriverFlag, driver: string): boolean {
+  return (DRIVER_FLAGS[flag].drivers as readonly string[]).includes(driver);
+}
 
 type Override = "" | "on" | "off";
 
@@ -10,47 +35,79 @@ const OVERRIDE_SEG: { value: Override; label: string }[] = [
 ];
 
 // Container/config surfaces: a plain on/off switch.
-export function ReasoningSummarySwitch({
-  driver, value, onChange,
+export function DriverFlagSwitch({
+  flag, driver, value, onChange,
 }: {
+  flag: DriverFlag;
   driver: string;
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
-  if (!REASONING_SUMMARY_DRIVERS.includes(driver)) return null;
+  if (!flagSupported(flag, driver)) return null;
+  const { label, description } = DRIVER_FLAGS[flag];
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <Switch on={value} aria-label="Reasoning summaries" onClick={() => onChange(!value)} />
+      <Switch on={value} aria-label={label} onClick={() => onChange(!value)} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Reasoning summaries</div>
-        <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
-          Emit short summaries of the model's thinking as task events
-        </div>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{label}</div>
+        <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{description}</div>
       </div>
     </div>
   );
 }
 
-// Per-task surfaces: null inherits the container setting.
-export function ReasoningSummaryOverride({
-  driver, value, onChange,
+// Per-task surfaces: undefined inherits the container setting.
+export function DriverFlagOverride({
+  flag, driver, value, onChange,
 }: {
+  flag: DriverFlag;
   driver: string;
-  value: boolean | null;
-  onChange: (v: boolean | null) => void;
+  value: boolean | undefined;
+  onChange: (v: boolean | undefined) => void;
 }) {
-  if (!REASONING_SUMMARY_DRIVERS.includes(driver)) return null;
-  const current: Override = value === null ? "" : value ? "on" : "off";
+  if (!flagSupported(flag, driver)) return null;
+  const { label, description } = DRIVER_FLAGS[flag];
+  const current: Override = value === undefined ? "" : value ? "on" : "off";
   return (
-    <Field label="Reasoning summaries" hint="Show the model's thinking as events · Default inherits the container setting">
-      <div role="group" aria-label="Reasoning summaries">
+    <Field label={label} hint={`${description} · Default inherits the container setting`}>
+      <div role="group" aria-label={label}>
         <SegControl<Override>
           className="seg-fit"
           options={OVERRIDE_SEG}
           value={current}
-          onChange={(v) => onChange(v === "" ? null : v === "on")}
+          onChange={(v) => onChange(v === "" ? undefined : v === "on")}
         />
       </div>
     </Field>
+  );
+}
+
+// Every override control the driver supports, stacked.
+export function DriverFlagOverrides({
+  driver, value, onChange,
+}: {
+  driver: string;
+  value: FlagOverrides;
+  onChange: (v: FlagOverrides) => void;
+}) {
+  const flags = DRIVER_FLAG_KEYS.filter((f) => flagSupported(f, driver));
+  if (flags.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {flags.map((flag) => (
+        <DriverFlagOverride
+          key={flag}
+          flag={flag}
+          driver={driver}
+          value={value[flag]}
+          onChange={(v) => {
+            const next = { ...value };
+            if (v === undefined) delete next[flag];
+            else next[flag] = v;
+            onChange(next);
+          }}
+        />
+      ))}
+    </div>
   );
 }

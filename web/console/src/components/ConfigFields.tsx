@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { Field, Textarea, Checkbox, Tag, Note, SegControl } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "./EffortField";
-import { ReasoningSummarySwitch } from "./ReasoningSummaryField";
+import { DRIVER_FLAG_KEYS, DriverFlagSwitch, flagSupported } from "./DriverFlagField";
 import { ModelPicker } from "./ModelPicker";
-import { EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS } from "../api/types";
+import { EFFORT_DRIVERS } from "../api/types";
 import type { ContextSpec, SystemPromptMode, Template, ToolSpec, Skill, McpServer, Effort } from "../api/types";
 
 export interface ConfigFieldsValue {
@@ -18,6 +18,7 @@ export interface ConfigFieldsValue {
   mcp_servers?: string[];
   effort?: Effort | null;
   reasoning_summary?: boolean;
+  progress_updates?: boolean;
 }
 
 // A bordered area with an icon + title header and a padded body. Used for every
@@ -47,7 +48,7 @@ function SectionCard({
 }
 
 export function ConfigFields({
-  value, driverMeta, enabledSkills, enabledMcpServers, onPatch, variantWarning, showReasoningSummary = false,
+  value, driverMeta, enabledSkills, enabledMcpServers, onPatch, variantWarning, showDriverFlags = false,
 }: {
   value: ConfigFieldsValue;
   driverMeta: Template | undefined;
@@ -55,8 +56,8 @@ export function ConfigFields({
   enabledMcpServers: McpServer[];
   onPatch: (p: Partial<ConfigFieldsValue>) => void;
   variantWarning?: ReactNode;
-  // Templates have no reasoning_summary column, so only container config shows it.
-  showReasoningSummary?: boolean;
+  // Templates don't store the driver flags, so only container config shows them.
+  showDriverFlags?: boolean;
 }) {
   const toolSpecs: ToolSpec[] = driverMeta?.available_tool_specs ?? [];
   const isApiDriver = value.driver === "api";
@@ -97,15 +98,16 @@ export function ConfigFields({
             />
           </div>
         )}
-        {showReasoningSummary && REASONING_SUMMARY_DRIVERS.includes(value.driver) && (
-          <div style={{ marginTop: 14 }}>
-            <ReasoningSummarySwitch
+        {showDriverFlags && DRIVER_FLAG_KEYS.filter((f) => flagSupported(f, value.driver)).map((flag) => (
+          <div key={flag} style={{ marginTop: 14 }}>
+            <DriverFlagSwitch
+              flag={flag}
               driver={value.driver}
-              value={value.reasoning_summary ?? false}
-              onChange={(v) => onPatch({ reasoning_summary: v })}
+              value={value[flag] ?? false}
+              onChange={(v) => onPatch({ [flag]: v })}
             />
           </div>
-        )}
+        ))}
       </SectionCard>
 
       {/* System prompt — prompt-mode control lives in the header */}

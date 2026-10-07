@@ -166,6 +166,20 @@ describe("SubmitTask", () => {
     expect(body.reasoning_summary).toBe(true);
   });
 
+  it("sends the progress updates override picked for a codex task", async () => {
+    setup("codex", ["web_search"]);
+    let body: any = null;
+    server.use(http.post("/v1/containers/con_1/tasks", async ({ request }) => { body = await request.json(); return HttpResponse.json({ task_id: "tsk_18", status: "running", started_at: "t" }); }));
+    renderWithProviders(<AuthProvider><SubmitTask /></AuthProvider>);
+    await userEvent.type(await screen.findByLabelText(/Prompt/i), "Narrate");
+    const group = await screen.findByRole("group", { name: "Progress updates" });
+    await userEvent.click(within(group).getByRole("button", { name: "On" }));
+    await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
+    await waitFor(() => expect(body?.prompt).toBe("Narrate"));
+    expect(body.progress_updates).toBe(true);
+    expect(body).not.toHaveProperty("reasoning_summary");
+  });
+
   it("omits the reasoning summary override when left on default", async () => {
     setup("codex", ["web_search"]);
     let body: any = null;
@@ -175,6 +189,7 @@ describe("SubmitTask", () => {
     await userEvent.click(screen.getByRole("button", { name: /Submit task/i }));
     await waitFor(() => expect(body?.prompt).toBe("Inherit"));
     expect(body).not.toHaveProperty("reasoning_summary");
+    expect(body).not.toHaveProperty("progress_updates");
   });
 
   it("hides the reasoning summary override for drivers without it", async () => {

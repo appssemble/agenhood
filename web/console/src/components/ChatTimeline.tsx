@@ -118,6 +118,7 @@ type FileDiff = { path?: string; rows: DiffRow[] };
 
 type ItemBody =
   | { id: string; kind: "message"; text: string }
+  | { id: string; kind: "progress"; text: string }
   | { id: string; kind: "tool"; name: string; args: string; ok?: boolean; durationMs?: number; output?: string; edit?: FileDiff[] }
   | { id: string; kind: "file"; op: string; path: string }
   | { id: string; kind: "git"; op: string; ok: boolean; ref?: string }
@@ -145,6 +146,18 @@ function rawText(raw: unknown): string | null {
   return asText(part?.text ?? r.text ?? r.message);
 }
 
+// A codex message in the progress-updates shape; its parts already reach the
+// timeline as `progress` events and the task result.
+function isProgressEnvelope(text: string): boolean {
+  try {
+    const v = JSON.parse(text);
+    return !!v && typeof v === "object" && !Array.isArray(v)
+      && Object.keys(v).sort().join() === "progress,result";
+  } catch {
+    return false;
+  }
+}
+
 // Normalize a driver event's nested `raw` payload into a timeline item.
 function fromRaw(id: string, raw: unknown): Item | null {
   if (!raw || typeof raw !== "object") {
@@ -163,7 +176,8 @@ function fromRaw(id: string, raw: unknown): Item | null {
     const itype = String(item.type ?? "").toLowerCase();
     if (itype === "agent_message" || itype === "reasoning") {
       const t = asText(item.text);
-      return t ? { id, kind: "message", text: t } : null;
+      if (!t || (itype === "agent_message" && isProgressEnvelope(t))) return null;
+      return { id, kind: "message", text: t };
     }
     if (itype === "command_execution" || itype === "local_shell_call") {
       // apply_patch runs as a shell command; its patch text sits in `command`.
@@ -251,6 +265,11 @@ export function buildItems(events: Event[]): Item[] {
       case "tool_result":
       case "token_update":
         break; // folded into tool_call / cumulative counter (shown in the footer)
+      case "progress": {
+        const text = asText(p.text);
+        if (text) items.push({ id, kind: "progress", text });
+        break;
+      }
       case "task_started":
         items.push({ id, kind: "meta", label: `Started · ${p.driver ?? "?"} · ${p.model ?? "?"}` });
         break;
@@ -368,6 +387,8 @@ function ItemView({ item, cid }: { item: Item; cid: string }) {
   switch (item.kind) {
     case "message":
       return <div className="ev-msg">{item.text}</div>;
+    case "progress":
+      return <div className="ev-line"><Icons.ArrowRight /><span>{item.text}</span></div>;
     case "tool":
       return <ToolStep item={item} />;
     case "file":

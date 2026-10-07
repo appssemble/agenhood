@@ -53,10 +53,10 @@ function setup(over: Partial<any> = {}) {
   server.use(http.get("/v1/skills", () => HttpResponse.json({ skills: [] })));
   server.use(http.get("/v1/containers/con_1", () => HttpResponse.json({
     id: "con_1", name: "c", external_id: null, status: "running", image_variant: over.variant ?? "slim", image_tag: "v",
-    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false },
+    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false, progress_updates: over.progress_updates ?? false },
     metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
   server.use(http.get("/v1/containers/con_1/config", () => HttpResponse.json({
-    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false },
+    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false, progress_updates: over.progress_updates ?? false },
     assembled_prompt: "## SYSTEM\n..." })));
   server.use(http.get("/v1/containers/con_1/env", () => HttpResponse.json(over.envVars ?? [])));
 }
@@ -207,6 +207,31 @@ describe("Configuration editor (driver-aware)", () => {
     await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
     await waitFor(() => expect(patched).not.toBeNull());
     expect(patched.reasoning_summary).toBe(true);
+  });
+
+  it("saves progress updates turned on for a codex container", async () => {
+    setup({ driver: "codex", tools: ["web_search"] });
+    let patched: any = null;
+    server.use(http.patch("/v1/containers/con_1/config", async ({ request }) => { patched = await request.json(); return HttpResponse.json({ config: patched, assembled_prompt: "x" }); }));
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+    await userEvent.click(await screen.findByRole("switch", { name: "Progress updates" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched.progress_updates).toBe(true);
+  });
+
+  it("turns progress updates off when switching to a driver that doesn't support them", async () => {
+    setup({ driver: "codex", tools: ["web_search"], progress_updates: true });
+    let patched: any = null;
+    server.use(http.patch("/v1/containers/con_1/config", async ({ request }) => { patched = await request.json(); return HttpResponse.json({ config: patched, assembled_prompt: "x" }); }));
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+    expect(await screen.findByRole("switch", { name: "Progress updates" })).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText("Driver"));
+    await userEvent.click(screen.getByRole("option", { name: "vanilla" }));
+    expect(screen.queryByRole("switch", { name: "Progress updates" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched.progress_updates).toBe(false);
   });
 
   it("turns reasoning summaries off when switching to a driver that doesn't support them", async () => {

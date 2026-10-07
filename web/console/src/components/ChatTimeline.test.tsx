@@ -567,3 +567,30 @@ describe("ChatTimeline — rendered durations", () => {
     expect(screen.queryByText("2.0s")).not.toBeInTheDocument();
   });
 });
+
+// ─── progress updates ──────────────────────────────────────────────────────
+
+describe("progress updates", () => {
+  const envelope = (progress: string | null, result: unknown) =>
+    evt(2, "codex_event", { raw: { type: "item.completed", item: { type: "agent_message", text: JSON.stringify({ progress, result }) } } });
+
+  it("progress event → progress item", () => {
+    const items = buildItems([evt(1, "progress", { text: "Vou ler o ficheiro." })]);
+    expect(items).toEqual([expect.objectContaining({ kind: "progress", text: "Vou ler o ficheiro." })]);
+  });
+
+  it("skips the codex envelope messages the progress events already cover", () => {
+    expect(buildItems([envelope("Vou ler o ficheiro.", null)])).toEqual([]);
+    expect(buildItems([envelope(null, { total: 3 })])).toEqual([]);
+  });
+
+  it("keeps a codex message that only looks like JSON", () => {
+    const items = buildItems([evt(1, "codex_event", { raw: { type: "item.completed", item: { type: "agent_message", text: '{"total":3}' } } })]);
+    expect(items[0]).toMatchObject({ kind: "message", text: '{"total":3}' });
+  });
+
+  it("renders the progress text", () => {
+    render(<ChatTimeline cid="c1" events={[evt(1, "progress", { text: "A calcular o total." })]} endMs={0} />);
+    expect(screen.getByText("A calcular o total.")).toBeInTheDocument();
+  });
+});

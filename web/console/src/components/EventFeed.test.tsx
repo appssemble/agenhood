@@ -34,3 +34,13 @@ describe("EventFeed durations", () => {
     expect(screen.getByText("7.0s")).toBeInTheDocument();
   });
 });
+
+describe("EventFeed progress events", () => {
+  it("shows the progress text", () => {
+    const events: Event[] = [
+      { seq: 1, type: "progress", ts: "2026-10-07T00:00:00Z", payload: { text: "Vou ler o ficheiro." } },
+    ] as unknown as Event[];
+    render(<EventFeed events={events} cid="c1" endMs={Date.parse("2026-10-07T00:00:01Z")} />);
+    expect(screen.getByText("Vou ler o ficheiro.")).toBeInTheDocument();
+  });
+});

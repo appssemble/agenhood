@@ -188,12 +188,33 @@ test("posts reasoning summaries turned on for a codex template", async () => {
   await waitFor(() => expect(posted?.config).toMatchObject({ driver: "codex", reasoning_summary: true }));
 });
 
+test("posts progress updates turned on for a codex template", async () => {
+  const user = userEvent.setup();
+  setupAuth();
+  server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [
+    tpl({ driver: "codex",
+      driver_template: { driver: "codex", default_system_prompt: "", available_tools: [], tools_user_editable: true, supports_context: false } }),
+  ] })));
+  let posted: any = null;
+  server.use(http.post("/v1/containers", async ({ request }) => {
+    posted = await request.json();
+    return HttpResponse.json({ id: "con_new", name: posted.name, status: "provisioning" });
+  }));
+  renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
+  expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
+  await user.type(screen.getByLabelText(/name/i), "codex-prod");
+  await user.click(screen.getByRole("switch", { name: "Progress updates" }));
+  await user.click(screen.getByRole("button", { name: /Create container/i }));
+  await waitFor(() => expect(posted?.config).toMatchObject({ driver: "codex", progress_updates: true, reasoning_summary: false }));
+});
+
 test("hides the reasoning summaries switch for a driver without it", async () => {
   setupAuth();
   server.use(http.get("/v1/templates", () => HttpResponse.json({ templates: [tpl()] })));
   renderWithProviders(<AuthProvider><CreateContainer /></AuthProvider>);
   expect(await screen.findByRole("button", { name: /Research assistant/i })).toBeInTheDocument();
   expect(screen.queryByRole("switch", { name: "Reasoning summaries" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "Progress updates" })).not.toBeInTheDocument();
 });
 
 test("untouched env vars are omitted from the create request", async () => {

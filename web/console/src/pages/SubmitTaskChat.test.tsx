@@ -306,12 +306,16 @@ test("chat Options panel carries the reasoning summary override and badges the t
   await userEvent.click(await screen.findByRole("button", { name: /options/i }));
   const group = await screen.findByRole("group", { name: "Reasoning summaries" });
   await userEvent.click(within(group).getByRole("button", { name: "Off" }));
+  const progress = screen.getByRole("group", { name: "Progress updates" });
+  await userEvent.click(within(progress).getByRole("button", { name: "On" }));
 
   await userEvent.click(screen.getByRole("button", { name: /options/i }));
   expect(screen.getByText("reasoning off")).toBeInTheDocument();
+  expect(screen.getByText("progress on")).toBeInTheDocument();
 
   await userEvent.type(await screen.findByLabelText("Prompt"), "Quiet run");
   await userEvent.click(screen.getByRole("button", { name: /send/i }));
   await waitFor(() => expect(body?.prompt).toBe("Quiet run"));
   expect(body.reasoning_summary).toBe(false);
+  expect(body.progress_updates).toBe(true);
 });

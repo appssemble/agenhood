@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Tag, Textarea } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "../components/EffortField";
-import { ReasoningSummaryOverride } from "../components/ReasoningSummaryField";
+import { DRIVER_FLAG_KEYS, DRIVER_FLAGS, DriverFlagOverrides, flagSupported } from "../components/DriverFlagField";
+import type { FlagOverrides } from "../components/DriverFlagField";
 import { TaskToolsField } from "../components/TaskToolsField";
 import { OutputContractField } from "../components/OutputContractField";
 import { TaskLimitsFields } from "../components/TaskLimitsFields";
 import { PromptPicker } from "../ui/PromptPicker";
 import { appendPrompt } from "../lib/prompt";
-import { EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS } from "../api/types";
+import { EFFORT_DRIVERS } from "../api/types";
 import type { AgentConfig, Effort, OutputType, TaskSummary, Template, TenantLimits } from "../api/types";
 
 // Classic form layout for submitting a task. Extracted unchanged from the
@@ -34,8 +35,8 @@ export function SubmitTaskForm({
   submitting,
   effort,
   onEffortChange,
-  reasoningSummary,
-  onReasoningSummaryChange,
+  flagOverrides,
+  onFlagOverridesChange,
   driverMeta,
   taskTools,
   onTaskToolsChange,
@@ -70,8 +71,8 @@ export function SubmitTaskForm({
   submitting: boolean;
   effort: Effort | null;
   onEffortChange: (v: Effort | null) => void;
-  reasoningSummary: boolean | null;
-  onReasoningSummaryChange: (v: boolean | null) => void;
+  flagOverrides: FlagOverrides;
+  onFlagOverridesChange: (v: FlagOverrides) => void;
   driverMeta: Template | undefined;
   taskTools: string[] | null;
   onTaskToolsChange: (v: string[] | null) => void;
@@ -164,9 +165,9 @@ export function SubmitTaskForm({
           <EffortField driver={config.driver} value={effort} onChange={onEffortChange} />
         </div>
 
-        {REASONING_SUMMARY_DRIVERS.includes(config.driver) && (
+        {DRIVER_FLAG_KEYS.some((f) => flagSupported(f, config.driver)) && (
           <div style={{ marginTop: 18 }}>
-            <ReasoningSummaryOverride driver={config.driver} value={reasoningSummary} onChange={onReasoningSummaryChange} />
+            <DriverFlagOverrides driver={config.driver} value={flagOverrides} onChange={onFlagOverridesChange} />
           </div>
         )}
 
@@ -198,12 +199,12 @@ export function SubmitTaskForm({
                 <dd className="mono">{config.effort ?? "default"}</dd>
               </>
             )}
-            {REASONING_SUMMARY_DRIVERS.includes(config.driver) && (
-              <>
-                <dt>Reasoning</dt>
-                <dd className="mono">{config.reasoning_summary ? "on" : "off"}</dd>
-              </>
-            )}
+            {DRIVER_FLAG_KEYS.filter((f) => flagSupported(f, config.driver)).map((flag) => (
+              <Fragment key={flag}>
+                <dt>{DRIVER_FLAGS[flag].label}</dt>
+                <dd className="mono">{config[flag] ? "on" : "off"}</dd>
+              </Fragment>
+            ))}
             <dt>Tools</dt>
             <dd style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {config.tools.slice(0, 6).map((t) => (

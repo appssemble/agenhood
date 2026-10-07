@@ -9,7 +9,8 @@ import { Field, Tag, Note, Dropdown } from "../ui";
 import { Icons } from "../ui/Icon";
 import { ConfigFields } from "../components/ConfigFields";
 import { EnvVarsField } from "../components/EnvVarsField";
-import { EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS, toolsForDriver } from "../api/types";
+import { EFFORT_DRIVERS, toolsForDriver } from "../api/types";
+import { DRIVER_FLAG_KEYS, flagSupported } from "../components/DriverFlagField";
 import type { AgentConfig, EnvVar, Template, ToolSpec } from "../api/types";
 
 export default function Configuration() {
@@ -72,7 +73,7 @@ export default function Configuration() {
     if (orig.driver !== draft.driver) n++;
     if (orig.model !== draft.model) n++;
     if ((orig.effort ?? null) !== (draft.effort ?? null)) n++;
-    if ((orig.reasoning_summary ?? false) !== (draft.reasoning_summary ?? false)) n++;
+    for (const flag of DRIVER_FLAG_KEYS) if ((orig[flag] ?? false) !== (draft[flag] ?? false)) n++;
     if (orig.system_prompt !== draft.system_prompt) n++;
     if (orig.system_prompt_mode !== draft.system_prompt_mode) n++;
     if (JSON.stringify(orig.tools) !== JSON.stringify(draft.tools)) n++;
@@ -154,7 +155,7 @@ export default function Configuration() {
                     driver: v,
                     tools: toolsForDriver(builtins.find((t) => t.driver === v), draft.tools),
                     ...(EFFORT_DRIVERS.includes(v) ? {} : { effort: null }),
-                    ...(REASONING_SUMMARY_DRIVERS.includes(v) ? {} : { reasoning_summary: false }),
+                    ...Object.fromEntries(DRIVER_FLAG_KEYS.filter((f) => !flagSupported(f, v)).map((f) => [f, false])),
                   })}
                   options={limits.allowed_drivers.map((d) => ({ value: d, label: d }))}
                 />
@@ -206,7 +207,7 @@ export default function Configuration() {
             enabledSkills={enabledSkills}
             enabledMcpServers={enabledMcpServers}
             onPatch={patch}
-            showReasoningSummary
+            showDriverFlags
             variantWarning={variantWarnings.length > 0 ? (
               <Note tone="amber" style={{ marginTop: 10 }}>
                 {variantWarnings.map((t) => t.name).join(", ")} need the full image variant, but this container is slim. Recreate it as full or disable these tools.

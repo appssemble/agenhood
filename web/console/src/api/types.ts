@@ -13,6 +13,8 @@ export type Effort = "low" | "medium" | "high" | "max";
 export const EFFORT_DRIVERS: string[] = ["opencode", "claude-code", "codex"];
 // Drivers that can emit reasoning summaries (mirror of the backend gate).
 export const REASONING_SUMMARY_DRIVERS: string[] = ["codex"];
+// Drivers that can narrate progress as `progress` events (mirror of the backend gate).
+export const PROGRESS_UPDATES_DRIVERS: string[] = ["codex"];
 
 export interface AgentConfig {
   driver: string; model: string; system_prompt: string;
@@ -23,6 +25,8 @@ export interface AgentConfig {
   effort?: Effort | null;
   // Emit short reasoning summaries as task events, for drivers in REASONING_SUMMARY_DRIVERS.
   reasoning_summary?: boolean;
+  // Narrate each step in the user's language as `progress` events, for drivers in PROGRESS_UPDATES_DRIVERS.
+  progress_updates?: boolean;
   // Per-container task-limit overrides (null/undefined ⇒ use the tenant default).
   max_iterations?: number | null;
   max_tokens?: number | null;
@@ -39,7 +43,8 @@ export interface TaskResult { success: boolean; output?: unknown; reason?: strin
 export type EventType =
   | "task_started" | "iteration_started" | "assistant_message" | "tool_call"
   | "tool_result" | "token_update" | "file_changed" | "git" | "opencode_stdout"
-  | "opencode_event" | "codex_stdout" | "codex_event" | "claude_stdout" | "claude_event" | "status_change" | "log";
+  | "opencode_event" | "codex_stdout" | "codex_event" | "claude_stdout" | "claude_event" | "progress"
+  | "status_change" | "log";
 export interface Event { seq: number; type: EventType; ts: string; payload: Record<string, unknown>; }
 
 export type ContainerStatus =
