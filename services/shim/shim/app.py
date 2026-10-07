@@ -32,9 +32,9 @@ from shim.transfer import (
 _ARCHIVE_CHUNK_SIZE_BYTES = 64 * 1024
 _TASK_HISTORY_LIMIT = 100
 _CLOSE_SPARE_TIMEOUT_SECONDS = 5.0
+_DEFAULT_GIT_LOG_LIMIT = 200
 
 logger = logging.getLogger(__name__)
-_DEFAULT_GIT_LOG_LIMIT = 200
 
 
 class _ZipSink:
@@ -141,7 +141,7 @@ def create_app(
             return
         try:
             refill()
-        except Exception:  # noqa: BLE001 — a spare is an optimisation only
+        except Exception:  # noqa: BLE001 - a spare is an optimisation only
             logger.warning("spare refill failed for driver %s", driver_name,
                            exc_info=True)
 
@@ -348,7 +348,7 @@ def create_app(
                 continue
             try:
                 await asyncio.wait_for(close_spare(), _CLOSE_SPARE_TIMEOUT_SECONDS)
-            except Exception:  # noqa: BLE001 — shutdown must always complete
+            except Exception:  # noqa: BLE001 - shutdown must always complete
                 logger.warning("closing spare failed for driver %s", name,
                                exc_info=True)
         return {"shutting_down": True}
