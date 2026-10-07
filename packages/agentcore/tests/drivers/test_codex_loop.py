@@ -824,6 +824,39 @@ async def test_changed_settings_skip_the_spare(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_changed_agents_md_skips_the_spare(monkeypatch, tmp_path):
+    spare = FakeAppServer([], thread_id="thr_spare")
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")), spare,
+                                FakeAppServer(answer("two")),
+                                FakeAppServer([], thread_id="thr_next")])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    (tmp_path / "AGENTS.md").write_text("Use tabs.")
+    _, events = await run_on(driver, tmp_path=tmp_path)
+
+    assert spare_logs(events)[0]["outcome"] == "miss"
+    assert spare_logs(events)[0]["reason"] == "settings_changed"
+    assert spare.terminated
+
+
+@pytest.mark.asyncio
+async def test_unchanged_agents_md_keeps_the_spare(monkeypatch, tmp_path):
+    (tmp_path / "AGENTS.md").write_text("Use tabs.")
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")),
+                                FakeAppServer(answer("two"), thread_id="thr_spare"),
+                                FakeAppServer([], thread_id="thr_next")])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    _, events = await run_on(driver, tmp_path=tmp_path)
+
+    assert spare_logs(events)[0]["outcome"] == "hit"
+
+
+@pytest.mark.asyncio
 async def test_hot_spare_off_builds_nothing(monkeypatch, tmp_path):
     starts = patch_servers(monkeypatch, [FakeAppServer(answer("one"))])
     driver = spare_driver()

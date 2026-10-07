@@ -50,6 +50,7 @@ only sends its turn. Each attempt logs ``codex_spare`` with the outcome.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import time
@@ -137,6 +138,22 @@ def write_codex_config(workspace: str, servers: list[ShimMcpServer]) -> str | No
     sandbox.chown_to_agent(str(tmp))
     os.replace(tmp, path)
     return str(path)
+
+
+WORKSPACE_INSTRUCTION_FILES: tuple[str, ...] = (
+    "AGENTS.md", "AGENTS.override.md", ".codex/config.toml",
+)
+
+
+def workspace_instructions_stamp(workspace: str) -> dict[str, str | None]:
+    """Content hash of each project file codex reads at ``thread/start``, None if missing."""
+    stamp: dict[str, str | None] = {}
+    for name in WORKSPACE_INSTRUCTION_FILES:
+        try:
+            stamp[name] = hashlib.sha256((Path(workspace) / name).read_bytes()).hexdigest()
+        except OSError:
+            stamp[name] = None
+    return stamp
 
 
 def skills_dir(workspace: str) -> str:
@@ -782,6 +799,7 @@ class CodexDriver:
                 cmd, workspace, child_env, start_params, credential_kind, credential,
                 credential_meta or {}, [s.model_dump() for s in skills or []],
                 [m.model_dump() for m in mcp_servers or []],
+                workspace_instructions_stamp(workspace),
             ),
         )
         self._spares.remember(recipe if config.hot_spare else None)
