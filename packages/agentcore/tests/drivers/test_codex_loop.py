@@ -180,8 +180,10 @@ async def test_cancellation_returns_cancelled(monkeypatch, tmp_path):
     cancel = asyncio.Event()
 
     async def cancel_once_turn_runs():
-        await server.requested("turn/start")
-        cancel.set()
+        try:
+            await asyncio.wait_for(server.requested("turn/start"), timeout=5)
+        finally:
+            cancel.set()
 
     canceller = asyncio.create_task(cancel_once_turn_runs())
     result, events = await run(tmp_path=tmp_path, cancel=cancel)
@@ -758,11 +760,22 @@ async def run_on(driver, task=None, config=None, *, tmp_path, **kwargs):
     return result, events
 
 
+_spare_drivers = []
+
+
+@pytest.fixture(autouse=True)
+async def _close_spare_drivers():
+    yield
+    while _spare_drivers:
+        await _spare_drivers.pop().close_spare()
+
+
 def spare_driver():
     from agentcore.drivers.codex import CodexDriver
 
     driver = CodexDriver()
     driver.set_capacity_check(lambda: True)
+    _spare_drivers.append(driver)
     return driver
 
 
