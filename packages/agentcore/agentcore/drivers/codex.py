@@ -274,6 +274,67 @@ def tool_args(tools: Iterable[str]) -> list[str]:
     return out
 
 
+def build_app_server_command(*, tools: Iterable[str] = CODEX_DEFAULT_TOOLS) -> list[str]:
+    """``codex app-server`` with the side-channel and tool overrides.
+
+    Thread and turn settings travel in the JSON-RPC requests instead."""
+    return ["codex", "app-server", *_side_channel_args(), *tool_args(tools)]
+
+
+_THREAD_ACCESS = {"approvalPolicy": "never", "sandbox": "danger-full-access"}
+
+
+def thread_start_params(*, workspace: str, model: str, instructions: str) -> dict[str, Any]:
+    params: dict[str, Any] = {"model": model, "cwd": workspace, "ephemeral": False,
+                              **_THREAD_ACCESS}
+    if instructions:
+        params["developerInstructions"] = instructions
+    return params
+
+
+def thread_resume_params(
+    *, thread_id: str, workspace: str, model: str, instructions: str
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"threadId": thread_id, "model": model, "cwd": workspace,
+                              **_THREAD_ACCESS}
+    if instructions:
+        params["developerInstructions"] = instructions
+    return params
+
+
+def turn_start_params(
+    *,
+    thread_id: str,
+    prompt: str,
+    effort: str | None,
+    reasoning_summary: bool,
+    output_schema: dict[str, Any] | None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"threadId": thread_id,
+                              "input": [{"type": "text", "text": prompt}]}
+    if effort:
+        params["effort"] = effort
+    if reasoning_summary:
+        params["summary"] = "auto"
+    if output_schema is not None:
+        params["outputSchema"] = output_schema
+    return params
+
+
+def native_output_schema(
+    schema: dict[str, Any] | None, *, progress_updates: bool
+) -> dict[str, Any] | None:
+    """The schema codex enforces for the turn, or None.
+
+    Progress updates wrap the answer in the envelope. A schema outside codex's
+    strict subset is left to the shared validate-and-retry loop."""
+    if progress_updates:
+        schema = progress_envelope_schema(schema)
+    if schema is not None and native_subset_compatible(schema):
+        return schema
+    return None
+
+
 def build_command(
     *,
     workspace: str,

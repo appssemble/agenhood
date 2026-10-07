@@ -568,3 +568,69 @@ def test_progress_rules_ask_for_an_initial_update_even_without_tools():
 
     assert "first message is always a progress update" in PROGRESS_INSTRUCTIONS
     assert "even when you can answer without tools" in PROGRESS_INSTRUCTIONS
+
+
+# ---------------------------------------------------------------------------
+# Task 3: App-server command and request builders
+# ---------------------------------------------------------------------------
+
+
+def test_app_server_command_carries_side_channel_and_tool_overrides():
+    from agentcore.drivers.codex import SIDE_CHANNEL_OVERRIDES, build_app_server_command
+
+    cmd = build_app_server_command(tools=["goals"])
+    assert cmd[:2] == ["codex", "app-server"]
+    for override in SIDE_CHANNEL_OVERRIDES:
+        assert cmd[cmd.index(override) - 1] == "-c"
+    assert "features.goals=true" in cmd
+    assert "web_search=disabled" in cmd
+
+
+def test_thread_start_params():
+    from agentcore.drivers.codex import thread_start_params
+
+    assert thread_start_params(workspace="/w", model="gpt-5.6-sol", instructions="Be brief.") == {
+        "model": "gpt-5.6-sol", "cwd": "/w", "ephemeral": False,
+        "approvalPolicy": "never", "sandbox": "danger-full-access",
+        "developerInstructions": "Be brief.",
+    }
+    assert "developerInstructions" not in thread_start_params(
+        workspace="/w", model="m", instructions="")
+
+
+def test_thread_resume_params():
+    from agentcore.drivers.codex import thread_resume_params
+
+    assert thread_resume_params(thread_id="thr_1", workspace="/w", model="m",
+                                instructions="Be brief.") == {
+        "threadId": "thr_1", "model": "m", "cwd": "/w",
+        "approvalPolicy": "never", "sandbox": "danger-full-access",
+        "developerInstructions": "Be brief.",
+    }
+
+
+def test_turn_start_params():
+    from agentcore.drivers.codex import turn_start_params
+
+    assert turn_start_params(thread_id="thr_1", prompt="hi", effort=None,
+                             reasoning_summary=False, output_schema=None) == {
+        "threadId": "thr_1", "input": [{"type": "text", "text": "hi"}],
+    }
+    schema = {"type": "object"}
+    full = turn_start_params(thread_id="thr_1", prompt="hi", effort="high",
+                             reasoning_summary=True, output_schema=schema)
+    assert full["effort"] == "high"
+    assert full["summary"] == "auto"
+    assert full["outputSchema"] == schema
+
+
+def test_native_output_schema():
+    from agentcore.drivers.codex import native_output_schema, progress_envelope_schema
+
+    strict = {"type": "object", "properties": {"a": {"type": "string"}},
+              "required": ["a"], "additionalProperties": False}
+    assert native_output_schema(None, progress_updates=False) is None
+    assert native_output_schema(strict, progress_updates=False) == strict
+    assert native_output_schema(None, progress_updates=True) == progress_envelope_schema(None)
+    assert native_output_schema({"type": "array", "items": {"type": "string"}},
+                                progress_updates=False) is None
