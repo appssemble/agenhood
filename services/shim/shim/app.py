@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import tarfile
@@ -30,6 +31,9 @@ from shim.transfer import (
 
 _ARCHIVE_CHUNK_SIZE_BYTES = 64 * 1024
 _TASK_HISTORY_LIMIT = 100
+_CLOSE_SPARE_TIMEOUT_SECONDS = 5.0
+
+logger = logging.getLogger(__name__)
 _DEFAULT_GIT_LOG_LIMIT = 200
 
 
@@ -138,7 +142,8 @@ def create_app(
         try:
             refill()
         except Exception:  # noqa: BLE001 — a spare is an optimisation only
-            pass
+            logger.warning("spare refill failed for driver %s", driver_name,
+                           exc_info=True)
 
     async def _post_task_git(runner: TaskRunner) -> None:
         """Auto-commit (and auto-push) after every terminal task.
@@ -337,10 +342,15 @@ def create_app(
         for r in runners.values():
             if r.status == "running":
                 r.request_cancel()
-        for driver in registry.values():
+        for name, driver in registry.items():
             close_spare = getattr(driver, "close_spare", None)
-            if close_spare is not None:
-                await close_spare()
+            if close_spare is None:
+                continue
+            try:
+                await asyncio.wait_for(close_spare(), _CLOSE_SPARE_TIMEOUT_SECONDS)
+            except Exception:  # noqa: BLE001 — shutdown must always complete
+                logger.warning("closing spare failed for driver %s", name,
+                               exc_info=True)
         return {"shutting_down": True}
 
     # ---- File-management endpoints (proxied by the control plane) -----------

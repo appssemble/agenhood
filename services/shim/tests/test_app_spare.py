@@ -113,3 +113,30 @@ async def test_failing_refill_does_not_break_the_task(tmp_path):
         await c.post("/tasks", json=payload())
         await wait_done(c, "tsk_1")
         assert (await c.get("/tasks/tsk_1")).json()["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_refill_sees_capacity_with_a_single_worker(tmp_path):
+    driver = SpareAwareDriver()
+    async with client_for(tmp_path, driver, max_workers=1) as c:
+        await c.post("/tasks", json=payload())
+        await wait_done(c, "tsk_1")
+        await asyncio.sleep(0.05)
+        assert driver.refills == [True]
+
+
+@pytest.mark.asyncio
+async def test_shutdown_survives_a_failing_close_spare(tmp_path):
+    bad = SpareAwareDriver()
+    good = SpareAwareDriver()
+
+    async def boom():
+        raise RuntimeError("close failed")
+
+    bad.close_spare = boom
+    app = create_app(workspace=str(tmp_path), token="",
+                     drivers={"bad": bad, "good": good})
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://shim") as c:
+        assert (await c.post("/shutdown")).status_code == 200
+    assert good.closed
