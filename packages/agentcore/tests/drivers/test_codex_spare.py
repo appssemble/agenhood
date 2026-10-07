@@ -199,28 +199,24 @@ async def test_failed_spawn_counts_as_a_failure():
 
 
 @pytest.mark.asyncio
-async def test_spare_is_recycled_after_max_age():
+async def test_expired_spare_is_dropped_and_not_replaced():
     starter = FakeStarter()
-    p = pool(starter, max_age=0.01)
+    p = pool(starter, max_age=30.0)
     r = recipe()
     p.remember(r)
     p.refill()
     await p.ready()
 
-    # Poll until the first spare is aborted
-    for _ in range(200):
-        if starter.clients[0].aborted:
-            break
-        await asyncio.sleep(0.005)
+    expiry = p._expiry
+    assert expiry is not None
+    assert expiry.when() - asyncio.get_running_loop().time() == pytest.approx(30.0, abs=1.0)
+    expiry.cancel()
+    p._expire()
+    await asyncio.sleep(0)
 
     assert starter.clients[0].aborted
-    # Prevent replacement from expiring during the test
-    p._max_age = 600.0
-    await p.ready()
-    spare, reason = await p.claim(r.fingerprint)
-    assert reason == "hit"
-    assert spare.thread_id == "thr_1"
-    assert len(starter.calls) == 2
+    assert len(starter.calls) == 1
+    assert await p.claim(r.fingerprint) == (None, "none")
 
 
 @pytest.mark.asyncio
@@ -297,3 +293,18 @@ async def test_close_stops_the_spare():
     p.refill()
     await asyncio.sleep(0)
     assert len(starter.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_built_after_close():
+    starter = FakeStarter()
+    p = pool(starter)
+    p.remember(recipe())
+    await p.close()
+
+    p.remember(recipe("b"))
+    p.refill()
+    await p.ready()
+
+    assert starter.calls == []
+    assert await p.claim(fingerprint("b")) == (None, "none")
