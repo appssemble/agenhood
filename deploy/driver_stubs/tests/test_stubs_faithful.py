@@ -130,3 +130,80 @@ def test_claude_is_error_result(tmp_path):
             if cc.parse_claude_line(l)[0] == "event"]
     assert proc.returncode == 0  # claude exits 0 even on error; failure is signalled via is_error
     assert "bad" in [e for e in errs if e]
+
+
+import itertools  # noqa: E402
+
+from agentcore.drivers.codex_events import ExecEventTranslator  # noqa: E402
+
+
+def _app_server_session(script, cwd, requests=None):
+    reqs = requests or [
+        {"id": 1, "method": "initialize", "params": {}},
+        {"method": "initialized"},
+        {"id": 2, "method": "thread/start", "params": {}},
+        {"id": 3, "method": "turn/start",
+         "params": {"threadId": "t", "input": [{"type": "text", "text": _script(script)}]}},
+        {"id": 4, "method": "thread/delete", "params": {"threadId": "t"}},
+    ]
+    proc = subprocess.run(
+        [os.path.join(STUBS, "codex"), "app-server", "-c", "features.apps=false"],
+        input="".join(json.dumps(r) + "\n" for r in reqs),
+        capture_output=True, text=True, cwd=cwd, timeout=20,
+    )
+    return proc, [json.loads(ln) for ln in proc.stdout.splitlines() if ln.startswith("{")]
+
+
+def _translate(messages):
+    tr = ExecEventTranslator()
+    return list(itertools.chain.from_iterable(
+        tr.translate(m) for m in messages if "method" in m))
+
+
+def test_codex_app_server_replies_to_every_request(tmp_path):
+    script = {"turns": [{"done": {"success": True, "output": "hi"}}]}
+    proc, msgs = _app_server_session(script, str(tmp_path))
+    assert proc.returncode == 0, proc.stderr
+    replies = {m["id"]: m for m in msgs if "id" in m}
+    assert set(replies) == {1, 2, 3, 4}
+    assert replies[2]["result"]["thread"]["id"]
+
+
+def test_codex_app_server_success_translates_to_exec_events(tmp_path):
+    script = {"turns": [{"done": {"success": True, "output": "done text"}}],
+              "usage": {"input_tokens": 9, "output_tokens": 3}}
+    _, msgs = _app_server_session(script, str(tmp_path))
+    events = _translate(msgs)
+    assert [e["type"] for e in events] == ["turn.started", "item.completed", "turn.completed"]
+    assert events[1]["item"]["text"] == "done text"
+    assert events[2]["usage"]["input_tokens"] == 9
+    assert events[2]["usage"]["output_tokens"] == 3
+
+
+def test_codex_app_server_error_fails_the_turn(tmp_path):
+    script = {"turns": [{"done": {"success": False, "reason": "nope"}}]}
+    _, msgs = _app_server_session(script, str(tmp_path))
+    events = _translate(msgs)
+    assert events[-1] == {"type": "turn.failed", "error": {"message": "nope"}}
+
+
+def test_codex_app_server_writes_workspace_file(tmp_path):
+    script = {"turns": [{"tool": "write_file",
+                         "input": {"path": "out.md", "content": "X"}},
+                        {"done": {"success": True, "output": "ok"}}]}
+    _app_server_session(script, str(tmp_path))
+    assert (tmp_path / "out.md").read_text() == "X"
+
+
+def test_codex_app_server_unknown_method_is_a_rpc_error(tmp_path):
+    reqs = [{"id": 1, "method": "bogus/method", "params": {}}]
+    _, msgs = _app_server_session({}, str(tmp_path), reqs)
+    assert msgs[0]["error"]["code"] == -32601
+
+
+def test_codex_app_server_threads_get_unique_ids(tmp_path):
+    reqs = [{"id": 1, "method": "thread/start", "params": {}},
+            {"id": 2, "method": "thread/start", "params": {}}]
+    _, msgs = _app_server_session({}, str(tmp_path), reqs)
+    ids = [m["result"]["thread"]["id"] for m in msgs]
+    assert ids[0] != ids[1]

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""codex CLI stub — renders @@SCRIPT@@ as `codex exec --json` output.
+"""codex CLI stub: renders @@SCRIPT@@ as codex output.
 
-The real codex reads the prompt on stdin (trailing `-`); so do we.
+`codex exec --json` reads the prompt on stdin (trailing `-`) and prints exec
+events. `codex app-server` speaks JSON-RPC lines on stdio and renders the
+script found in the `turn/start` prompt as app-server notifications.
 """
+import itertools
 import json
 import os
 import sys
@@ -16,7 +19,81 @@ def emit(obj):
     sys.stdout.flush()
 
 
+def reply(rid, result=None, error=None):
+    if error is not None:
+        emit({"id": rid, "error": error})
+    else:
+        emit({"id": rid, "result": {} if result is None else result})
+
+
+def notify(method, params):
+    emit({"method": method, "params": params})
+
+
+def run_turn(thread_id, script) -> bool:
+    """Stream one scripted turn. False means the process should exit."""
+    s.maybe_sleep(script)
+    if s.is_never_done(script):
+        s.hang_forever()
+    if s.is_malformed(script):
+        sys.stdout.write("<<not json>>\n")
+        sys.stdout.flush()
+        return False
+    s.materialize_files(script, os.getcwd())
+    turn = {"id": "turn_stub", "items": [], "status": "inProgress", "error": None}
+    notify("turn/started", {"threadId": thread_id, "turn": turn})
+    if s.is_error(script):
+        message = s.error_message(script)
+        notify("error", {"threadId": thread_id, "willRetry": False,
+                         "error": {"message": message}})
+        failed = {**turn, "status": "failed", "error": {"message": message}}
+        notify("turn/completed", {"threadId": thread_id, "turn": failed})
+        return True
+    item = {"type": "agentMessage", "id": "msg_stub", "text": s.final_text(script),
+            "phase": "final_answer"}
+    notify("item/completed", {"threadId": thread_id, "turnId": turn["id"], "item": item})
+    tin, tout = s.usage(script)
+    last = {"totalTokens": tin + tout, "inputTokens": tin, "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0, "outputTokens": tout, "reasoningOutputTokens": 0}
+    notify("thread/tokenUsage/updated",
+           {"threadId": thread_id, "turnId": turn["id"],
+            "tokenUsage": {"total": last, "last": last}})
+    notify("turn/completed",
+           {"threadId": thread_id, "turn": {**turn, "status": "completed"}})
+    return True
+
+
+def app_server() -> int:
+    counter = itertools.count(1)
+    for raw in sys.stdin:
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        rid, method = msg.get("id"), msg.get("method")
+        if method is None or rid is None:
+            continue
+        params = msg.get("params") or {}
+        if method == "initialize":
+            reply(rid, {"userAgent": "stub"})
+        elif method == "thread/start":
+            reply(rid, {"thread": {"id": f"thr_stub_{os.getpid()}_{next(counter)}"}})
+        elif method in ("thread/resume", "thread/delete"):
+            reply(rid)
+        elif method == "turn/start":
+            reply(rid)
+            text = ((params.get("input") or [{}])[0]).get("text", "")
+            script = s.parse_directive(text)
+            if not run_turn(params.get("threadId", ""), script):
+                return 1
+        else:
+            reply(rid, error={"code": -32601, "message": f"unknown method {method}"})
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "app-server":
+        return app_server()
     script = s.read_script("stdin")
     s.maybe_sleep(script)
     if s.is_never_done(script):
