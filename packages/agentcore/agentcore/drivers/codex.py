@@ -844,8 +844,8 @@ class CodexDriver:
                 else:
                     spare, reason = None, "disabled"
                 if spare is not None:
-                    await note_spare("hit")
                     client, thread_id = spare.client, spare.thread_id
+                    await note_spare("hit")
                 else:
                     await note_spare("miss", reason)
                     client, thread_id = await bounded(self._start_thread(recipe))

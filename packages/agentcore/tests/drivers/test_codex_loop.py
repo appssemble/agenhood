@@ -893,6 +893,27 @@ async def test_failed_turn_start_builds_no_spare(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_spare_hit_log_failure_aborts_the_claimed_spare(monkeypatch, tmp_path):
+    spare = FakeAppServer([], thread_id="thr_spare")
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")), spare])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+
+    async def emit(event_type, payload):
+        if payload.get("op") == "codex_spare" and payload.get("outcome") == "hit":
+            raise RuntimeError("emit broke")
+
+    with pytest.raises(RuntimeError, match="emit broke"):
+        await driver.run(task=TaskBody(prompt="do it"), config=cfg(), limits=LIMITS,
+                         credential="sk", emit=emit, cancel=asyncio.Event(),
+                         workspace=str(tmp_path))
+
+    assert spare.terminated
+
+
+@pytest.mark.asyncio
 async def test_hot_spare_off_builds_nothing(monkeypatch, tmp_path):
     starts = patch_servers(monkeypatch, [FakeAppServer(answer("one"))])
     driver = spare_driver()
