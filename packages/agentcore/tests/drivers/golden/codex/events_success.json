@@ -12,7 +12,17 @@
     "codex_event",
     {
       "raw": {
+        "thread_id": "thr_conf",
+        "type": "thread.started"
+      }
+    }
+  ],
+  [
+    "codex_event",
+    {
+      "raw": {
         "item": {
+          "id": "item_0",
           "text": "all done",
           "type": "agent_message"
         },
@@ -26,8 +36,11 @@
       "raw": {
         "type": "turn.completed",
         "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 0,
           "input_tokens": 100,
-          "output_tokens": 20
+          "output_tokens": 20,
+          "reasoning_output_tokens": 0
         }
       }
     }

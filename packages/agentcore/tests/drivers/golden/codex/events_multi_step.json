@@ -12,7 +12,17 @@
     "codex_event",
     {
       "raw": {
+        "thread_id": "thr_conf",
+        "type": "thread.started"
+      }
+    }
+  ],
+  [
+    "codex_event",
+    {
+      "raw": {
         "item": {
+          "id": "item_0",
           "text": "step one done",
           "type": "agent_message"
         },
@@ -24,26 +34,8 @@
     "codex_event",
     {
       "raw": {
-        "type": "turn.completed",
-        "usage": {
-          "input_tokens": 50,
-          "output_tokens": 10
-        }
-      }
-    }
-  ],
-  [
-    "token_update",
-    {
-      "tokens_in": 50,
-      "tokens_out": 10
-    }
-  ],
-  [
-    "codex_event",
-    {
-      "raw": {
         "item": {
+          "id": "item_1",
           "text": "all done",
           "type": "agent_message"
         },
@@ -57,8 +49,11 @@
       "raw": {
         "type": "turn.completed",
         "usage": {
-          "input_tokens": 100,
-          "output_tokens": 20
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "input_tokens": 150,
+          "output_tokens": 30,
+          "reasoning_output_tokens": 0
         }
       }
     }

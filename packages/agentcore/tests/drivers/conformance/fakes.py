@@ -1,6 +1,7 @@
 """Shared test fakes and constants for the driver conformance suite."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from agentcore.llm.base import LLMResponse
@@ -109,6 +110,45 @@ def patch_proc(monkeypatch, proc: FakeProc) -> None:
 
     monkeypatch.setattr("agentcore.sandbox.spawn_untrusted", fake_spawn)
     monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)
+
+
+# ---------------------------------------------------------------------------
+# FakeAppServer / patch_app_server: codex runs on `codex app-server`, so its
+# scenarios replay JSON-RPC notifications instead of exec JSONL.
+# ---------------------------------------------------------------------------
+
+
+class FakeAppServer:
+    def __init__(self, messages=()):
+        self.messages = list(messages)
+        self.alive = True
+
+    async def request(self, method, params, timeout=None):  # noqa: ASYNC109
+        if method == "thread/start":
+            return {"thread": {"id": "thr_conf"}}
+        return {}
+
+    async def next_message(self, timeout):  # noqa: ASYNC109
+        if self.messages:
+            return self.messages.pop(0)
+        await asyncio.sleep(0)
+        return None
+
+    def terminate(self):
+        self.alive = False
+
+    def abort(self):
+        self.alive = False
+
+    async def close(self, timeout=5.0):  # noqa: ASYNC109
+        self.alive = False
+
+
+def patch_app_server(monkeypatch, messages=()) -> None:
+    async def fake_start(cmd, *, cwd, env):
+        return FakeAppServer(messages)
+
+    monkeypatch.setattr("agentcore.drivers.codex.start_app_server", fake_start)
 
 
 # ---------------------------------------------------------------------------

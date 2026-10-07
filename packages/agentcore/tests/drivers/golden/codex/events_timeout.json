@@ -9,6 +9,15 @@
     }
   ],
   [
+    "codex_event",
+    {
+      "raw": {
+        "thread_id": "thr_conf",
+        "type": "thread.started"
+      }
+    }
+  ],
+  [
     "log",
     {
       "data": {},

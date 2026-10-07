@@ -23,6 +23,7 @@ from tests.drivers.conformance.fakes import (
     FakeProc,
     ScriptedLLM,
     collector,
+    patch_app_server,
     patch_proc,
 )
 from tests.drivers.conformance.golden_helper import golden, to_jsonable
@@ -151,6 +152,39 @@ def _patch_proc_missing_binary(monkeypatch: object) -> None:
     monkeypatch.setattr("agentcore.sandbox.ensure_agent_dir", lambda *a, **kw: None)  # type: ignore[attr-defined]
 
 
+def _note(method: str, **params: Any) -> dict[str, Any]:
+    return {"method": method, "params": params}
+
+
+def _codex_messages(case: str) -> list[dict[str, Any]]:
+    """App-server notifications equivalent to the corpus scenarios."""
+
+    def message(text: str) -> dict[str, Any]:
+        return _note("item/completed", item={"type": "agentMessage", "id": text, "text": text})
+
+    def usage(inp: int, out: int) -> dict[str, Any]:
+        return _note("thread/tokenUsage/updated",
+                     tokenUsage={"last": {"inputTokens": inp, "outputTokens": out}})
+
+    done = _note("turn/completed", turn={"status": "completed", "error": None})
+    if case == "success":
+        return [message("all done"), usage(100, 20), done]
+    if case == "multi_step":
+        return [message("step one done"), usage(50, 10), message("all done"),
+                usage(100, 20), done]
+    if case == "error":
+        failed = {"status": "failed", "error": {"message": "model exploded"}}
+        return [_note("turn/completed", turn=failed)]
+    return []
+
+
+def _patch_app_server_missing_binary(monkeypatch: object) -> None:
+    async def _raise_fnf(cmd: list, *, cwd: str, env: dict) -> None:
+        raise FileNotFoundError("codex")
+
+    monkeypatch.setattr("agentcore.drivers.codex.start_app_server", _raise_fnf)  # type: ignore[attr-defined]
+
+
 def _events_for(
     entry: DriverEntry, case: str, monkeypatch: object
 ) -> tuple[list, str]:
@@ -179,7 +213,14 @@ def _events_for(
             else _LIMITS
         )
 
-        if entry.subprocess:
+        if entry.name == "codex":
+            if case == "missing_binary":
+                _patch_proc_missing_binary(monkeypatch)
+                _patch_app_server_missing_binary(monkeypatch)
+            else:
+                patch_app_server(monkeypatch)
+            instance = entry.instance
+        elif entry.subprocess:
             if case == "missing_binary":
                 _patch_proc_missing_binary(monkeypatch)
             else:
@@ -210,7 +251,10 @@ def _events_for(
     # ------------------------------------------------------------------
     # Original corpus-replay scenarios: success / error / multi_step
     # ------------------------------------------------------------------
-    if entry.subprocess:
+    if entry.name == "codex":
+        patch_app_server(monkeypatch, _codex_messages(case))
+        instance = entry.instance
+    elif entry.subprocess:
         corpus_file = _case_file(case)
         lines = (
             _CORPUS / entry.name / f"{corpus_file}.jsonl"

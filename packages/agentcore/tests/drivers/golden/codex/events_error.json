@@ -12,6 +12,15 @@
     "codex_event",
     {
       "raw": {
+        "thread_id": "thr_conf",
+        "type": "thread.started"
+      }
+    }
+  ],
+  [
+    "codex_event",
+    {
+      "raw": {
         "error": {
           "message": "model exploded"
         },
