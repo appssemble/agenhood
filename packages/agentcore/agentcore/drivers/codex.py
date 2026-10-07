@@ -180,7 +180,11 @@ PROGRESS_INSTRUCTIONS = """\
 ## Progress updates
 The user cannot see your tool calls. Every message you send is a JSON object \
 {"progress": ..., "result": ...}.
-- Before each step (reading files, running commands, searching), send \
+- Your first message is always a progress update, sent right away before any \
+other work, even when you can answer without tools.
+- Before each further step (reading files, running commands, searching), send \
+another progress update.
+- A progress update is \
 {"progress": "<one short sentence saying what you are doing>", "result": null}, \
 written in the same language as the user's message.
 - Send your answer once, as your final message: {"progress": null, "result": <answer>}."""

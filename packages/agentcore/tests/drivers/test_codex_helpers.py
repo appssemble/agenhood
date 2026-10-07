@@ -561,3 +561,10 @@ def test_developer_instructions_append_the_progress_rules():
     assert out.startswith("Be brief.")
     assert out.endswith(PROGRESS_INSTRUCTIONS)
     assert developer_instructions("", progress_updates=True) == PROGRESS_INSTRUCTIONS
+
+
+def test_progress_rules_ask_for_an_initial_update_even_without_tools():
+    from agentcore.drivers.codex import PROGRESS_INSTRUCTIONS
+
+    assert "first message is always a progress update" in PROGRESS_INSTRUCTIONS
+    assert "even when you can answer without tools" in PROGRESS_INSTRUCTIONS
