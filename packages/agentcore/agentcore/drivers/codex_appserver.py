@@ -34,6 +34,8 @@ class AppServerClient:
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._messages: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._stderr_done = asyncio.Event()
+        self._exited = False
+        self._exit_code: int | None = None
         self._readers = [
             asyncio.create_task(self._read_stderr()),
             asyncio.create_task(self._read_stdout()),
@@ -44,8 +46,10 @@ class AppServerClient:
         return self._proc.returncode is None
 
     async def request(
-        self, method: str, params: dict[str, Any], timeout: float | None = None
+        self, method: str, params: dict[str, Any], timeout: float | None = None  # noqa: ASYNC109
     ) -> dict[str, Any]:
+        if self._exited:
+            raise AppServerError(f"{method}: codex app-server exited {self._exit_code}")
         self._next_id += 1
         request_id = self._next_id
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
@@ -65,7 +69,7 @@ class AppServerClient:
     def notify(self, method: str) -> None:
         self._send({"method": method})
 
-    async def next_message(self, timeout: float) -> dict[str, Any] | None:
+    async def next_message(self, timeout: float) -> dict[str, Any] | None:  # noqa: ASYNC109
         try:
             return await asyncio.wait_for(self._messages.get(), timeout)
         except TimeoutError:
@@ -81,7 +85,7 @@ class AppServerClient:
             stdin.close()
         self.terminate()
 
-    async def close(self, timeout: float = 5.0) -> None:
+    async def close(self, timeout: float = 5.0) -> None:  # noqa: ASYNC109
         stdin = self._proc.stdin
         if stdin is not None and not stdin.is_closing():
             stdin.close()
@@ -143,6 +147,8 @@ class AppServerClient:
         except TimeoutError:
             pass
         returncode = await self._proc.wait()
+        self._exited = True
+        self._exit_code = returncode
         for future in self._pending.values():
             if not future.done():
                 future.set_result({"error": {"message": f"codex app-server exited {returncode}"}})

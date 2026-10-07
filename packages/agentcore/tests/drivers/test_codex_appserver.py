@@ -130,3 +130,14 @@ async def test_missing_binary_raises_file_not_found(tmp_path):
 async def test_failed_handshake_raises(tmp_path):
     with pytest.raises(AppServerError, match="init refused"):
         await start(tmp_path, STUB_FAIL_INIT="1")
+
+
+@pytest.mark.asyncio
+async def test_request_after_exit_raises(tmp_path):
+    client = await start(tmp_path)
+    with pytest.raises(AppServerError, match="exited 3"):
+        await client.request("test/exit", {"code": 3})
+    await next_named(client, "_exit")
+    with pytest.raises(AppServerError, match="exited 3"):
+        await client.request("test/emit", {"messages": []})
+    await client.close()
