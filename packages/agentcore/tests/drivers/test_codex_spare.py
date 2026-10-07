@@ -43,6 +43,24 @@ class FakeStarter:
         return client
 
 
+class SlowFakeStarter:
+    """Starter that waits for an event before completing, allowing control over build timing."""
+
+    def __init__(self):
+        self.clients = []
+        self.calls = []
+        self.events = []
+
+    async def __call__(self, cmd, *, cwd, env):
+        self.calls.append({"cmd": cmd, "cwd": cwd, "env": env})
+        event = asyncio.Event()
+        self.events.append(event)
+        await event.wait()
+        client = FakeClient(f"thr_{len(self.clients)}")
+        self.clients.append(client)
+        return client
+
+
 def recipe(model="m"):
     params = {"model": model, "cwd": "/w"}
     return SpareRecipe(cmd=["codex", "app-server"], cwd="/w", env={"A": "1"},
@@ -189,18 +207,68 @@ async def test_spare_is_recycled_after_max_age():
     p.refill()
     await p.ready()
 
-    # Poll until the first spare is aborted instead of using fixed sleep.
-    # This is deterministic: we wait for the actual expiry event, not a time interval.
+    # Poll until the first spare is aborted
     for _ in range(200):
         if starter.clients[0].aborted:
             break
         await asyncio.sleep(0.005)
 
     assert starter.clients[0].aborted
+    # Prevent replacement from expiring during the test
+    p._max_age = 600.0
     await p.ready()
     spare, reason = await p.claim(r.fingerprint)
     assert reason == "hit"
     assert spare.thread_id == "thr_1"
+    assert len(starter.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_claim_waiting_on_build_cancelled_by_other_settings():
+    """A claim waiting on a cancelled build returns (None, reason) without raising."""
+    starter = SlowFakeStarter()
+    p = pool(starter)
+    p.remember(recipe("a"))
+    p.refill()
+
+    # Create a claim task that will wait for the build
+    async def claim_a():
+        return await p.claim(fingerprint("a"))
+
+    claim_task = asyncio.create_task(claim_a())
+    await asyncio.sleep(0)  # Let the claim task start and wait on the build
+
+    # Claim with different settings, which cancels the build
+    result = await p.claim(fingerprint("b"))
+    assert result == (None, "settings_changed")
+
+    # The original claim task should get None without raising
+    result = await claim_task
+    assert result[0] is None
+    assert result[1] in ("none", "warming_failed")
+
+
+@pytest.mark.asyncio
+async def test_claim_waiting_task_cancelled():
+    """Cancelling a claim task while it waits on a build raises CancelledError."""
+    starter = SlowFakeStarter()
+    p = pool(starter)
+    p.remember(recipe("a"))
+    p.refill()
+
+    # Create a claim task that will wait for the build
+    async def claim_a():
+        return await p.claim(fingerprint("a"))
+
+    claim_task = asyncio.create_task(claim_a())
+    await asyncio.sleep(0)  # Let the claim task start and wait on the build
+
+    # Cancel the claim task
+    claim_task.cancel()
+
+    # It should raise CancelledError
+    with pytest.raises(asyncio.CancelledError):
+        await claim_task
 
 
 @pytest.mark.asyncio

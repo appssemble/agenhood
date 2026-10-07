@@ -79,7 +79,7 @@ class SparePool:
             if self._building_fingerprint != fp:
                 self._drop()
                 return None, "settings_changed"
-            await asyncio.shield(self._building)
+            await asyncio.gather(asyncio.shield(self._building), return_exceptions=True)
         spare = self._take()
         if spare is None:
             return None, "warming_failed" if self._failures else "none"
