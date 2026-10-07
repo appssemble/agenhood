@@ -53,10 +53,10 @@ function setup(over: Partial<any> = {}) {
   server.use(http.get("/v1/skills", () => HttpResponse.json({ skills: [] })));
   server.use(http.get("/v1/containers/con_1", () => HttpResponse.json({
     id: "con_1", name: "c", external_id: null, status: "running", image_variant: over.variant ?? "slim", image_tag: "v",
-    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false, progress_updates: over.progress_updates ?? false },
+    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false, progress_updates: over.progress_updates ?? false, hot_spare: over.hot_spare ?? true },
     metadata: {}, last_task_at: null, created_at: "t", error_message: null })));
   server.use(http.get("/v1/containers/con_1/config", () => HttpResponse.json({
-    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false, progress_updates: over.progress_updates ?? false },
+    config: { driver: over.driver ?? "vanilla", model: "claude-sonnet-4-6", system_prompt: "Be helpful.", system_prompt_mode: "augment", tools: over.tools ?? [], context: { variables: {}, text: null, files: [] }, effort: over.effort ?? null, reasoning_summary: over.reasoning_summary ?? false, progress_updates: over.progress_updates ?? false, hot_spare: over.hot_spare ?? true },
     assembled_prompt: "## SYSTEM\n..." })));
   server.use(http.get("/v1/containers/con_1/env", () => HttpResponse.json(over.envVars ?? [])));
 }
@@ -232,6 +232,24 @@ describe("Configuration editor (driver-aware)", () => {
     await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
     await waitFor(() => expect(patched).not.toBeNull());
     expect(patched.progress_updates).toBe(false);
+  });
+
+  it("turns the warm instance off for a codex container", async () => {
+    setup({ driver: "codex", tools: ["web_search"] });
+    let patched: any = null;
+    server.use(http.patch("/v1/containers/con_1/config", async ({ request }) => { patched = await request.json(); return HttpResponse.json({ config: patched, assembled_prompt: "x" }); }));
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+    await userEvent.click(await screen.findByRole("switch", { name: "Warm instance" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched.hot_spare).toBe(false);
+  });
+
+  it("shows the warm instance switch only for codex", async () => {
+    setup({ driver: "vanilla" });
+    renderWithProviders(<AuthProvider><Configuration /></AuthProvider>);
+    await screen.findByLabelText("read_file");
+    expect(screen.queryByRole("switch", { name: "Warm instance" })).not.toBeInTheDocument();
   });
 
   it("turns reasoning summaries off when switching to a driver that doesn't support them", async () => {

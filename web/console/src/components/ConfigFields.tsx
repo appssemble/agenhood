@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Field, Textarea, Checkbox, Tag, Note, SegControl } from "../ui";
+import { Field, Textarea, Checkbox, Tag, Note, SegControl, Switch } from "../ui";
 import { Icons } from "../ui/Icon";
 import { EffortField } from "./EffortField";
 import { DRIVER_FLAG_KEYS, DriverFlagSwitch, flagSupported } from "./DriverFlagField";
@@ -19,6 +19,7 @@ export interface ConfigFieldsValue {
   effort?: Effort | null;
   reasoning_summary?: boolean;
   progress_updates?: boolean;
+  hot_spare?: boolean;
 }
 
 // A bordered area with an icon + title header and a padded body. Used for every
@@ -108,6 +109,21 @@ export function ConfigFields({
             />
           </div>
         ))}
+        {showDriverFlags && value.driver === "codex" && (
+          <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
+            <Switch
+              on={value.hot_spare ?? true}
+              aria-label="Warm instance"
+              onClick={() => onPatch({ hot_spare: !(value.hot_spare ?? true) })}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Warm instance</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                Keep one codex instance ready so new tasks start about a second faster
+              </div>
+            </div>
+          </div>
+        )}
       </SectionCard>
 
       {/* System prompt — prompt-mode control lives in the header */}

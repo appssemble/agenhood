@@ -74,6 +74,7 @@ export default function Configuration() {
     if (orig.model !== draft.model) n++;
     if ((orig.effort ?? null) !== (draft.effort ?? null)) n++;
     for (const flag of DRIVER_FLAG_KEYS) if ((orig[flag] ?? false) !== (draft[flag] ?? false)) n++;
+    if ((orig.hot_spare ?? true) !== (draft.hot_spare ?? true)) n++;
     if (orig.system_prompt !== draft.system_prompt) n++;
     if (orig.system_prompt_mode !== draft.system_prompt_mode) n++;
     if (JSON.stringify(orig.tools) !== JSON.stringify(draft.tools)) n++;

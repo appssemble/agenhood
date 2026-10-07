@@ -27,6 +27,8 @@ export interface AgentConfig {
   reasoning_summary?: boolean;
   // Narrate each step in the user's language as `progress` events, for drivers in PROGRESS_UPDATES_DRIVERS.
   progress_updates?: boolean;
+  // Keep one codex instance warm for the next task (codex only). undefined ⇒ on.
+  hot_spare?: boolean;
   // Per-container task-limit overrides (null/undefined ⇒ use the tenant default).
   max_iterations?: number | null;
   max_tokens?: number | null;

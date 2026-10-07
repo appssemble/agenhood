@@ -199,6 +199,13 @@ class ConfigPatch(BaseModel):
             "as `progress` events. Only valid for codex."
         ),
     )
+    hot_spare: bool = Field(
+        True,
+        description=(
+            "Keep one codex instance warm and ready for the next task while the "
+            "container has a free task slot. Only used by codex."
+        ),
+    )
     # Per-container task-limit overrides (None ⇒ use the tenant default).
     max_iterations: int | None = Field(
         None,
@@ -225,6 +232,7 @@ class ConfigPatch(BaseModel):
             effort=self.effort,
             reasoning_summary=self.reasoning_summary,
             progress_updates=self.progress_updates,
+            hot_spare=self.hot_spare,
             max_iterations=self.max_iterations,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,
