@@ -141,3 +141,16 @@ async def test_request_after_exit_raises(tmp_path):
     with pytest.raises(AppServerError, match="exited 3"):
         await client.request("test/emit", {"messages": []})
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_error_reply_is_told_apart_from_an_exit(tmp_path):
+    from agentcore.drivers.codex_appserver import AppServerReplyError
+
+    client = await start(tmp_path)
+    with pytest.raises(AppServerReplyError, match="test/fail: nope"):
+        await client.request("test/fail", {"message": "nope"})
+    with pytest.raises(AppServerError, match="test/exit: codex app-server exited 3") as exc:
+        await client.request("test/exit", {"code": 3})
+    assert not isinstance(exc.value, AppServerReplyError)
+    await client.close()

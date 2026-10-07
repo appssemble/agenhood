@@ -53,7 +53,7 @@ import asyncio
 import json
 import os
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Coroutine, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,7 +68,11 @@ from agentcore.drivers.base import (
     register,
 )
 from agentcore.drivers.cli_stream import classify_json_line, log_payload
-from agentcore.drivers.codex_appserver import AppServerError, start_app_server
+from agentcore.drivers.codex_appserver import (
+    AppServerError,
+    AppServerReplyError,
+    start_app_server,
+)
 from agentcore.drivers.codex_events import ExecEventTranslator
 from agentcore.drivers.codex_spare import SparePool, SpareRecipe, fingerprint
 from agentcore.drivers.mcp_config import (
@@ -116,10 +120,10 @@ def codex_config_path(workspace: str) -> str:
 def write_codex_config(workspace: str, servers: list[ShimMcpServer]) -> str | None:
     """Write $CODEX_HOME/config.toml with the resolved MCP server blocks.
 
-    Written to a temp file and renamed into place, so a codex process starting
-    at the same moment never sees a half-written or missing file. Removed when
-    there are no servers, so a previous task's servers never linger. Returns
-    None when nothing was written.
+    Written to a temp file, handed to the agent and renamed into place, so a
+    codex process starting at the same moment never sees a half-written,
+    missing or root-owned file. Removed when there are no servers, so a
+    previous task's servers never linger. Returns None when nothing was written.
     """
     path = Path(codex_config_path(workspace))
     if not servers:
@@ -130,6 +134,7 @@ def write_codex_config(workspace: str, servers: list[ShimMcpServer]) -> str | No
     tmp.unlink(missing_ok=True)
     tmp.write_text(render_codex_mcp_toml(servers))
     os.chmod(tmp, 0o600)
+    sandbox.chown_to_agent(str(tmp))
     os.replace(tmp, path)
     return str(path)
 
@@ -485,6 +490,56 @@ async def _start_app_server(cmd: list[str], *, cwd: str, env: dict[str, str]) ->
     return await start_app_server(cmd, cwd=cwd, env=env)
 
 
+class _SetupStopped(Exception):
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def _within_budget[T](
+    step: Coroutine[Any, Any, T], *, cancel: asyncio.Event, deadline: float
+) -> T:
+    """Await one setup step, raising _SetupStopped if cancel or the deadline comes first.
+
+    A stopped step is cancelled, so the step itself cleans up what it started.
+    It starts eagerly so it runs before anything this task scheduled earlier."""
+    if cancel.is_set() or time.monotonic() >= deadline:
+        step.close()
+        raise _SetupStopped("cancelled" if cancel.is_set() else "timeout")
+    task = asyncio.Task(step, loop=asyncio.get_running_loop(), eager_start=True)
+    if task.done():
+        return task.result()
+    cancelled = asyncio.ensure_future(cancel.wait())
+    try:
+        await asyncio.wait({task, cancelled}, timeout=deadline - time.monotonic(),
+                           return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        cancelled.cancel()
+        if not task.done():
+            task.cancel()
+    if not task.done():
+        await asyncio.gather(task, return_exceptions=True)
+        raise _SetupStopped("cancelled" if cancel.is_set() else "timeout")
+    return task.result()
+
+
+async def _end_early(emit: EmitFn, reason: str) -> TaskResult:
+    """Terminal events for a task stopped by cancel (``cancelled``) or its time budget."""
+    if reason == "cancelled":
+        await emit(
+            "status_change",
+            {"from": "running", "to": "cancelled", "result": None, "error": None},
+        )
+        return TaskResult(success=False, reason="cancelled")
+    await emit("log", {"level": "warn", "message": "wall-clock timeout", "data": {}})
+    await emit(
+        "status_change",
+        {"from": "running", "to": "timed_out", "result": None,
+         "error": {"code": "timeout", "message": "wall-clock timeout"}},
+    )
+    return TaskResult(success=False, reason="timeout")
+
+
 class CodexDriver:
     """Driver that shells out to the ``codex`` binary (spec §3.5.3)."""
 
@@ -636,6 +691,7 @@ class CodexDriver:
         emit_running: bool = True,
         delete_thread: bool = False,
     ) -> TaskResult:
+        start = time.monotonic()
         Path(workspace).mkdir(parents=True, exist_ok=True)
 
         if emit_running:
@@ -709,9 +765,7 @@ class CodexDriver:
         # config.toml: MCP servers (best-effort, surfaced as a warn). MCP secrets
         # ride env vars codex reads at startup.
         try:
-            cfg_path = write_codex_config(workspace, mcp_servers or [])
-            if cfg_path:
-                sandbox.chown_to_agent(cfg_path)
+            write_codex_config(workspace, mcp_servers or [])
             if mcp_servers:
                 child_env.update(codex_mcp_env(mcp_servers))
                 await emit(
@@ -751,6 +805,10 @@ class CodexDriver:
                                                                 "reason": reason}
             await emit("log", log_payload("codex_spare", data=data))
 
+        def bounded[T](step: Coroutine[Any, Any, T]) -> Coroutine[Any, Any, T]:
+            return _within_budget(step, cancel=cancel,
+                                  deadline=start + limits.timeout_seconds)
+
         async def thread_started(tid: str) -> None:
             await _handle_exec_event(
                 translator.thread_started(tid), state=state, emit=emit,
@@ -759,24 +817,24 @@ class CodexDriver:
 
         translator = ExecEventTranslator()
         state = _TurnState()
-        client = None
+        client: Any = None
         try:
             if resume_thread_id:
                 await note_spare("miss", "resume")
-                client = await start_app_server(cmd, cwd=workspace, env=child_env)
-                await client.request(
+                client = await bounded(start_app_server(cmd, cwd=workspace, env=child_env))
+                await bounded(client.request(
                     "thread/resume",
                     thread_resume_params(thread_id=resume_thread_id, workspace=workspace,
                                          model=model, instructions=instructions),
                     timeout=THREAD_REQUEST_TIMEOUT_SECONDS,
-                )
+                ))
                 thread_id = resume_thread_id
                 await thread_started(thread_id)
-                await client.request("turn/start", turn_params(thread_id),
-                                     timeout=THREAD_REQUEST_TIMEOUT_SECONDS)
+                await bounded(client.request("turn/start", turn_params(thread_id),
+                                             timeout=THREAD_REQUEST_TIMEOUT_SECONDS))
             else:
                 if config.hot_spare:
-                    spare, reason = await self._spares.claim(recipe.fingerprint)
+                    spare, reason = await bounded(self._spares.claim(recipe.fingerprint))
                     self._spares.refill()
                 else:
                     spare, reason = None, "disabled"
@@ -785,22 +843,26 @@ class CodexDriver:
                     client, thread_id = spare.client, spare.thread_id
                 else:
                     await note_spare("miss", reason)
-                    client, thread_id = await self._start_thread(recipe)
+                    client, thread_id = await bounded(self._start_thread(recipe))
                 await thread_started(thread_id)
                 try:
-                    await client.request("turn/start", turn_params(thread_id),
-                                         timeout=THREAD_REQUEST_TIMEOUT_SECONDS)
-                except AppServerError:
-                    if spare is None:
+                    await bounded(client.request("turn/start", turn_params(thread_id),
+                                                 timeout=THREAD_REQUEST_TIMEOUT_SECONDS))
+                except AppServerError as exc:
+                    if spare is None or isinstance(exc, AppServerReplyError):
                         raise
                     # The spare died after warming: start this attempt cold, once.
                     client.abort()
                     client = None
                     await note_spare("miss", "dead")
-                    client, thread_id = await self._start_thread(recipe)
+                    client, thread_id = await bounded(self._start_thread(recipe))
                     await thread_started(thread_id)
-                    await client.request("turn/start", turn_params(thread_id),
-                                         timeout=THREAD_REQUEST_TIMEOUT_SECONDS)
+                    await bounded(client.request("turn/start", turn_params(thread_id),
+                                                 timeout=THREAD_REQUEST_TIMEOUT_SECONDS))
+        except _SetupStopped as stopped:
+            if client is not None:
+                client.abort()
+            return await _end_early(emit, stopped.reason)
         except FileNotFoundError:
             await emit(
                 "status_change",
@@ -817,10 +879,14 @@ class CodexDriver:
                  "error": {"code": "codex_error", "message": str(exc)}},
             )
             return TaskResult(success=False, reason="codex_error")
+        except BaseException:
+            if client is not None:
+                client.abort()
+            raise
 
         return await self._drive_turn(
             client, thread_id=thread_id, translator=translator, state=state, emit=emit,
-            cancel=cancel, limits=limits, progress_updates=config.progress_updates,
+            cancel=cancel, start=start, limits=limits, progress_updates=config.progress_updates,
             latest_thread_id=latest_thread_id, structured=structured,
             delete_thread=delete_thread,
         )
@@ -834,36 +900,26 @@ class CodexDriver:
         state: _TurnState,
         emit: EmitFn,
         cancel: asyncio.Event,
+        start: float,
         limits: ResolvedLimits,
         progress_updates: bool,
         latest_thread_id: dict[str, str | None],
         structured: bool,
         delete_thread: bool,
     ) -> TaskResult:
-        """Stream one started turn to its end and map the outcome to a TaskResult."""
-        start = time.monotonic()
+        """Stream one started turn to its end and map the outcome to a TaskResult.
+
+        ``start`` is when the attempt began; its time budget counts from there."""
         status: str | None = None
         returncode: int | None = None
         try:
             while True:
                 if cancel.is_set():
                     client.terminate()
-                    await emit(
-                        "status_change",
-                        {"from": "running", "to": "cancelled", "result": None, "error": None},
-                    )
-                    return TaskResult(success=False, reason="cancelled")
+                    return await _end_early(emit, "cancelled")
                 if time.monotonic() - start >= limits.timeout_seconds:
                     client.terminate()
-                    await emit(
-                        "log", {"level": "warn", "message": "wall-clock timeout", "data": {}}
-                    )
-                    await emit(
-                        "status_change",
-                        {"from": "running", "to": "timed_out", "result": None,
-                         "error": {"code": "timeout", "message": "wall-clock timeout"}},
-                    )
-                    return TaskResult(success=False, reason="timeout")
+                    return await _end_early(emit, "timeout")
 
                 message = await client.next_message(timeout=1.0)
                 if message is None:

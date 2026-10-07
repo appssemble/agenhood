@@ -21,10 +21,15 @@ from agentcore import sandbox
 
 CLIENT_INFO = {"name": "agenhood", "version": "1"}
 _DECLINE = {"code": -32601, "message": "client requests are not supported"}
+_EXITED: dict[str, Any] = {}
 
 
 class AppServerError(Exception):
     """An error reply, a missing reply, or the process ending first."""
+
+
+class AppServerReplyError(AppServerError):
+    """codex answered the request with a JSON-RPC error."""
 
 
 class AppServerClient:
@@ -60,10 +65,12 @@ class AppServerClient:
         except TimeoutError:
             self._pending.pop(request_id, None)
             raise AppServerError(f"{method}: no reply in {timeout} s") from None
+        if reply is _EXITED:
+            raise AppServerError(f"{method}: codex app-server exited {self._exit_code}")
         if "error" in reply:
             error = reply["error"]
             message = error.get("message") if isinstance(error, dict) else str(error)
-            raise AppServerError(f"{method}: {message}")
+            raise AppServerReplyError(f"{method}: {message}")
         return reply.get("result") or {}
 
     def notify(self, method: str) -> None:
@@ -151,7 +158,7 @@ class AppServerClient:
         self._exit_code = returncode
         for future in self._pending.values():
             if not future.done():
-                future.set_result({"error": {"message": f"codex app-server exited {returncode}"}})
+                future.set_result(_EXITED)
         self._pending.clear()
         self._messages.put_nowait({"method": "_exit", "params": {"returncode": returncode}})
 

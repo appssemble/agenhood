@@ -27,19 +27,25 @@ def collector():
 class FakeAppServer:
     """Stands in for AppServerClient: records requests, replays scripted messages."""
 
-    def __init__(self, messages=(), *, thread_id="thr_1", fail=None):
+    def __init__(self, messages=(), *, thread_id="thr_1", fail=None, hang=None):
         self.requests = []
         self.messages = list(messages)
         self.thread_id = thread_id
         self.fail = dict(fail or {})
+        self.hang = dict(hang or {})
+        self._seen = {}
         self.alive = True
         self.terminated = False
         self.closed = False
 
     async def request(self, method, params, timeout=None):  # noqa: ASYNC109
         self.requests.append((method, params))
+        self._seen.setdefault(method, asyncio.Event()).set()
+        if method in self.hang:
+            await self.hang[method].wait()
         if method in self.fail:
-            raise AppServerError(f"{method}: {self.fail[method]}")
+            error = self.fail[method]
+            raise error if isinstance(error, Exception) else AppServerError(f"{method}: {error}")
         if method == "thread/start":
             return {"thread": {"id": self.thread_id}}
         return {}
@@ -63,6 +69,9 @@ class FakeAppServer:
 
     def params(self, method):
         return [p for m, p in self.requests if m == method]
+
+    async def requested(self, method):
+        await self._seen.setdefault(method, asyncio.Event()).wait()
 
     def methods(self):
         return [m for m, _ in self.requests]
@@ -169,9 +178,14 @@ async def test_cancellation_returns_cancelled(monkeypatch, tmp_path):
     server = FakeAppServer([])
     patch_servers(monkeypatch, [server])
     cancel = asyncio.Event()
-    cancel.set()
 
+    async def cancel_once_turn_runs():
+        await server.requested("turn/start")
+        cancel.set()
+
+    canceller = asyncio.create_task(cancel_once_turn_runs())
     result, events = await run(tmp_path=tmp_path, cancel=cancel)
+    await canceller
 
     assert result.reason == "cancelled"
     assert events[-1][1]["to"] == "cancelled"
@@ -182,13 +196,146 @@ async def test_cancellation_returns_cancelled(monkeypatch, tmp_path):
 async def test_timeout_returns_timeout(monkeypatch, tmp_path):
     server = FakeAppServer([])
     patch_servers(monkeypatch, [server])
-    limits = ResolvedLimits(max_iterations=10, max_tokens=10**9, timeout_seconds=0)
+    limits = ResolvedLimits(max_iterations=10, max_tokens=10**9, timeout_seconds=1)
 
     result, events = await run(tmp_path=tmp_path, limits=limits)
 
     assert result.reason == "timeout"
     assert events[-1][1]["to"] == "timed_out"
     assert server.terminated
+    assert "turn/start" in server.methods()
+
+
+# Cancel and timeout while the thread is being set up
+
+
+def hanging(method, **kwargs):
+    return FakeAppServer([], hang={method: asyncio.Event()}, **kwargs)
+
+
+def cancel_soon(delay=0.05):
+    cancel = asyncio.Event()
+    asyncio.get_running_loop().call_later(delay, cancel.set)
+    return cancel
+
+
+@pytest.mark.asyncio
+async def test_cancel_while_thread_start_hangs(monkeypatch, tmp_path):
+    server = hanging("thread/start")
+    patch_servers(monkeypatch, [server])
+
+    result, events = await run(tmp_path=tmp_path, cancel=cancel_soon())
+
+    assert result.reason == "cancelled"
+    assert events[-1] == ("status_change", {"from": "running", "to": "cancelled",
+                                            "result": None, "error": None})
+    assert server.terminated
+    assert "turn/start" not in server.methods()
+
+
+@pytest.mark.asyncio
+async def test_timeout_while_thread_start_hangs(monkeypatch, tmp_path):
+    server = hanging("thread/start")
+    patch_servers(monkeypatch, [server])
+    limits = ResolvedLimits(max_iterations=10, max_tokens=10**9, timeout_seconds=1)
+
+    result, events = await run(tmp_path=tmp_path, limits=limits)
+
+    assert result.reason == "timeout"
+    assert ("log", {"level": "warn", "message": "wall-clock timeout", "data": {}}) in events
+    assert events[-1][1]["to"] == "timed_out"
+    assert events[-1][1]["error"] == {"code": "timeout", "message": "wall-clock timeout"}
+    assert server.terminated
+    assert "turn/start" not in server.methods()
+
+
+@pytest.mark.asyncio
+async def test_cancel_while_resume_hangs(monkeypatch, tmp_path):
+    from agentcore.drivers.session_state import write_session_state
+
+    write_session_state(str(tmp_path), "codex", "s-hang", {"thread_id": "thr_old"})
+    server = hanging("thread/resume")
+    patch_servers(monkeypatch, [server])
+
+    result, _ = await run(tmp_path=tmp_path, cancel=cancel_soon(), session_id="s-hang",
+                          session_is_continuation=True)
+
+    assert result.reason == "cancelled"
+    assert server.terminated
+    assert "turn/start" not in server.methods()
+
+
+@pytest.mark.asyncio
+async def test_cancel_while_turn_start_hangs(monkeypatch, tmp_path):
+    server = hanging("turn/start")
+    patch_servers(monkeypatch, [server])
+
+    result, _ = await run(tmp_path=tmp_path, cancel=cancel_soon())
+
+    assert result.reason == "cancelled"
+    assert server.terminated
+
+
+@pytest.mark.asyncio
+async def test_cancel_set_before_run_starts_nothing(monkeypatch, tmp_path):
+    servers = [FakeAppServer(answer("hi"))]
+    starts = patch_servers(monkeypatch, servers)
+    cancel = asyncio.Event()
+    cancel.set()
+
+    result, events = await run(tmp_path=tmp_path, cancel=cancel)
+
+    assert result.reason == "cancelled"
+    assert events[-1][1]["to"] == "cancelled"
+    assert starts == []
+    assert len(servers) == 1
+
+
+@pytest.mark.asyncio
+async def test_spent_budget_starts_nothing(monkeypatch, tmp_path):
+    starts = patch_servers(monkeypatch, [FakeAppServer(answer("hi"))])
+    limits = ResolvedLimits(max_iterations=10, max_tokens=10**9, timeout_seconds=0)
+
+    result, events = await run(tmp_path=tmp_path, limits=limits)
+
+    assert result.reason == "timeout"
+    assert events[-1][1]["to"] == "timed_out"
+    assert starts == []
+
+
+@pytest.mark.asyncio
+async def test_driver_task_cancelled_during_setup_aborts_the_client(monkeypatch, tmp_path):
+    server = hanging("thread/start")
+    patch_servers(monkeypatch, [server])
+
+    task = asyncio.create_task(run(tmp_path=tmp_path))
+    await server.requested("thread/start")
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.sleep(0)
+
+    assert server.terminated
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_during_setup_aborts_the_client(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    server = FakeAppServer(answer("hi"))
+    patch_servers(monkeypatch, [server])
+
+    async def emit(event_type, payload):
+        if event_type == "codex_event" and payload["raw"]["type"] == "thread.started":
+            raise RuntimeError("emit broke")
+
+    with pytest.raises(RuntimeError, match="emit broke"):
+        await CodexDriver().run(task=TaskBody(prompt="do it"), config=cfg(), limits=LIMITS,
+                                credential="sk", emit=emit, cancel=asyncio.Event(),
+                                workspace=str(tmp_path))
+
+    assert server.terminated
+    assert "turn/start" not in server.methods()
 
 
 @pytest.mark.asyncio
@@ -751,3 +898,67 @@ async def test_close_spare_stops_it(monkeypatch, tmp_path):
     await driver.close_spare()
 
     assert spare.terminated
+
+
+@pytest.mark.asyncio
+async def test_live_spare_error_reply_fails_without_a_cold_start(monkeypatch, tmp_path):
+    from agentcore.drivers.codex_appserver import AppServerReplyError
+
+    spare = FakeAppServer([], thread_id="thr_spare",
+                          fail={"turn/start": AppServerReplyError("turn/start: bad params")})
+    next_spare = FakeAppServer([], thread_id="thr_next")
+    starts = patch_servers(monkeypatch, [FakeAppServer(answer("one")), spare, next_spare])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    result, events = await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+
+    assert result.reason == "codex_error"
+    assert events[-1][1]["error"] == {"code": "codex_error", "message": "turn/start: bad params"}
+    assert [log["outcome"] for log in spare_logs(events)] == ["hit"]
+    assert len(starts) == 3
+    assert next_spare.methods() == ["thread/start"]
+    assert not spare.alive
+
+
+@pytest.mark.asyncio
+async def test_cancel_while_waiting_on_a_spare_build_keeps_the_build(monkeypatch, tmp_path):
+    building = hanging("thread/start", thread_id="thr_spare")
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")), building])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await building.requested("thread/start")
+    events, emit = collector()
+    result = await driver.run(task=TaskBody(prompt="do it"), config=cfg(), limits=LIMITS,
+                              credential="sk", emit=emit, cancel=cancel_soon(),
+                              workspace=str(tmp_path))
+
+    assert result.reason == "cancelled"
+    assert not building.terminated
+    building.hang["thread/start"].set()
+    await driver._spares.ready()
+    spare, reason = await driver._spares.claim(driver._spares._recipe.fingerprint)
+    assert reason == "hit" and spare.client is building
+
+
+def test_codex_config_is_chowned_before_it_appears(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from agentcore.drivers.codex import codex_config_path, write_codex_config
+    from agentcore.models import ShimMcpServer
+
+    final = Path(codex_config_path(str(tmp_path)))
+    chowned = []
+
+    def chown(path):
+        chowned.append((path, final.exists()))
+
+    monkeypatch.setattr("agentcore.sandbox.chown_to_agent", chown)
+
+    write_codex_config(str(tmp_path), [ShimMcpServer(name="lin", url="https://m")])
+
+    assert chowned == [(str(final.with_suffix(".toml.tmp")), False)]
+    assert final.exists()
