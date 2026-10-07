@@ -509,14 +509,11 @@ async def _within_budget[T](
 ) -> T:
     """Await one setup step, raising _SetupStopped if cancel or the deadline comes first.
 
-    A stopped step is cancelled, so the step itself cleans up what it started.
-    It starts eagerly so it runs before anything this task scheduled earlier."""
+    A stopped step is cancelled, so the step itself cleans up what it started."""
     if cancel.is_set() or time.monotonic() >= deadline:
         step.close()
         raise _SetupStopped("cancelled" if cancel.is_set() else "timeout")
-    task = asyncio.Task(step, loop=asyncio.get_running_loop(), eager_start=True)
-    if task.done():
-        return task.result()
+    task = asyncio.ensure_future(step)
     cancelled = asyncio.ensure_future(cancel.wait())
     try:
         await asyncio.wait({task, cancelled}, timeout=deadline - time.monotonic(),
@@ -844,7 +841,6 @@ class CodexDriver:
             else:
                 if config.hot_spare:
                     spare, reason = await bounded(self._spares.claim(recipe.fingerprint))
-                    self._spares.refill()
                 else:
                     spare, reason = None, "disabled"
                 if spare is not None:
@@ -868,6 +864,7 @@ class CodexDriver:
                     await thread_started(thread_id)
                     await bounded(client.request("turn/start", turn_params(thread_id),
                                                  timeout=THREAD_REQUEST_TIMEOUT_SECONDS))
+                self._spares.refill()
         except _SetupStopped as stopped:
             if client is not None:
                 client.abort()

@@ -857,6 +857,42 @@ async def test_unchanged_agents_md_keeps_the_spare(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_spare_is_built_only_after_the_task_turn_started(monkeypatch, tmp_path):
+    turn_start_reply = asyncio.Event()
+    cold = FakeAppServer(answer("one"), hang={"turn/start": turn_start_reply})
+    servers = [cold, FakeAppServer([], thread_id="thr_spare")]
+    turn_started_before_spare = []
+
+    async def fake_start(cmd, *, cwd, env):
+        if len(servers) == 1:
+            turn_started_before_spare.append(turn_start_reply.is_set())
+        return servers.pop(0)
+
+    asyncio.get_running_loop().call_later(0.05, turn_start_reply.set)
+
+    monkeypatch.setattr("agentcore.drivers.codex.start_app_server", fake_start)
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+
+    assert turn_started_before_spare == [True]
+
+
+@pytest.mark.asyncio
+async def test_failed_turn_start_builds_no_spare(monkeypatch, tmp_path):
+    starts = patch_servers(monkeypatch, [FakeAppServer(fail={"turn/start": "no"}),
+                                         FakeAppServer([], thread_id="thr_spare")])
+    driver = spare_driver()
+
+    result, _ = await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+
+    assert result.reason == "codex_error"
+    assert len(starts) == 1
+
+
+@pytest.mark.asyncio
 async def test_hot_spare_off_builds_nothing(monkeypatch, tmp_path):
     starts = patch_servers(monkeypatch, [FakeAppServer(answer("one"))])
     driver = spare_driver()
@@ -951,8 +987,8 @@ async def test_live_spare_error_reply_fails_without_a_cold_start(monkeypatch, tm
     assert result.reason == "codex_error"
     assert events[-1][1]["error"] == {"code": "codex_error", "message": "turn/start: bad params"}
     assert [log["outcome"] for log in spare_logs(events)] == ["hit"]
-    assert len(starts) == 3
-    assert next_spare.methods() == ["thread/start"]
+    assert len(starts) == 2
+    assert next_spare.methods() == []
     assert not spare.alive
 
 
