@@ -83,6 +83,9 @@ class AgentConfig(BaseModel):
     # Ask the agent to narrate each step in the user's language; each update
     # is emitted as a `progress` event (codex only).
     progress_updates: bool = False
+    # Keep one warm codex instance ready for the next task while the container
+    # has a free task slot (codex only; other drivers ignore it).
+    hot_spare: bool = True
     # Per-container task-limit overrides. None ⇒ fall back to the tenant default;
     # when set they become this container's default (still capped at the tenant
     # ceiling) for tasks that don't request their own bound. See limits.resolve_limits.

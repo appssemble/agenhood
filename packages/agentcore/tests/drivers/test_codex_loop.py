@@ -593,3 +593,161 @@ async def test_envelope_text_is_left_alone_when_progress_updates_are_off(monkeyp
     assert not [p for t, p in events if t == "progress"]
     assert result.output == text
     assert "outputSchema" not in server.params("turn/start")[0]
+
+
+# Hot spare
+
+
+def spare_logs(events):
+    return [p for t, p in events if t == "log" and p.get("op") == "codex_spare"]
+
+
+async def run_on(driver, task=None, config=None, *, tmp_path, **kwargs):
+    events, emit = collector()
+    result = await driver.run(
+        task=task or TaskBody(prompt="do it"), config=config or cfg(), limits=LIMITS,
+        credential="sk", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path), **kwargs,
+    )
+    return result, events
+
+
+def spare_driver():
+    from agentcore.drivers.codex import CodexDriver
+
+    driver = CodexDriver()
+    driver.set_capacity_check(lambda: True)
+    return driver
+
+
+@pytest.mark.asyncio
+async def test_second_task_runs_on_the_spare(monkeypatch, tmp_path):
+    first = FakeAppServer(answer("one"), thread_id="thr_a")
+    spare = FakeAppServer(answer("two"), thread_id="thr_spare")
+    starts = patch_servers(monkeypatch, [first, spare])
+    driver = spare_driver()
+
+    _, events1 = await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    result, events2 = await run_on(driver, tmp_path=tmp_path)
+
+    assert spare_logs(events1)[0]["outcome"] == "miss"
+    assert spare_logs(events1)[0]["reason"] == "none"
+    assert spare_logs(events2)[0]["outcome"] == "hit"
+    assert result.output == "two"
+    assert len(starts) == 2
+    assert spare.methods()[:2] == ["thread/start", "turn/start"]
+    assert spare.params("turn/start")[0]["threadId"] == "thr_spare"
+    assert spare.params("thread/delete") == [{"threadId": "thr_spare"}]
+
+
+@pytest.mark.asyncio
+async def test_spare_is_used_for_a_session_first_turn(monkeypatch, tmp_path):
+    from agentcore.drivers.session_state import read_session_state
+
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")),
+                                FakeAppServer(answer("two"), thread_id="thr_spare")])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    _, events = await run_on(driver, tmp_path=tmp_path, session_id="s1",
+                             session_is_continuation=False)
+
+    assert spare_logs(events)[0]["outcome"] == "hit"
+    assert read_session_state(str(tmp_path), "codex", "s1") == {"thread_id": "thr_spare"}
+
+
+@pytest.mark.asyncio
+async def test_changed_settings_skip_the_spare(monkeypatch, tmp_path):
+    spare = FakeAppServer([], thread_id="thr_spare")
+    cold = FakeAppServer(answer("two"))
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")), spare, cold,
+                                FakeAppServer([], thread_id="thr_next")])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    other = AgentConfig(driver="codex", model="gpt-5-codex", system_prompt="Other.", tools=[])
+    result, events = await run_on(driver, config=other, tmp_path=tmp_path)
+
+    assert spare_logs(events)[0]["outcome"] == "miss"
+    assert spare_logs(events)[0]["reason"] == "settings_changed"
+    assert spare.terminated
+    assert result.output == "two"
+
+
+@pytest.mark.asyncio
+async def test_hot_spare_off_builds_nothing(monkeypatch, tmp_path):
+    starts = patch_servers(monkeypatch, [FakeAppServer(answer("one"))])
+    driver = spare_driver()
+    config = cfg().model_copy(update={"hot_spare": False})
+
+    _, events = await run_on(driver, config=config, tmp_path=tmp_path)
+    driver.refill_spare()
+    await driver._spares.ready()
+
+    assert spare_logs(events)[0]["reason"] == "disabled"
+    assert len(starts) == 1
+
+
+@pytest.mark.asyncio
+async def test_dead_spare_falls_back_to_a_cold_start(monkeypatch, tmp_path):
+    dead = FakeAppServer([], thread_id="thr_dead", fail={"turn/start": "gone"})
+    cold = FakeAppServer(answer("two"), thread_id="thr_cold")
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")), dead, cold,
+                                FakeAppServer([], thread_id="thr_next")])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    result, events = await run_on(driver, tmp_path=tmp_path)
+
+    logs = spare_logs(events)
+    assert [log["outcome"] for log in logs] == ["hit", "miss"]
+    assert logs[1]["reason"] == "dead"
+    assert result.success and result.output == "two"
+    assert cold.params("turn/start")[0]["threadId"] == "thr_cold"
+
+
+@pytest.mark.asyncio
+async def test_continuation_does_not_use_the_spare(monkeypatch, tmp_path):
+    from agentcore.drivers.session_state import write_session_state
+
+    write_session_state(str(tmp_path), "codex", "s2", {"thread_id": "thr_old"})
+    resumed = FakeAppServer(answer("ok"))
+    patch_servers(monkeypatch, [resumed])
+    driver = spare_driver()
+
+    _, events = await run_on(driver, tmp_path=tmp_path, session_id="s2",
+                             session_is_continuation=True)
+
+    assert spare_logs(events)[0]["reason"] == "resume"
+    assert resumed.methods()[0] == "thread/resume"
+
+
+@pytest.mark.asyncio
+async def test_no_spare_without_capacity(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    starts = patch_servers(monkeypatch, [FakeAppServer(answer("one"))])
+    driver = CodexDriver()
+    driver.set_capacity_check(lambda: False)
+
+    await run_on(driver, tmp_path=tmp_path)
+    driver.refill_spare()
+    await driver._spares.ready()
+
+    assert len(starts) == 1
+
+
+@pytest.mark.asyncio
+async def test_close_spare_stops_it(monkeypatch, tmp_path):
+    spare = FakeAppServer([], thread_id="thr_spare")
+    patch_servers(monkeypatch, [FakeAppServer(answer("one")), spare])
+    driver = spare_driver()
+
+    await run_on(driver, tmp_path=tmp_path)
+    await driver._spares.ready()
+    await driver.close_spare()
+
+    assert spare.terminated

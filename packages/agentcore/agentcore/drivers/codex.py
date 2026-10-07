@@ -40,6 +40,11 @@ Auth: ``CODEX_API_KEY`` for the api-key path; for ``oauth_subscription`` the
 driver writes ``$CODEX_HOME/auth.json`` instead. CODEX_HOME is redirected under
 the writable workspace (the container $HOME is not writable by the running
 process, the same constraint opencode solves with XDG).
+
+Hot spare (``codex_spare``): while the container has a free task slot the
+driver keeps one more app-server with a thread already started, built from the
+last task's settings. A new-thread task with the same settings claims it and
+only sends its turn. Each attempt logs ``codex_spare`` with the outcome.
 """
 
 from __future__ import annotations
@@ -48,7 +53,7 @@ import asyncio
 import json
 import os
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -65,6 +70,7 @@ from agentcore.drivers.base import (
 from agentcore.drivers.cli_stream import classify_json_line, log_payload
 from agentcore.drivers.codex_appserver import AppServerError, start_app_server
 from agentcore.drivers.codex_events import ExecEventTranslator
+from agentcore.drivers.codex_spare import SparePool, SpareRecipe, fingerprint
 from agentcore.drivers.mcp_config import (
     codex_mcp_env,
     render_codex_mcp_toml,
@@ -475,6 +481,10 @@ _CODEX_PROMPT = (
 )
 
 
+async def _start_app_server(cmd: list[str], *, cwd: str, env: dict[str, str]) -> Any:
+    return await start_app_server(cmd, cwd=cwd, env=env)
+
+
 class CodexDriver:
     """Driver that shells out to the ``codex`` binary (spec §3.5.3)."""
 
@@ -499,6 +509,30 @@ class CodexDriver:
             for t in CODEX_TOOLS
         ],
     )
+
+    def __init__(self) -> None:
+        self._spares = SparePool(_start_app_server)
+
+    def set_capacity_check(self, check: Callable[[], bool]) -> None:
+        """The shim's "is there a free task slot" check; spares are only built when it says yes."""
+        self._spares.set_capacity_check(check)
+
+    def refill_spare(self) -> None:
+        self._spares.refill()
+
+    async def close_spare(self) -> None:
+        await self._spares.close()
+
+    async def _start_thread(self, recipe: SpareRecipe) -> tuple[Any, str]:
+        client = await start_app_server(recipe.cmd, cwd=recipe.cwd, env=recipe.env)
+        try:
+            started = await client.request(
+                "thread/start", recipe.thread_params, timeout=THREAD_REQUEST_TIMEOUT_SECONDS
+            )
+            return client, started["thread"]["id"]
+        except BaseException:
+            client.abort()
+            raise
 
     async def run(
         self,
@@ -695,12 +729,41 @@ class CodexDriver:
             config.system_prompt or "", progress_updates=config.progress_updates
         )
         cmd = build_app_server_command(tools=config.tools)
+        start_params = thread_start_params(workspace=workspace, model=model,
+                                           instructions=instructions)
+        recipe = SpareRecipe(
+            cmd=cmd, cwd=workspace, env=child_env, thread_params=start_params,
+            fingerprint=fingerprint(
+                cmd, workspace, child_env, start_params, credential_kind, credential,
+                credential_meta or {}, [s.model_dump() for s in skills or []],
+                [m.model_dump() for m in mcp_servers or []],
+            ),
+        )
+        self._spares.remember(recipe if config.hot_spare else None)
+
+        def turn_params(tid: str) -> dict[str, Any]:
+            return turn_start_params(thread_id=tid, prompt=prompt, effort=config.effort,
+                                     reasoning_summary=config.reasoning_summary,
+                                     output_schema=output_schema)
+
+        async def note_spare(outcome: str, reason: str | None = None) -> None:
+            data = {"outcome": outcome} if reason is None else {"outcome": outcome,
+                                                                "reason": reason}
+            await emit("log", log_payload("codex_spare", data=data))
+
+        async def thread_started(tid: str) -> None:
+            await _handle_exec_event(
+                translator.thread_started(tid), state=state, emit=emit,
+                progress_updates=config.progress_updates, latest_thread_id=latest_thread_id,
+            )
+
         translator = ExecEventTranslator()
         state = _TurnState()
         client = None
         try:
-            client = await start_app_server(cmd, cwd=workspace, env=child_env)
             if resume_thread_id:
+                await note_spare("miss", "resume")
+                client = await start_app_server(cmd, cwd=workspace, env=child_env)
                 await client.request(
                     "thread/resume",
                     thread_resume_params(thread_id=resume_thread_id, workspace=workspace,
@@ -708,25 +771,36 @@ class CodexDriver:
                     timeout=THREAD_REQUEST_TIMEOUT_SECONDS,
                 )
                 thread_id = resume_thread_id
+                await thread_started(thread_id)
+                await client.request("turn/start", turn_params(thread_id),
+                                     timeout=THREAD_REQUEST_TIMEOUT_SECONDS)
             else:
-                started = await client.request(
-                    "thread/start",
-                    thread_start_params(workspace=workspace, model=model,
-                                        instructions=instructions),
-                    timeout=THREAD_REQUEST_TIMEOUT_SECONDS,
-                )
-                thread_id = started["thread"]["id"]
-            await _handle_exec_event(
-                translator.thread_started(thread_id), state=state, emit=emit,
-                progress_updates=config.progress_updates, latest_thread_id=latest_thread_id,
-            )
-            await client.request(
-                "turn/start",
-                turn_start_params(thread_id=thread_id, prompt=prompt, effort=config.effort,
-                                  reasoning_summary=config.reasoning_summary,
-                                  output_schema=output_schema),
-                timeout=THREAD_REQUEST_TIMEOUT_SECONDS,
-            )
+                if config.hot_spare:
+                    spare, reason = await self._spares.claim(recipe.fingerprint)
+                    self._spares.refill()
+                else:
+                    spare, reason = None, "disabled"
+                if spare is not None:
+                    await note_spare("hit")
+                    client, thread_id = spare.client, spare.thread_id
+                else:
+                    await note_spare("miss", reason)
+                    client, thread_id = await self._start_thread(recipe)
+                await thread_started(thread_id)
+                try:
+                    await client.request("turn/start", turn_params(thread_id),
+                                         timeout=THREAD_REQUEST_TIMEOUT_SECONDS)
+                except AppServerError:
+                    if spare is None:
+                        raise
+                    # The spare died after warming: start this attempt cold, once.
+                    client.abort()
+                    client = None
+                    await note_spare("miss", "dead")
+                    client, thread_id = await self._start_thread(recipe)
+                    await thread_started(thread_id)
+                    await client.request("turn/start", turn_params(thread_id),
+                                         timeout=THREAD_REQUEST_TIMEOUT_SECONDS)
         except FileNotFoundError:
             await emit(
                 "status_change",

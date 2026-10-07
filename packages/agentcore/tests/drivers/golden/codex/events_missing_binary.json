@@ -9,6 +9,20 @@
     }
   ],
   [
+    "log",
+    {
+      "data": {
+        "outcome": "miss",
+        "reason": "none"
+      },
+      "level": "info",
+      "message": "codex_spare",
+      "op": "codex_spare",
+      "outcome": "miss",
+      "reason": "none"
+    }
+  ],
+  [
     "status_change",
     {
       "error": {
