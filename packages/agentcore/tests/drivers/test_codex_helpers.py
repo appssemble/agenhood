@@ -34,21 +34,6 @@ def test_codex_home_under_workspace():
     assert codex_home("/workspace") == "/workspace/.agent-state/codex"
 
 
-def test_build_command_reads_prompt_from_stdin():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="gpt-5-codex")
-    assert cmd == [
-        "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
-        "-C", "/ws", "-m", "gpt-5-codex",
-        "-c", "features.plugins=false", "-c", "features.apps=false",
-        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
-        "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.multi_agent=false", "-c", "features.goals=false",
-        "--dangerously-bypass-approvals-and-sandbox", "-",
-    ]
-
-
 def test_build_env_api_key_sets_codex_api_key():
     from agentcore.drivers.codex import build_env
 
@@ -198,57 +183,8 @@ def test_codex_build_env_starts_from_allowlist(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Task 4: driver sessions — ephemeral/resume command shape + thread id parsing
+# Thread id parsing
 # ---------------------------------------------------------------------------
-
-
-def test_build_command_ephemeral_true_by_default_unchanged():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="gpt-5-codex")
-    assert cmd == [
-        "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
-        "-C", "/ws", "-m", "gpt-5-codex",
-        "-c", "features.plugins=false", "-c", "features.apps=false",
-        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
-        "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.multi_agent=false", "-c", "features.goals=false",
-        "--dangerously-bypass-approvals-and-sandbox", "-",
-    ]
-
-
-def test_build_command_ephemeral_false_drops_the_flag():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="gpt-5-codex", ephemeral=False)
-    assert "--ephemeral" not in cmd
-    assert cmd == [
-        "codex", "exec", "--json", "--skip-git-repo-check",
-        "-C", "/ws", "-m", "gpt-5-codex",
-        "-c", "features.plugins=false", "-c", "features.apps=false",
-        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
-        "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.multi_agent=false", "-c", "features.goals=false",
-        "--dangerously-bypass-approvals-and-sandbox", "-",
-    ]
-
-
-def test_build_resume_command():
-    from agentcore.drivers.codex import build_resume_command
-
-    cmd = build_resume_command(model="gpt-5-codex", thread_id="019f3753-thread")
-    # Verified live against the installed codex CLI: `codex exec resume` has no
-    # -C/--ephemeral flags (the resumed session's cwd/persistence are implicit).
-    assert cmd == [
-        "codex", "exec", "resume", "--json", "--skip-git-repo-check",
-        "-m", "gpt-5-codex",
-        "-c", "features.plugins=false", "-c", "features.apps=false",
-        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
-        "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.multi_agent=false", "-c", "features.goals=false",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "019f3753-thread", "-",
-    ]
 
 
 def test_event_thread_id_extracts_from_thread_started():
@@ -266,69 +202,8 @@ def test_event_thread_id_ignores_other_event_types():
 
 
 # ---------------------------------------------------------------------------
-# Task 2: codex driver maps effort
+# Stale AGENTS.md cleanup and tool flags
 # ---------------------------------------------------------------------------
-
-
-def test_build_command_appends_reasoning_effort():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="gpt-5.6-sol", effort="high")
-    assert cmd == [
-        "codex", "exec", "--json", "--skip-git-repo-check", "--ephemeral",
-        "-C", "/ws", "-m", "gpt-5.6-sol",
-        "-c", "features.plugins=false", "-c", "features.apps=false",
-        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
-        "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.multi_agent=false", "-c", "features.goals=false",
-        "-c", "model_reasoning_effort=high",
-        "--dangerously-bypass-approvals-and-sandbox", "-",
-    ]
-
-
-def test_build_command_no_effort_flag_when_unset():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="gpt-5-codex")
-    assert not any(a.startswith("model_reasoning_effort=") for a in cmd)
-
-
-def test_build_resume_command_appends_reasoning_effort():
-    from agentcore.drivers.codex import build_resume_command
-
-    cmd = build_resume_command(model="gpt-5.6-sol", thread_id="t-1", effort="max")
-    assert cmd == [
-        "codex", "exec", "resume", "--json", "--skip-git-repo-check",
-        "-m", "gpt-5.6-sol",
-        "-c", "features.plugins=false", "-c", "features.apps=false",
-        "-c", "analytics.enabled=false", "-c", "otel.exporter=none",
-        "-c", "features.image_generation=false", "-c", "features.view_image=false",
-        "-c", "features.multi_agent=false", "-c", "features.goals=false",
-        "-c", "model_reasoning_effort=max",
-        "--dangerously-bypass-approvals-and-sandbox", "t-1", "-",
-    ]
-
-
-def test_build_command_appends_reasoning_summary():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="m", reasoning_summary=True)
-    assert "model_reasoning_summary=auto" in _config_overrides(cmd)
-
-
-def test_build_command_no_reasoning_summary_flag_when_off():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="m")
-    assert not any(a.startswith("model_reasoning_summary=") for a in cmd)
-
-
-def test_build_resume_command_appends_reasoning_summary():
-    from agentcore.drivers.codex import build_resume_command
-
-    cmd = build_resume_command(model="m", thread_id="t-1", reasoning_summary=True)
-    assert "model_reasoning_summary=auto" in _config_overrides(cmd)
-    assert cmd[-2:] == ["t-1", "-"]
 
 
 def test_remove_stale_agents_md_deletes_file_left_by_older_driver(tmp_path):
@@ -347,83 +222,6 @@ def test_remove_stale_agents_md_deletes_file_left_by_older_driver(tmp_path):
     remove_stale_agents_md(str(tmp_path))  # absent → no error
 
 
-def test_write_codex_config_developer_instructions_roundtrip_through_toml(tmp_path):
-    import pathlib
-    import tomllib
-
-    from agentcore.drivers.codex import codex_config_path, write_codex_config
-
-    prompt = 'Say "hi".\nUse C:\\path\\x\ttabs — and émojis 🙂\x7f end'
-    path = write_codex_config(str(tmp_path), [], prompt)
-    assert path == codex_config_path(str(tmp_path))
-    parsed = tomllib.loads(pathlib.Path(path).read_text())
-    assert parsed == {"developer_instructions": prompt}
-    assert oct(pathlib.Path(path).stat().st_mode & 0o777) == "0o600"
-
-
-def test_write_codex_config_combines_developer_instructions_and_mcp(tmp_path):
-    import pathlib
-    import tomllib
-
-    from agentcore.drivers.codex import write_codex_config
-    from agentcore.models import ShimMcpServer
-
-    path = write_codex_config(
-        str(tmp_path),
-        [ShimMcpServer(name="lin", url="https://m", auth_type="bearer", secret="t")],
-        "Be terse.",
-    )
-    parsed = tomllib.loads(pathlib.Path(path).read_text())
-    assert parsed["developer_instructions"] == "Be terse."
-    assert parsed["mcp_servers"]["lin"]["url"] == "https://m"
-
-
-def test_write_codex_config_removes_file_when_nothing_to_write(tmp_path):
-    import pathlib
-
-    from agentcore.drivers.codex import codex_config_path, write_codex_config
-
-    assert write_codex_config(str(tmp_path), [], "stale") is not None
-    assert write_codex_config(str(tmp_path), [], "") is None
-    assert not pathlib.Path(codex_config_path(str(tmp_path))).exists()
-
-
-def test_build_command_includes_output_schema():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(
-        workspace="/ws", model="gpt-5", output_schema_path="/ws/schema.json"
-    )
-    i = cmd.index("--output-schema")
-    assert cmd[i + 1] == "/ws/schema.json"
-    assert cmd[-1] == "-"  # stdin marker stays the final arg
-
-
-def test_build_command_omits_output_schema_by_default():
-    from agentcore.drivers.codex import build_command
-
-    assert "--output-schema" not in build_command(workspace="/ws", model="gpt-5")
-
-
-def test_build_resume_command_includes_output_schema():
-    from agentcore.drivers.codex import build_resume_command
-
-    cmd = build_resume_command(
-        model="gpt-5", thread_id="th_1", output_schema_path="/ws/schema.json"
-    )
-    i = cmd.index("--output-schema")
-    assert cmd[i + 1] == "/ws/schema.json"
-    assert cmd[-2:] == ["th_1", "-"]  # positional thread id stays last
-
-
-def test_write_output_schema(tmp_path):
-    from agentcore.drivers.codex import write_output_schema
-
-    path = write_output_schema(str(tmp_path), {"type": "object"})
-    assert json.loads(Path(path).read_text()) == {"type": "object"}
-    assert path.endswith("output-schema.json")
-
-
 def _config_overrides(cmd: list[str]) -> list[str]:
     return [cmd[i + 1] for i, a in enumerate(cmd[:-1]) if a == "-c"]
 
@@ -437,31 +235,6 @@ ALL_TOOLS_OFF = [
     "features.image_generation=false", "features.view_image=false",
     "features.multi_agent=false", "features.goals=false",
 ]
-
-
-def test_build_command_turns_off_codex_side_channels():
-    """Plugins, apps, analytics and OTEL cost 0.3-7 s after the turn and
-    ~2.5k prompt tokens (measured 2026-09-01); they are always off,
-    whatever tools are enabled."""
-    from agentcore.drivers.codex import build_command, build_resume_command
-
-    for tools in ([], ["web_search"], ["image_generation", "goals"]):
-        assert _config_overrides(
-            build_command(workspace="/ws", model="m", tools=tools)
-        )[:4] == SIDE_CHANNELS
-        assert _config_overrides(
-            build_resume_command(model="m", thread_id="t-1", tools=tools)
-        )[:4] == SIDE_CHANNELS
-
-
-def test_default_tools_keep_todays_command():
-    """Default = web_search only; it matches the pre-toggle command exactly."""
-    from agentcore.drivers.codex import build_command
-
-    assert _config_overrides(build_command(workspace="/ws", model="m")) == SIDE_CHANNELS + [
-        "features.image_generation=false", "features.view_image=false",
-        "features.multi_agent=false", "features.goals=false",
-    ]
 
 
 def test_tool_args_all_off():
@@ -483,22 +256,6 @@ def test_tool_args_ignores_unknown_names():
     from agentcore.drivers.codex import tool_args
 
     assert tool_args(["bash"]) == tool_args([])
-
-
-def test_resume_command_carries_tools():
-    from agentcore.drivers.codex import build_resume_command
-
-    cmd = build_resume_command(model="m", thread_id="t-1", tools=["view_image"])
-    overrides = _config_overrides(cmd)
-    assert "web_search=disabled" in overrides
-    assert "features.view_image=true" in overrides
-
-
-def test_build_command_side_channel_overrides_precede_effort():
-    from agentcore.drivers.codex import build_command
-
-    cmd = build_command(workspace="/ws", model="m", effort="low")
-    assert _config_overrides(cmd)[-1] == "model_reasoning_effort=low"
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +328,7 @@ def test_progress_rules_ask_for_an_initial_update_even_without_tools():
 
 
 # ---------------------------------------------------------------------------
-# Task 3: App-server command and request builders
+# App-server command and request builders
 # ---------------------------------------------------------------------------
 
 
@@ -634,3 +391,10 @@ def test_native_output_schema():
     assert native_output_schema(None, progress_updates=True) == progress_envelope_schema(None)
     assert native_output_schema({"type": "array", "items": {"type": "string"}},
                                 progress_updates=False) is None
+
+
+def test_codex_config_holds_only_mcp_servers(tmp_path):
+    from agentcore.drivers.codex import codex_config_path, write_codex_config
+
+    assert write_codex_config(str(tmp_path), []) is None
+    assert not Path(codex_config_path(str(tmp_path))).exists()
