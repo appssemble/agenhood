@@ -121,6 +121,32 @@ async def test_from_prompt_carries_reasoning_summary_override(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_from_prompt_carries_progress_updates_override(monkeypatch):
+    captured: dict = {}
+
+    async def fake_load_prompt(session, tenant_id, pid):
+        return {"body": "Hi", "variables": []}
+
+    async def fake_core(session, **kw):
+        captured.update(kw)
+        return {"task_id": "tsk_1", "status": "running"}
+
+    monkeypatch.setattr(tasks_mod, "_load_prompt", fake_load_prompt)
+    monkeypatch.setattr(tasks_mod, "submit_task_core", fake_core)
+    _override_auth()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=_APP), base_url="http://t") as c:
+            r = await c.post(
+                "/v1/containers/con_1/tasks/from-prompt",
+                json={"prompt_id": "prm_abc", "progress_updates": True},
+            )
+        assert r.status_code == 200
+        assert captured["body"].progress_updates is True
+    finally:
+        _APP.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_from_prompt_404_when_prompt_missing(monkeypatch):
     async def fake_load_prompt(session, tenant_id, pid):
         raise api_error(404, "prompt_not_found", "prompt not found", "prompt_id")

@@ -759,3 +759,134 @@ async def test_codex_run_passes_reasoning_summary_to_cli(monkeypatch, tmp_path):
 
     assert result.success is True
     assert "model_reasoning_summary=auto" in captured_cmd["argv"]
+
+
+# ---------------------------------------------------------------------------
+# Progress updates: envelope messages become `progress` events
+# ---------------------------------------------------------------------------
+
+
+def progress_cfg():
+    return cfg().model_copy(update={"progress_updates": True})
+
+
+def agent_lines(*texts, thread_id="th_1"):
+    lines = [f'{{"type": "thread.started", "thread_id": "{thread_id}"}}\n']
+    for text in texts:
+        item = {"type": "agent_message", "text": text}
+        lines.append(json.dumps({"type": "item.completed", "item": item}) + "\n")
+    return lines
+
+
+def envelope(progress=None, result=None):
+    return json.dumps({"progress": progress, "result": result})
+
+
+def output_schema_arg(argv):
+    return json.loads(open(argv[argv.index("--output-schema") + 1]).read())
+
+
+@pytest.mark.asyncio
+async def test_progress_messages_become_progress_events_for_a_text_task(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    proc = FakeProc(agent_lines(
+        envelope(progress="Vou ler o ficheiro."),
+        envelope(result="Feito."),
+    ))
+    calls = patch_procs(monkeypatch, [proc])
+    events, emit = collector()
+
+    result = await CodexDriver().run(
+        task=TaskBody(prompt="olá"), config=progress_cfg(), limits=LIMITS,
+        credential="k", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert [p for t, p in events if t == "progress"] == [{"text": "Vou ler o ficheiro."}]
+    assert result.output == "Feito."
+    completed = [p for t, p in events if t == "status_change" and p["to"] == "completed"]
+    assert completed[0]["result"] == {"success": True, "output": "Feito."}
+    assert output_schema_arg(calls[0])["properties"]["result"] == {"type": ["string", "null"]}
+
+
+@pytest.mark.asyncio
+async def test_progress_messages_for_a_structured_task_return_the_unwrapped_answer(
+    monkeypatch, tmp_path
+):
+    from agentcore.drivers.codex import CodexDriver
+
+    proc = FakeProc(agent_lines(
+        envelope(progress="A calcular."),
+        envelope(result={"answer": "42"}),
+    ))
+    calls = patch_procs(monkeypatch, [proc])
+    events, emit = collector()
+
+    result = await CodexDriver().run(
+        task=structured_task(), config=progress_cfg(), limits=LIMITS,
+        credential="k", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert [p for t, p in events if t == "progress"] == [{"text": "A calcular."}]
+    assert result.output == {"answer": "42"}
+    completed = [p for t, p in events if t == "status_change" and p["to"] == "completed"]
+    assert completed[0]["result"] == {"success": True, "output": {"answer": "42"}}
+    assert output_schema_arg(calls[0])["properties"]["result"]["anyOf"][0] == STRUCT_SCHEMA
+
+
+@pytest.mark.asyncio
+async def test_progress_updates_accept_a_bare_answer_without_the_envelope(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    non_native = {"type": "array", "items": {"type": "string", "minLength": 1}}
+    task = TaskBody(prompt="p", output={"type": "structured", "schema": non_native})
+    proc = FakeProc(agent_lines('["a"]'))
+    calls = patch_procs(monkeypatch, [proc])
+    _, emit = collector()
+
+    result = await CodexDriver().run(
+        task=task, config=progress_cfg(), limits=LIMITS, credential="k",
+        emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert "--output-schema" not in calls[0]
+    assert result.output == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_progress_updates_write_the_progress_rules_into_codex_config(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import PROGRESS_INSTRUCTIONS, CodexDriver, codex_config_path
+
+    seen = {}
+
+    async def fake_exec(*args, **kwargs):
+        seen["config"] = open(codex_config_path(str(tmp_path))).read()
+        return FakeProc(agent_lines(envelope(result="ok")))
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    _, emit = collector()
+
+    await CodexDriver().run(
+        task=TaskBody(prompt="hi"), config=progress_cfg(), limits=LIMITS,
+        credential="k", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert PROGRESS_INSTRUCTIONS.splitlines()[0] in seen["config"]
+
+
+@pytest.mark.asyncio
+async def test_envelope_text_is_left_alone_when_progress_updates_are_off(monkeypatch, tmp_path):
+    from agentcore.drivers.codex import CodexDriver
+
+    text = envelope(progress="x")
+    calls = patch_procs(monkeypatch, [FakeProc(agent_lines(text))])
+    events, emit = collector()
+
+    result = await CodexDriver().run(
+        task=TaskBody(prompt="hi"), config=cfg(), limits=LIMITS,
+        credential="k", emit=emit, cancel=asyncio.Event(), workspace=str(tmp_path),
+    )
+
+    assert not [p for t, p in events if t == "progress"]
+    assert result.output == text
+    assert "--output-schema" not in calls[0]

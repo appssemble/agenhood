@@ -61,7 +61,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agentcore import sandbox
+from agentcore import events, sandbox
 from agentcore.drivers.base import (
     DriverCapabilities,
     DriverTemplate,
@@ -174,6 +174,47 @@ def write_output_schema(workspace: str, schema: dict[str, Any]) -> str:
     path.unlink(missing_ok=True)
     path.write_text(json.dumps(schema))
     return str(path)
+
+
+PROGRESS_INSTRUCTIONS = """\
+## Progress updates
+The user cannot see your tool calls. Every message you send is a JSON object \
+{"progress": ..., "result": ...}.
+- Before each step (reading files, running commands, searching), send \
+{"progress": "<one short sentence saying what you are doing>", "result": null}, \
+written in the same language as the user's message.
+- Send your answer once, as your final message: {"progress": null, "result": <answer>}."""
+
+
+def developer_instructions(system_prompt: str, *, progress_updates: bool) -> str:
+    """The agent's system prompt plus, when enabled, the progress rules."""
+    if not progress_updates:
+        return system_prompt
+    return f"{system_prompt}\n\n{PROGRESS_INSTRUCTIONS}" if system_prompt else PROGRESS_INSTRUCTIONS
+
+
+def progress_envelope_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
+    """Wrap the task's answer shape (``None`` for plain text) so a message is
+    either a progress update or the final answer, never both kinds of text."""
+    result = {"anyOf": [schema, {"type": "null"}]} if schema else {"type": ["string", "null"]}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["progress", "result"],
+        "properties": {"progress": {"type": ["string", "null"]}, "result": result},
+    }
+
+
+def split_envelope(text: str) -> tuple[str | None, Any] | None:
+    """``(progress, result)`` from an envelope message, or None for any other text."""
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(value, dict) or set(value) != {"progress", "result"}:
+        return None
+    progress = value["progress"]
+    return (progress if isinstance(progress, str) and progress else None), value["result"]
 
 
 # codex config overrides applied to every invocation — see the module docstring.
@@ -560,16 +601,13 @@ class CodexDriver:
         # when it fits the native strict subset. Best-effort, like skills —
         # a failure must not change the task outcome, only drop the native flag
         # (the shared validate-and-retry loop still enforces the schema).
+        native_schema = task.output.json_schema if structured else None
+        if config.progress_updates:
+            native_schema = progress_envelope_schema(native_schema)
         output_schema_file: str | None = None
-        if (
-            structured
-            and task.output.json_schema is not None
-            and native_subset_compatible(task.output.json_schema)
-        ):
+        if native_schema is not None and native_subset_compatible(native_schema):
             try:
-                output_schema_file = write_output_schema(
-                    workspace, task.output.json_schema
-                )
+                output_schema_file = write_output_schema(workspace, native_schema)
                 sandbox.chown_to_agent(output_schema_file)
             except Exception as exc:  # noqa: BLE001 — native flag is best-effort
                 output_schema_file = None
@@ -652,7 +690,10 @@ class CodexDriver:
         # is never silent). MCP secrets ride env vars codex reads at startup.
         try:
             cfg_path = write_codex_config(
-                workspace, mcp_servers or [], config.system_prompt or ""
+                workspace, mcp_servers or [],
+                developer_instructions(
+                    config.system_prompt or "", progress_updates=config.progress_updates
+                ),
             )
             if cfg_path:
                 sandbox.chown_to_agent(cfg_path)
@@ -694,7 +735,7 @@ class CodexDriver:
             return TaskResult(success=False, reason="codex_unavailable")
 
         start = time.monotonic()
-        last_text: str | None = None
+        final: Any = None
         error_msg: str | None = None
         tokens_in = 0
         tokens_out = 0
@@ -750,8 +791,19 @@ class CodexDriver:
                     if tid:
                         latest_thread_id["id"] = tid
                     text = event_text(value)
-                    if text is not None:
-                        last_text = text
+                    envelope = (
+                        split_envelope(text)
+                        if text is not None and config.progress_updates
+                        else None
+                    )
+                    if envelope is not None:
+                        progress, answer = envelope
+                        if progress:
+                            await emit("progress", events.progress(progress))
+                        if answer is not None:
+                            final = answer
+                    elif text is not None:
+                        final = text
                     err = event_error(value)
                     if err is not None:
                         error_msg = err
@@ -782,15 +834,16 @@ class CodexDriver:
             return TaskResult(success=False, reason="codex_error")
 
         if rc == 0:
+            output = final if final is not None else ""
             if structured:
                 # run()'s structured loop validates and emits the terminal event.
-                return TaskResult(success=True, output=last_text or "")
-            result = {"success": True, "output": last_text or ""}
+                return TaskResult(success=True, output=output)
+            result = {"success": True, "output": output}
             await emit(
                 "status_change",
                 {"from": "running", "to": "completed", "result": result, "error": None},
             )
-            return TaskResult(success=True, output=last_text or "")
+            return TaskResult(success=True, output=output)
 
         message = error_msg or f"codex exited {rc}"
         await emit(

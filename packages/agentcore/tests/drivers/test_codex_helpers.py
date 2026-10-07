@@ -499,3 +499,65 @@ def test_build_command_side_channel_overrides_precede_effort():
 
     cmd = build_command(workspace="/ws", model="m", effort="low")
     assert _config_overrides(cmd)[-1] == "model_reasoning_effort=low"
+
+
+# ---------------------------------------------------------------------------
+# Progress updates: every message is a {"progress", "result"} envelope
+# ---------------------------------------------------------------------------
+
+USER_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["total"],
+    "properties": {"total": {"type": "number"}},
+}
+
+
+def test_progress_envelope_wraps_a_structured_schema():
+    from agentcore.drivers.codex import progress_envelope_schema
+
+    env = progress_envelope_schema(USER_SCHEMA)
+    assert env["required"] == ["progress", "result"]
+    assert env["properties"]["result"] == {"anyOf": [USER_SCHEMA, {"type": "null"}]}
+
+
+def test_progress_envelope_wraps_text_as_a_string():
+    from agentcore.drivers.codex import progress_envelope_schema
+
+    env = progress_envelope_schema(None)
+    assert env["properties"]["result"] == {"type": ["string", "null"]}
+
+
+def test_progress_envelope_is_native_compatible_when_the_schema_is():
+    from agentcore.drivers.codex import progress_envelope_schema
+    from agentcore.structured_output import native_subset_compatible
+
+    assert native_subset_compatible(progress_envelope_schema(USER_SCHEMA))
+    assert native_subset_compatible(progress_envelope_schema(None))
+
+
+def test_split_envelope_reads_a_progress_message():
+    from agentcore.drivers.codex import split_envelope
+
+    assert split_envelope('{"progress":"Vou ler o CSV.","result":null}') == ("Vou ler o CSV.", None)
+
+
+def test_split_envelope_reads_a_final_answer():
+    from agentcore.drivers.codex import split_envelope
+
+    assert split_envelope('{"progress":null,"result":{"total":3}}') == (None, {"total": 3})
+
+
+def test_split_envelope_returns_none_for_plain_text():
+    from agentcore.drivers.codex import split_envelope
+
+    assert split_envelope("All done.") is None
+    assert split_envelope('{"total":3}') is None
+
+
+def test_developer_instructions_append_the_progress_rules():
+    from agentcore.drivers.codex import PROGRESS_INSTRUCTIONS, developer_instructions
+
+    assert developer_instructions("Be brief.", progress_updates=False) == "Be brief."
+    out = developer_instructions("Be brief.", progress_updates=True)
+    assert out.startswith("Be brief.")
+    assert out.endswith(PROGRESS_INSTRUCTIONS)
+    assert developer_instructions("", progress_updates=True) == PROGRESS_INSTRUCTIONS

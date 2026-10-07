@@ -192,6 +192,13 @@ class ConfigPatch(BaseModel):
             "useful as status updates. Only valid for codex."
         ),
     )
+    progress_updates: bool = Field(
+        False,
+        description=(
+            "Have the agent describe each step in the user's language, emitted "
+            "as `progress` events. Only valid for codex."
+        ),
+    )
     # Per-container task-limit overrides (None ⇒ use the tenant default).
     max_iterations: int | None = Field(
         None,
@@ -217,6 +224,7 @@ class ConfigPatch(BaseModel):
             mcp_servers=self.mcp_servers,
             effort=self.effort,
             reasoning_summary=self.reasoning_summary,
+            progress_updates=self.progress_updates,
             max_iterations=self.max_iterations,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,

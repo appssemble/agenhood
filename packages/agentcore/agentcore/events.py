@@ -45,6 +45,10 @@ def tool_result(
     }
 
 
+def progress(text: str) -> dict[str, Any]:
+    return {"text": text}
+
+
 def token_update(*, tokens_in: int, tokens_out: int) -> dict[str, Any]:
     return {"tokens_in": tokens_in, "tokens_out": tokens_out}
 

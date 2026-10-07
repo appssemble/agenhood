@@ -34,7 +34,7 @@ from control_plane import lifecycle
 from control_plane.auth import Principal
 from control_plane.auth.crypto import decrypt_secret, load_key_from_env
 from control_plane.config import Settings
-from control_plane.config_validation import EFFORT_DRIVERS, REASONING_SUMMARY_DRIVERS
+from control_plane.config_validation import DRIVER_FLAGS, EFFORT_DRIVERS
 from control_plane.credentials_service import (
     credential_provider_for,
     decrypt_row,
@@ -140,6 +140,11 @@ class PromptTaskBody(BaseModel):
         description="Optional per-task override of the container's "
         "reasoning_summary. Only codex supports turning it on.",
     )
+    progress_updates: bool | None = Field(
+        default=None,
+        description="Optional per-task override of the container's "
+        "progress_updates. Only codex supports turning it on.",
+    )
 
 
 class TaskListResponse(BaseModel):
@@ -203,20 +208,29 @@ def apply_effort_override(config: AgentConfig, effort: str | None) -> AgentConfi
     return config.model_copy(update={"effort": effort})
 
 
+def _apply_flag_override(config: AgentConfig, flag: str, value: bool | None) -> AgentConfig:
+    """Fold an optional per-task override of a driver-gated boolean flag into
+    the config *before* the snapshot, mirroring apply_effort_override."""
+    if value is None:
+        return config
+    if value and config.driver not in DRIVER_FLAGS[flag]:
+        raise APIError(
+            400, "validation_error",
+            f"driver '{config.driver}' does not support {flag}", flag,
+        )
+    return config.model_copy(update={flag: value})
+
+
 def apply_reasoning_summary_override(
     config: AgentConfig, reasoning_summary: bool | None
 ) -> AgentConfig:
-    """Fold an optional per-task reasoning_summary override into the config
-    *before* the snapshot, mirroring apply_effort_override."""
-    if reasoning_summary is None:
-        return config
-    if reasoning_summary and config.driver not in REASONING_SUMMARY_DRIVERS:
-        raise APIError(
-            400, "validation_error",
-            f"driver '{config.driver}' does not support reasoning_summary",
-            "reasoning_summary",
-        )
-    return config.model_copy(update={"reasoning_summary": reasoning_summary})
+    return _apply_flag_override(config, "reasoning_summary", reasoning_summary)
+
+
+def apply_progress_updates_override(
+    config: AgentConfig, progress_updates: bool | None
+) -> AgentConfig:
+    return _apply_flag_override(config, "progress_updates", progress_updates)
 
 
 def apply_tools_override(config: AgentConfig, tools: list[str] | None) -> AgentConfig:
@@ -674,6 +688,7 @@ async def submit_task_core(
     config = AgentConfig(**row.config)
     config = apply_effort_override(config, body.effort)
     config = apply_reasoning_summary_override(config, body.reasoning_summary)
+    config = apply_progress_updates_override(config, body.progress_updates)
     config = apply_tools_override(config, body.tools)
     if body.tools is not None:
         assert_config_runnable_on_variant(
@@ -883,6 +898,7 @@ async def submit_task_from_prompt(
             session_id=body.session_id,
             effort=body.effort,
             reasoning_summary=body.reasoning_summary,
+            progress_updates=body.progress_updates,
         ),
     )
 
