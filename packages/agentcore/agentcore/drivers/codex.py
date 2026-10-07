@@ -67,7 +67,7 @@ from agentcore.drivers.base import (
     _coerce_token_pair,
     register,
 )
-from agentcore.drivers.cli_stream import classify_json_line, log_payload
+from agentcore.drivers.cli_stream import log_payload
 from agentcore.drivers.codex_appserver import (
     AppServerError,
     AppServerReplyError,
@@ -375,15 +375,6 @@ def write_auth_json(
     path.write_text(json.dumps(data))
     os.chmod(path, 0o600)
     return str(path)
-
-
-def parse_codex_line(line: str) -> tuple[str, object | None]:
-    """Classify one line of codex --json output.
-
-    Returns ('event', dict) for JSON lines, ('stdout', str) for plain text,
-    ('ignore', None) for blank lines.
-    """
-    return classify_json_line(line)
 
 
 def event_text(event: dict[str, object]) -> str | None:

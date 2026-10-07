@@ -104,16 +104,6 @@ def test_write_auth_json_includes_id_token_when_present(tmp_path):
     assert data["tokens"]["id_token"] == "idtok"
 
 
-def test_parse_codex_line_classifies():
-    from agentcore.drivers.codex import parse_codex_line
-
-    assert parse_codex_line("") == ("ignore", None)
-    assert parse_codex_line("   ") == ("ignore", None)
-    assert parse_codex_line('{"type":"turn.completed"}') == ("event", {"type": "turn.completed"})
-    assert parse_codex_line("not json") == ("stdout", "not json")
-    assert parse_codex_line("{bad") == ("stdout", "{bad")
-
-
 def test_event_text_returns_agent_message():
     from agentcore.drivers.codex import event_text
 

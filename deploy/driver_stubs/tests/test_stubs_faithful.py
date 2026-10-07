@@ -62,6 +62,7 @@ def test_opencode_writes_workspace_file(tmp_path):
 
 
 from agentcore.drivers import codex as cx  # noqa: E402
+from agentcore.drivers.cli_stream import classify_json_line  # noqa: E402
 
 
 def _run_stdin_stub(name, script, cwd):
@@ -78,7 +79,7 @@ def test_codex_success_parses_to_text_and_usage(tmp_path):
     assert proc.returncode == 0, proc.stderr
     last_text, tin, tout = None, 0, 0
     for line in proc.stdout.splitlines():
-        kind, ev = cx.parse_codex_line(line)
+        kind, ev = classify_json_line(line)
         if kind != "event":
             continue
         if cx.event_text(ev) is not None:
@@ -94,9 +95,9 @@ def test_codex_error_turn_failed(tmp_path):
     script = {"turns": [{"done": {"success": False, "reason": "nope"}}]}
     proc = _run_stdin_stub("codex", script, str(tmp_path))
     assert proc.returncode != 0
-    errs = [cx.event_error(cx.parse_codex_line(l)[1])
+    errs = [cx.event_error(classify_json_line(l)[1])
             for l in proc.stdout.splitlines()
-            if cx.parse_codex_line(l)[0] == "event"]
+            if classify_json_line(l)[0] == "event"]
     assert "nope" in [e for e in errs if e]
 
 
