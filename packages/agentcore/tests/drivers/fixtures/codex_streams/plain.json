@@ -1,0 +1,407 @@
+{
+ "case": "plain",
+ "exec": [
+  {
+   "type": "thread.started",
+   "thread_id": "01a1164d-bd63-7db3-99fc-b5fb3860c139"
+  },
+  {
+   "type": "turn.started"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_0",
+    "type": "agent_message",
+    "text": "OK"
+   }
+  },
+  {
+   "type": "turn.completed",
+   "usage": {
+    "input_tokens": 10453,
+    "cached_input_tokens": 10240,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 5,
+    "reasoning_output_tokens": 0
+   }
+  },
+  {
+   "_exit": 0
+  }
+ ],
+ "app_server": [
+  {
+   "id": 1,
+   "result": {
+    "userAgent": "recorder/0.157.1 (Debian 12.0.0; aarch64) unknown (recorder; 0)",
+    "codexHome": "/ch",
+    "platformFamily": "unix",
+    "platformOs": "linux"
+   }
+  },
+  {
+   "method": "configWarning",
+   "params": {
+    "summary": "Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.",
+    "details": null
+   },
+   "emittedAtMs": 1791375565358
+  },
+  {
+   "method": "remoteControl/status/changed",
+   "params": {
+    "status": "disabled",
+    "serverName": "4ef174df1cf8",
+    "installationId": "eeea25cd-7835-467e-bf39-e42fdbc0e7bd",
+    "environmentId": null
+   },
+   "emittedAtMs": 1791375565358
+  },
+  {
+   "id": 2,
+   "result": {
+    "thread": {
+     "id": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+     "environments": [
+      {
+       "environmentId": "local",
+       "cwd": "/tmp/ws-plain-app_server",
+       "runtimeWorkspaceRoots": [
+        "/tmp/ws-plain-app_server"
+       ]
+      }
+     ],
+     "extra": null,
+     "sessionId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+     "forkedFromId": null,
+     "parentThreadId": null,
+     "preview": "",
+     "ephemeral": true,
+     "section": null,
+     "sectionEnteredAt": null,
+     "projectId": null,
+     "historyMode": "legacy",
+     "modelProvider": "openai",
+     "model": "gpt-5.6-sol",
+     "reasoningEffort": null,
+     "createdAt": 1791375565,
+     "updatedAt": 1791375565,
+     "recencyAt": 1791375565,
+     "status": {
+      "type": "idle"
+     },
+     "path": null,
+     "cwd": "/tmp/ws-plain-app_server",
+     "cliVersion": "0.157.1",
+     "originator": "recorder",
+     "source": "vscode",
+     "canAcceptDirectInput": true,
+     "threadSource": null,
+     "agentNickname": null,
+     "agentRole": null,
+     "gitInfo": null,
+     "name": null,
+     "daybreakEnabled": null,
+     "turns": []
+    },
+    "model": "gpt-5.6-sol",
+    "modelProvider": "openai",
+    "serviceTier": null,
+    "disabledPluginIds": [],
+    "cwd": "/tmp/ws-plain-app_server",
+    "runtimeWorkspaceRoots": [
+     "/tmp/ws-plain-app_server"
+    ],
+    "instructionSources": [],
+    "approvalPolicy": "never",
+    "approvalsReviewer": "user",
+    "sandbox": {
+     "type": "dangerFullAccess"
+    },
+    "activePermissionProfile": null,
+    "reasoningEffort": null,
+    "multiAgentMode": "explicitRequestOnly"
+   }
+  },
+  {
+   "method": "thread/started",
+   "params": {
+    "thread": {
+     "id": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+     "environments": [
+      {
+       "environmentId": "local",
+       "cwd": "/tmp/ws-plain-app_server",
+       "runtimeWorkspaceRoots": [
+        "/tmp/ws-plain-app_server"
+       ]
+      }
+     ],
+     "extra": null,
+     "sessionId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+     "forkedFromId": null,
+     "parentThreadId": null,
+     "preview": "",
+     "ephemeral": true,
+     "section": null,
+     "sectionEnteredAt": null,
+     "projectId": null,
+     "historyMode": "legacy",
+     "modelProvider": "openai",
+     "model": "gpt-5.6-sol",
+     "reasoningEffort": null,
+     "createdAt": 1791375565,
+     "updatedAt": 1791375565,
+     "recencyAt": 1791375565,
+     "status": {
+      "type": "idle"
+     },
+     "path": null,
+     "cwd": "/tmp/ws-plain-app_server",
+     "cliVersion": "0.157.1",
+     "originator": "recorder",
+     "source": "vscode",
+     "canAcceptDirectInput": true,
+     "threadSource": null,
+     "agentNickname": null,
+     "agentRole": null,
+     "gitInfo": null,
+     "name": null,
+     "daybreakEnabled": null,
+     "turns": []
+    }
+   },
+   "emittedAtMs": 1791375565434
+  },
+  {
+   "id": 3,
+   "result": {
+    "turn": {
+     "id": "01a1164d-e27e-76d3-932a-3a52e819092f",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "inProgress",
+     "error": null,
+     "startedAt": null,
+     "completedAt": null,
+     "durationMs": null
+    }
+   }
+  },
+  {
+   "method": "thread/status/changed",
+   "params": {
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "status": {
+     "type": "active",
+     "activeFlags": []
+    }
+   },
+   "emittedAtMs": 1791375565441
+  },
+  {
+   "method": "turn/started",
+   "params": {
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turn": {
+     "id": "01a1164d-e27e-76d3-932a-3a52e819092f",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "inProgress",
+     "error": null,
+     "startedAt": 1791375565,
+     "completedAt": null,
+     "durationMs": null
+    }
+   },
+   "emittedAtMs": 1791375565441
+  },
+  {
+   "method": "account/updated",
+   "params": {
+    "authMode": "chatgpt",
+    "planType": "pro"
+   },
+   "emittedAtMs": 1791375565773
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a1164d-ea5d-7301-8948-ffb8060432e5",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "Reply with exactly OK.",
+       "text_elements": []
+      }
+     ]
+    },
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turnId": "01a1164d-e27e-76d3-932a-3a52e819092f",
+    "startedAtMs": 1791375567453
+   },
+   "emittedAtMs": 1791375567453
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a1164d-ea5d-7301-8948-ffb8060432e5",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "Reply with exactly OK.",
+       "text_elements": []
+      }
+     ]
+    },
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turnId": "01a1164d-e27e-76d3-932a-3a52e819092f",
+    "completedAtMs": 1791375567453
+   },
+   "emittedAtMs": 1791375567453
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_061326beb7a24e5b016ac638d7403087d2abdc204d95816a55",
+     "text": "",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null
+    },
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turnId": "01a1164d-e27e-76d3-932a-3a52e819092f",
+    "startedAtMs": 1791375575193
+   },
+   "emittedAtMs": 1791375575194
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turnId": "01a1164d-e27e-76d3-932a-3a52e819092f",
+    "itemId": "msg_061326beb7a24e5b016ac638d7403087d2abdc204d95816a55",
+    "delta": "OK"
+   },
+   "emittedAtMs": 1791375575194
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_061326beb7a24e5b016ac638d7403087d2abdc204d95816a55",
+     "text": "OK",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null
+    },
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turnId": "01a1164d-e27e-76d3-932a-3a52e819092f",
+    "completedAtMs": 1791375575300
+   },
+   "emittedAtMs": 1791375575300
+  },
+  {
+   "method": "thread/tokenUsage/updated",
+   "params": {
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turnId": "01a1164d-e27e-76d3-932a-3a52e819092f",
+    "tokenUsage": {
+     "total": {
+      "totalTokens": 10458,
+      "inputTokens": 10453,
+      "cachedInputTokens": 10240,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 5,
+      "reasoningOutputTokens": 0
+     },
+     "last": {
+      "totalTokens": 10458,
+      "inputTokens": 10453,
+      "cachedInputTokens": 10240,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 5,
+      "reasoningOutputTokens": 0
+     },
+     "modelContextWindow": 258400
+    }
+   },
+   "emittedAtMs": 1791375575315
+  },
+  {
+   "method": "account/rateLimits/updated",
+   "params": {
+    "rateLimits": {
+     "limitId": "codex",
+     "limitName": null,
+     "normalModelSlug": null,
+     "primary": {
+      "usedPercent": 1,
+      "windowDurationMins": 10080,
+      "resetsAt": 1791955077
+     },
+     "secondary": null,
+     "credits": {
+      "hasCredits": true,
+      "unlimited": false,
+      "balance": "62500"
+     },
+     "individualLimit": null,
+     "spendControlReached": null,
+     "planType": "pro",
+     "rateLimitReachedType": null
+    }
+   },
+   "emittedAtMs": 1791375575315
+  },
+  {
+   "method": "thread/status/changed",
+   "params": {
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "status": {
+     "type": "idle"
+    }
+   },
+   "emittedAtMs": 1791375575316
+  },
+  {
+   "method": "turn/completed",
+   "params": {
+    "threadId": "01a1164d-e240-7b90-9e91-505816a6ac2d",
+    "turn": {
+     "id": "01a1164d-e27e-76d3-932a-3a52e819092f",
+     "items": [
+      {
+       "type": "agentMessage",
+       "id": "msg_061326beb7a24e5b016ac638d7403087d2abdc204d95816a55",
+       "text": "OK",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      }
+     ],
+     "itemsView": "summary",
+     "status": "completed",
+     "error": null,
+     "startedAt": 1791375565,
+     "completedAt": 1791375575,
+     "durationMs": 9874
+    }
+   },
+   "emittedAtMs": 1791375575316
+  }
+ ]
+}

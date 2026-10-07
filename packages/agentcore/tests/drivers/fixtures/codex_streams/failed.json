@@ -1,0 +1,326 @@
+{
+ "case": "failed",
+ "exec": [
+  {
+   "type": "thread.started",
+   "thread_id": "01a11650-44ae-7241-9240-a1b970653dee"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_0",
+    "type": "error",
+    "message": "Model metadata for `gpt-does-not-exist` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."
+   }
+  },
+  {
+   "type": "turn.started"
+  },
+  {
+   "type": "error",
+   "message": "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-does-not-exist' model is not supported when using Codex with a ChatGPT account.\"}}"
+  },
+  {
+   "type": "turn.failed",
+   "error": {
+    "message": "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-does-not-exist' model is not supported when using Codex with a ChatGPT account.\"}}"
+   }
+  },
+  {
+   "_exit": 1
+  }
+ ],
+ "app_server": [
+  {
+   "id": 1,
+   "result": {
+    "userAgent": "recorder/0.157.1 (Debian 12.0.0; aarch64) unknown (recorder; 0)",
+    "codexHome": "/ch",
+    "platformFamily": "unix",
+    "platformOs": "linux"
+   }
+  },
+  {
+   "method": "configWarning",
+   "params": {
+    "summary": "Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.",
+    "details": null
+   },
+   "emittedAtMs": 1791375724397
+  },
+  {
+   "method": "remoteControl/status/changed",
+   "params": {
+    "status": "disabled",
+    "serverName": "4ef174df1cf8",
+    "installationId": "eeea25cd-7835-467e-bf39-e42fdbc0e7bd",
+    "environmentId": null
+   },
+   "emittedAtMs": 1791375724397
+  },
+  {
+   "id": 2,
+   "result": {
+    "thread": {
+     "id": "01a11650-4f90-7423-9c45-6857a93cbcef",
+     "environments": [
+      {
+       "environmentId": "local",
+       "cwd": "/tmp/ws-failed-app_server",
+       "runtimeWorkspaceRoots": [
+        "/tmp/ws-failed-app_server"
+       ]
+      }
+     ],
+     "extra": null,
+     "sessionId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+     "forkedFromId": null,
+     "parentThreadId": null,
+     "preview": "",
+     "ephemeral": true,
+     "section": null,
+     "sectionEnteredAt": null,
+     "projectId": null,
+     "historyMode": "legacy",
+     "modelProvider": "openai",
+     "model": "gpt-does-not-exist",
+     "reasoningEffort": null,
+     "createdAt": 1791375724,
+     "updatedAt": 1791375724,
+     "recencyAt": 1791375724,
+     "status": {
+      "type": "idle"
+     },
+     "path": null,
+     "cwd": "/tmp/ws-failed-app_server",
+     "cliVersion": "0.157.1",
+     "originator": "recorder",
+     "source": "vscode",
+     "canAcceptDirectInput": true,
+     "threadSource": null,
+     "agentNickname": null,
+     "agentRole": null,
+     "gitInfo": null,
+     "name": null,
+     "daybreakEnabled": null,
+     "turns": []
+    },
+    "model": "gpt-does-not-exist",
+    "modelProvider": "openai",
+    "serviceTier": null,
+    "disabledPluginIds": [],
+    "cwd": "/tmp/ws-failed-app_server",
+    "runtimeWorkspaceRoots": [
+     "/tmp/ws-failed-app_server"
+    ],
+    "instructionSources": [],
+    "approvalPolicy": "never",
+    "approvalsReviewer": "user",
+    "sandbox": {
+     "type": "dangerFullAccess"
+    },
+    "activePermissionProfile": null,
+    "reasoningEffort": null,
+    "multiAgentMode": "explicitRequestOnly"
+   }
+  },
+  {
+   "method": "thread/started",
+   "params": {
+    "thread": {
+     "id": "01a11650-4f90-7423-9c45-6857a93cbcef",
+     "environments": [
+      {
+       "environmentId": "local",
+       "cwd": "/tmp/ws-failed-app_server",
+       "runtimeWorkspaceRoots": [
+        "/tmp/ws-failed-app_server"
+       ]
+      }
+     ],
+     "extra": null,
+     "sessionId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+     "forkedFromId": null,
+     "parentThreadId": null,
+     "preview": "",
+     "ephemeral": true,
+     "section": null,
+     "sectionEnteredAt": null,
+     "projectId": null,
+     "historyMode": "legacy",
+     "modelProvider": "openai",
+     "model": "gpt-does-not-exist",
+     "reasoningEffort": null,
+     "createdAt": 1791375724,
+     "updatedAt": 1791375724,
+     "recencyAt": 1791375724,
+     "status": {
+      "type": "idle"
+     },
+     "path": null,
+     "cwd": "/tmp/ws-failed-app_server",
+     "cliVersion": "0.157.1",
+     "originator": "recorder",
+     "source": "vscode",
+     "canAcceptDirectInput": true,
+     "threadSource": null,
+     "agentNickname": null,
+     "agentRole": null,
+     "gitInfo": null,
+     "name": null,
+     "daybreakEnabled": null,
+     "turns": []
+    }
+   },
+   "emittedAtMs": 1791375724483
+  },
+  {
+   "id": 3,
+   "result": {
+    "turn": {
+     "id": "01a11650-4fc5-7fa1-8cc3-a9a40715e40f",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "inProgress",
+     "error": null,
+     "startedAt": null,
+     "completedAt": null,
+     "durationMs": null
+    }
+   }
+  },
+  {
+   "method": "warning",
+   "params": {
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "message": "Model metadata for `gpt-does-not-exist` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."
+   },
+   "emittedAtMs": 1791375724489
+  },
+  {
+   "method": "thread/status/changed",
+   "params": {
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "status": {
+     "type": "active",
+     "activeFlags": []
+    }
+   },
+   "emittedAtMs": 1791375724489
+  },
+  {
+   "method": "turn/started",
+   "params": {
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "turn": {
+     "id": "01a11650-4fc5-7fa1-8cc3-a9a40715e40f",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "inProgress",
+     "error": null,
+     "startedAt": 1791375724,
+     "completedAt": null,
+     "durationMs": null
+    }
+   },
+   "emittedAtMs": 1791375724489
+  },
+  {
+   "method": "account/updated",
+   "params": {
+    "authMode": "chatgpt",
+    "planType": "pro"
+   },
+   "emittedAtMs": 1791375724802
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a11650-55ea-7e52-a818-f66e7e37c6b6",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "Reply OK.",
+       "text_elements": []
+      }
+     ]
+    },
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "turnId": "01a11650-4fc5-7fa1-8cc3-a9a40715e40f",
+    "startedAtMs": 1791375726058
+   },
+   "emittedAtMs": 1791375726058
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a11650-55ea-7e52-a818-f66e7e37c6b6",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "Reply OK.",
+       "text_elements": []
+      }
+     ]
+    },
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "turnId": "01a11650-4fc5-7fa1-8cc3-a9a40715e40f",
+    "completedAtMs": 1791375726058
+   },
+   "emittedAtMs": 1791375726058
+  },
+  {
+   "method": "thread/status/changed",
+   "params": {
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "status": {
+     "type": "systemError"
+    }
+   },
+   "emittedAtMs": 1791375726638
+  },
+  {
+   "method": "error",
+   "params": {
+    "error": {
+     "message": "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-does-not-exist' model is not supported when using Codex with a ChatGPT account.\"}}",
+     "codexErrorInfo": "other",
+     "additionalDetails": null,
+     "misalignment": null
+    },
+    "willRetry": false,
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "turnId": "01a11650-4fc5-7fa1-8cc3-a9a40715e40f"
+   },
+   "emittedAtMs": 1791375726638
+  },
+  {
+   "method": "turn/completed",
+   "params": {
+    "threadId": "01a11650-4f90-7423-9c45-6857a93cbcef",
+    "turn": {
+     "id": "01a11650-4fc5-7fa1-8cc3-a9a40715e40f",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "failed",
+     "error": {
+      "message": "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-does-not-exist' model is not supported when using Codex with a ChatGPT account.\"}}",
+      "codexErrorInfo": "other",
+      "additionalDetails": null,
+      "misalignment": null
+     },
+     "startedAt": 1791375724,
+     "completedAt": 1791375726,
+     "durationMs": 2147
+    }
+   },
+   "emittedAtMs": 1791375726638
+  }
+ ]
+}

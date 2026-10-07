@@ -1,0 +1,498 @@
+{
+ "case": "reasoning",
+ "exec": [
+  {
+   "type": "thread.started",
+   "thread_id": "01a11650-df30-76d3-9763-4d27a82ac6fe"
+  },
+  {
+   "type": "turn.started"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_0",
+    "type": "reasoning",
+    "text": "**Calculating ball and bat prices**"
+   }
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_1",
+    "type": "agent_message",
+    "text": "$0.10"
+   }
+  },
+  {
+   "type": "turn.completed",
+   "usage": {
+    "input_tokens": 10501,
+    "cached_input_tokens": 0,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 50,
+    "reasoning_output_tokens": 40
+   }
+  },
+  {
+   "_exit": 0
+  }
+ ],
+ "app_server": [
+  {
+   "id": 1,
+   "result": {
+    "userAgent": "recorder/0.157.1 (Debian 12.0.0; aarch64) unknown (recorder; 0)",
+    "codexHome": "/ch",
+    "platformFamily": "unix",
+    "platformOs": "linux"
+   }
+  },
+  {
+   "method": "configWarning",
+   "params": {
+    "summary": "Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.",
+    "details": null
+   },
+   "emittedAtMs": 1791375772957
+  },
+  {
+   "method": "remoteControl/status/changed",
+   "params": {
+    "status": "disabled",
+    "serverName": "f4e8e4103980",
+    "installationId": "eeea25cd-7835-467e-bf39-e42fdbc0e7bd",
+    "environmentId": null
+   },
+   "emittedAtMs": 1791375772957
+  },
+  {
+   "id": 2,
+   "result": {
+    "thread": {
+     "id": "01a11651-0d30-7af1-a795-eb0934c755a1",
+     "environments": [
+      {
+       "environmentId": "local",
+       "cwd": "/tmp/ws-reasoning-app_server",
+       "runtimeWorkspaceRoots": [
+        "/tmp/ws-reasoning-app_server"
+       ]
+      }
+     ],
+     "extra": null,
+     "sessionId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+     "forkedFromId": null,
+     "parentThreadId": null,
+     "preview": "",
+     "ephemeral": true,
+     "section": null,
+     "sectionEnteredAt": null,
+     "projectId": null,
+     "historyMode": "legacy",
+     "modelProvider": "openai",
+     "model": "gpt-5.6-sol",
+     "reasoningEffort": "high",
+     "createdAt": 1791375773,
+     "updatedAt": 1791375773,
+     "recencyAt": 1791375773,
+     "status": {
+      "type": "idle"
+     },
+     "path": null,
+     "cwd": "/tmp/ws-reasoning-app_server",
+     "cliVersion": "0.157.1",
+     "originator": "recorder",
+     "source": "vscode",
+     "canAcceptDirectInput": true,
+     "threadSource": null,
+     "agentNickname": null,
+     "agentRole": null,
+     "gitInfo": null,
+     "name": null,
+     "daybreakEnabled": null,
+     "turns": []
+    },
+    "model": "gpt-5.6-sol",
+    "modelProvider": "openai",
+    "serviceTier": null,
+    "disabledPluginIds": [],
+    "cwd": "/tmp/ws-reasoning-app_server",
+    "runtimeWorkspaceRoots": [
+     "/tmp/ws-reasoning-app_server"
+    ],
+    "instructionSources": [],
+    "approvalPolicy": "never",
+    "approvalsReviewer": "user",
+    "sandbox": {
+     "type": "dangerFullAccess"
+    },
+    "activePermissionProfile": null,
+    "reasoningEffort": "high",
+    "multiAgentMode": "explicitRequestOnly"
+   }
+  },
+  {
+   "method": "thread/started",
+   "params": {
+    "thread": {
+     "id": "01a11651-0d30-7af1-a795-eb0934c755a1",
+     "environments": [
+      {
+       "environmentId": "local",
+       "cwd": "/tmp/ws-reasoning-app_server",
+       "runtimeWorkspaceRoots": [
+        "/tmp/ws-reasoning-app_server"
+       ]
+      }
+     ],
+     "extra": null,
+     "sessionId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+     "forkedFromId": null,
+     "parentThreadId": null,
+     "preview": "",
+     "ephemeral": true,
+     "section": null,
+     "sectionEnteredAt": null,
+     "projectId": null,
+     "historyMode": "legacy",
+     "modelProvider": "openai",
+     "model": "gpt-5.6-sol",
+     "reasoningEffort": "high",
+     "createdAt": 1791375773,
+     "updatedAt": 1791375773,
+     "recencyAt": 1791375773,
+     "status": {
+      "type": "idle"
+     },
+     "path": null,
+     "cwd": "/tmp/ws-reasoning-app_server",
+     "cliVersion": "0.157.1",
+     "originator": "recorder",
+     "source": "vscode",
+     "canAcceptDirectInput": true,
+     "threadSource": null,
+     "agentNickname": null,
+     "agentRole": null,
+     "gitInfo": null,
+     "name": null,
+     "daybreakEnabled": null,
+     "turns": []
+    }
+   },
+   "emittedAtMs": 1791375773029
+  },
+  {
+   "id": 3,
+   "result": {
+    "turn": {
+     "id": "01a11651-0d68-79f2-883c-0784c677222f",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "inProgress",
+     "error": null,
+     "startedAt": null,
+     "completedAt": null,
+     "durationMs": null
+    }
+   }
+  },
+  {
+   "method": "thread/status/changed",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "status": {
+     "type": "active",
+     "activeFlags": []
+    }
+   },
+   "emittedAtMs": 1791375773035
+  },
+  {
+   "method": "turn/started",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turn": {
+     "id": "01a11651-0d68-79f2-883c-0784c677222f",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "inProgress",
+     "error": null,
+     "startedAt": 1791375773,
+     "completedAt": null,
+     "durationMs": null
+    }
+   },
+   "emittedAtMs": 1791375773035
+  },
+  {
+   "method": "account/updated",
+   "params": {
+    "authMode": "chatgpt",
+    "planType": "pro"
+   },
+   "emittedAtMs": 1791375773422
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a11651-13ef-7443-8b83-608d7e2ce28a",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "A bat and a ball cost 1.10 in total. The bat costs 1.00 more than the ball. Then a second ball costs twice the first. Work it out step by step and reply with the price of the second ball only.",
+       "text_elements": []
+      }
+     ]
+    },
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "startedAtMs": 1791375774704
+   },
+   "emittedAtMs": 1791375774704
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a11651-13ef-7443-8b83-608d7e2ce28a",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "A bat and a ball cost 1.10 in total. The bat costs 1.00 more than the ball. Then a second ball costs twice the first. Work it out step by step and reply with the price of the second ball only.",
+       "text_elements": []
+      }
+     ]
+    },
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "completedAtMs": 1791375774704
+   },
+   "emittedAtMs": 1791375774704
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "reasoning",
+     "id": "rs_0829c2929652577b016ac639a380c481919c824997dc320142",
+     "summary": [],
+     "content": []
+    },
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "startedAtMs": 1791375779443
+   },
+   "emittedAtMs": 1791375779443
+  },
+  {
+   "method": "item/reasoning/summaryPartAdded",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "itemId": "rs_0829c2929652577b016ac639a380c481919c824997dc320142",
+    "summaryIndex": 0
+   },
+   "emittedAtMs": 1791375780728
+  },
+  {
+   "method": "item/reasoning/summaryTextDelta",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "itemId": "rs_0829c2929652577b016ac639a380c481919c824997dc320142",
+    "delta": "**Calculating simple equation result**",
+    "summaryIndex": 0
+   },
+   "emittedAtMs": 1791375780786
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "reasoning",
+     "id": "rs_0829c2929652577b016ac639a380c481919c824997dc320142",
+     "summary": [
+      "**Calculating simple equation result**"
+     ],
+     "content": []
+    },
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "completedAtMs": 1791375780785
+   },
+   "emittedAtMs": 1791375780786
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_0829c2929652577b016ac639a4d7dc8191b5d4985a98a3b57e",
+     "text": "",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null
+    },
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "startedAtMs": 1791375780787
+   },
+   "emittedAtMs": 1791375780788
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "itemId": "msg_0829c2929652577b016ac639a4d7dc8191b5d4985a98a3b57e",
+    "delta": "$"
+   },
+   "emittedAtMs": 1791375780788
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "itemId": "msg_0829c2929652577b016ac639a4d7dc8191b5d4985a98a3b57e",
+    "delta": "0"
+   },
+   "emittedAtMs": 1791375780788
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "itemId": "msg_0829c2929652577b016ac639a4d7dc8191b5d4985a98a3b57e",
+    "delta": "."
+   },
+   "emittedAtMs": 1791375780788
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "itemId": "msg_0829c2929652577b016ac639a4d7dc8191b5d4985a98a3b57e",
+    "delta": "10"
+   },
+   "emittedAtMs": 1791375780788
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_0829c2929652577b016ac639a4d7dc8191b5d4985a98a3b57e",
+     "text": "$0.10",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null
+    },
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "completedAtMs": 1791375780787
+   },
+   "emittedAtMs": 1791375780788
+  },
+  {
+   "method": "thread/tokenUsage/updated",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turnId": "01a11651-0d68-79f2-883c-0784c677222f",
+    "tokenUsage": {
+     "total": {
+      "totalTokens": 10543,
+      "inputTokens": 10501,
+      "cachedInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 42,
+      "reasoningOutputTokens": 32
+     },
+     "last": {
+      "totalTokens": 10543,
+      "inputTokens": 10501,
+      "cachedInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 42,
+      "reasoningOutputTokens": 32
+     },
+     "modelContextWindow": 258400
+    }
+   },
+   "emittedAtMs": 1791375780833
+  },
+  {
+   "method": "account/rateLimits/updated",
+   "params": {
+    "rateLimits": {
+     "limitId": "codex",
+     "limitName": null,
+     "normalModelSlug": null,
+     "primary": {
+      "usedPercent": 1,
+      "windowDurationMins": 10080,
+      "resetsAt": 1791955077
+     },
+     "secondary": null,
+     "credits": {
+      "hasCredits": true,
+      "unlimited": false,
+      "balance": "62500"
+     },
+     "individualLimit": null,
+     "spendControlReached": null,
+     "planType": "pro",
+     "rateLimitReachedType": null
+    }
+   },
+   "emittedAtMs": 1791375780833
+  },
+  {
+   "method": "thread/status/changed",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "status": {
+     "type": "idle"
+    }
+   },
+   "emittedAtMs": 1791375780834
+  },
+  {
+   "method": "turn/completed",
+   "params": {
+    "threadId": "01a11651-0d30-7af1-a795-eb0934c755a1",
+    "turn": {
+     "id": "01a11651-0d68-79f2-883c-0784c677222f",
+     "items": [
+      {
+       "type": "agentMessage",
+       "id": "msg_0829c2929652577b016ac639a4d7dc8191b5d4985a98a3b57e",
+       "text": "$0.10",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      }
+     ],
+     "itemsView": "summary",
+     "status": "completed",
+     "error": null,
+     "startedAt": 1791375773,
+     "completedAt": 1791375780,
+     "durationMs": 7799
+    }
+   },
+   "emittedAtMs": 1791375780834
+  }
+ ]
+}
